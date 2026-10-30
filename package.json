@@ -1,0 +1,39 @@
+{
+  "name": "livetools-desktop",
+  "version": "0.1.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "tauri": "tauri",
+    "app": "tauri dev",
+    "app:gnu": "cross-env RUSTUP_TOOLCHAIN=stable-x86_64-pc-windows-gnu tauri dev",
+    "app:emulators": "cross-env VITE_USE_EMULATORS=true tauri dev",
+    "icons": "tauri icon ../web/public/icons/icon-512.png",
+    "sync-shared": "node scripts/sync-shared.mjs",
+    "installer": "node scripts/release.mjs installer",
+    "release": "node scripts/release.mjs release",
+    "release:publish": "node scripts/release.mjs publish"
+  },
+  "dependencies": {
+    "@fontsource/inter": "^5.1.0",
+    "@fontsource/jetbrains-mono": "^5.1.0",
+    "@tauri-apps/api": "^2.2.0",
+    "@tauri-apps/plugin-dialog": "^2.8.4",
+    "@tauri-apps/plugin-opener": "^2.7.2",
+    "@tauri-apps/plugin-process": "^2.4.0",
+    "@tauri-apps/plugin-updater": "^2.14.1",
+    "firebase": "^13.1.0",
+    "marked": "^15.0.12",
+    "pdfjs-dist": "5.7.284",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.2.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "cross-env": "^7.0.3",
+    "vite": "^6.0.7"
+  }
+}

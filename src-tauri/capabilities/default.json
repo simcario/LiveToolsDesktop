@@ -1,0 +1,18 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Finestra principale, uscita video e gobbo",
+  "windows": ["main", "video", "prompter"],
+  "permissions": [
+    "core:default",
+    "core:webview:allow-create-webview-window",
+    "core:window:allow-set-fullscreen",
+    "core:window:allow-is-fullscreen",
+    "core:window:allow-set-focus",
+    "core:window:allow-close",
+    "opener:default",
+    "dialog:allow-open",
+    "updater:default",
+    "process:allow-restart"
+  ]
+}

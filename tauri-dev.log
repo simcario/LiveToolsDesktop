@@ -1,0 +1,18 @@
+
+> livetools-desktop@0.1.0 app:gnu
+> cross-env RUSTUP_TOOLCHAIN=stable-x86_64-pc-windows-gnu tauri dev
+
+     Running BeforeDevCommand (`npm run dev`)
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+        Info Watching D:\DEV\LiveTools\desktop\src-tauri for changes...
+
+> livetools-desktop@0.1.0 dev
+> vite
+
+error when starting dev server:
+Error: Port 1420 is already in use
+    at Server.onError (file:///D:/DEV/LiveTools/desktop/node_modules/vite/dist/node/chunks/dep-CkSfqg8D.js:25336:18)
+    at Server.emit (node:events:508:28)
+    at emitErrorNT (node:net:1976:8)
+    at process.processTicksAndRejections (node:internal/process/task_queues:90:21)
+       Error The "beforeDevCommand" terminated with a non-zero status code.
