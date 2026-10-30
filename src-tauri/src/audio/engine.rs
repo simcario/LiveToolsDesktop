@@ -12,7 +12,7 @@ use rtrb::{Producer, RingBuffer};
 use serde::{Deserialize, Serialize};
 
 use super::decode::{self, ProbeInfo};
-use super::device::{AudioHost, DeviceInfo};
+use super::device::{AudioHost, DeviceEntry, DeviceInfo};
 use super::render::{ClickParams, Garbage, Renderer, RtCmd, RtTrack, Shared, TrackControl, OUT_MONO, OUT_OFF, OUT_STEREO};
 use super::stream::{self, DecoderHandle, Region, TrackStream};
 use super::tempo::{ClickKind, SectionSpec, SyncSpec, TempoMap};
@@ -246,16 +246,25 @@ impl Controller {
         }
     }
 
+    pub fn devices(&self) -> Vec<DeviceEntry> {
+        self.host.list()
+    }
+
     pub fn open_device(&mut self, name: Option<String>, buffer: Option<u32>) -> Result<DeviceInfo, String> {
         let position = self.position();
         self.shared().playing.store(false, Ordering::Relaxed);
         self.host.close();
         self.cmd = None;
-        let (tx, rx) = RingBuffer::<RtCmd>::new(256);
-        let renderer = Renderer::new(rx, self.garbage.clone(), self.monitor.shared.clone());
-        let opened = self.host.open(name, buffer, renderer);
-        *self.monitor.device.write() = opened.as_ref().ok().cloned();
-        let info = opened?;
+        let attempt = |buffer: Option<u32>| {
+            let (tx, rx) = RingBuffer::<RtCmd>::new(256);
+            let renderer = Renderer::new(rx, self.garbage.clone(), self.monitor.shared.clone());
+            self.host.open(name.clone(), buffer, renderer).map(|info| (info, tx))
+        };
+        // Some drivers refuse a size inside their range (ASIO has a granularity):
+        // better the interface's own buffer than no audio.
+        let opened = attempt(buffer).or_else(|e| if buffer.is_some() { attempt(None) } else { Err(e) });
+        *self.monitor.device.write() = opened.as_ref().ok().map(|(info, _)| info.clone());
+        let (info, tx) = opened?;
         self.cmd = Some(tx);
         self.send(RtCmd::Click(self.click));
         // Streams are resampled for the interface: reload the song at the same point.

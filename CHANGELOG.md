@@ -12,6 +12,15 @@ versioni [SemVer](https://semver.org/lang/it/). Procedura di rilascio: [docs/REL
 - Pedale collegato mostrato nella vista; **Impostazioni › Pedale & spartito** con elenco dei dispositivi
   Bluetooth collegati, prova del pedale e apprendimento dei tasti.
 
+### Audio
+- Driver ASIO selezionabili in *Audio & uscite*, solo nelle build con la feature `asio` (non ancora negli
+  installer pubblicati, vedi README).
+
+### Corretto
+- Arrangement: con lo strumento **Sposta**, afferrare una clip vicino a un bordo la accorciava invece di
+  spostarla: compariva spazio vuoto all'inizio e l'audio restava fuori griglia. Ora Sposta muove sempre la clip
+  intera; i bordi si accorciano solo con **Selezione**.
+
 ## [0.1.0] — 2026-10-28
 
 Prima versione distribuita con installer e aggiornamenti automatici.

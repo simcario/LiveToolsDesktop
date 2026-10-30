@@ -11,6 +11,7 @@ export default function SettingsModal({ settings, update, device, onClose }) {
   const [devices, setDevices] = useState(null);
   const [mediaDir, setMediaDir] = useState('');
   const channels = device?.info?.channels || 2;
+  const asioDrivers = devices?.filter((d) => d.host === 'ASIO');
 
   useEffect(() => {
     engine.devices().then(setDevices).catch(() => setDevices([]));
@@ -44,11 +45,22 @@ export default function SettingsModal({ settings, update, device, onClose }) {
                 onChange={(e) => update({ audioDevice: e.target.value || null })}
               >
                 <option value="">Predefinita di sistema</option>
-                {devices?.map((d) => (
-                  <option key={d.name} value={d.name}>
-                    {d.name} · {d.channels} uscite{d.isDefault ? ' (predefinita)' : ''}
-                  </option>
-                ))}
+                {devices
+                  ?.filter((d) => d.host !== 'ASIO')
+                  .map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name} · {d.channels} uscite{d.isDefault ? ' (predefinita)' : ''}
+                    </option>
+                  ))}
+                {asioDrivers?.length > 0 && (
+                  <optgroup label="ASIO">
+                    {asioDrivers.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
               </select>
             </label>
             <label className="field" style={{ maxWidth: 200 }}>
@@ -71,6 +83,9 @@ export default function SettingsModal({ settings, update, device, onClose }) {
               ? `${device.info.host} · ${device.info.name} · ${device.info.sampleRate} Hz · ${device.info.channels} uscite${device.info.bufferSize ? ` · buffer ${device.info.bufferSize}` : ''}`
               : device?.error || 'Apertura scheda audio…'}
           </p>
+          {device?.info?.host === 'ASIO' && (
+            <p className="hint">Con ASIO la frequenza di campionamento è quella impostata nel pannello del driver, e di solito nessun altro programma può usare la scheda.</p>
+          )}
 
           <div className="field">
             <span>Matrice uscite (per ruolo delle tracce)</span>

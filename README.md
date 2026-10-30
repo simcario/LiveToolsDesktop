@@ -208,5 +208,14 @@ Firebase riceve l'ID token: stesso utente dell'app web.
 ## Note e limiti di questa prima versione
 
 - L'audio del video non viene riprodotto (il video è muto, la colonna sonora sta negli stem).
-- Su Windows si usa WASAPI (condiviso); ASIO non è ancora abilitato.
+- Su Windows si usa WASAPI (condiviso). ASIO è dietro la feature Cargo `asio`, spenta di default:
+  - per provarlo: `scoop install llvm`, poi `npm run app:asio` (al primo avvio scarica l'SDK Steinberg in
+    `%USERPROFILE%\.asio_sdk`, fuori dal repo perché non è ridistribuibile);
+  - per un installer: `LIVETOOLS_ASIO=1 npm run installer`. **Prima di pubblicarlo** serve una delle due licenze
+    dell'SDK: l'accordo firmato da entrambe le parti (`Steinberg ASIO Licensing Agreement.pdf` nell'SDK, gratuito), oppure
+    il rilascio dell'app sotto GPLv3. Un repo pubblico senza licenza non basta. Il nome o il logo ASIO seguono le
+    *Usage Guidelines* con entrambe;
+  - i driver a 24 bit impacchettati (`Int24`) non sono supportati da cpal 0.15: l'apertura dà errore.
+
+  ASIO is a trademark of Steinberg Media Technologies GmbH, registered in Europe and other countries.
 - Le uscite che la scheda non possiede ricadono su Out 1-2 (utile per provare sul portatile).

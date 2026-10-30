@@ -1,6 +1,6 @@
 {
   "name": "livetools-desktop",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,6 +10,7 @@
     "app": "tauri dev",
     "app:gnu": "cross-env RUSTUP_TOOLCHAIN=stable-x86_64-pc-windows-gnu tauri dev",
     "app:emulators": "cross-env VITE_USE_EMULATORS=true tauri dev",
+    "app:asio": "node scripts/asio.mjs",
     "icons": "tauri icon ../web/public/icons/icon-512.png",
     "sync-shared": "node scripts/sync-shared.mjs",
     "installer": "node scripts/release.mjs installer",

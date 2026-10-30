@@ -134,7 +134,14 @@ quali canali escono Main, Click, Guide e Monitor. Volume, mute e uscita si posso
 traccia e restano salvati su questo computer. Le uscite che la scheda non ha ricadono su Out 1-2 (comodo
 per provare sul portatile).
 
-Su Windows si usa WASAPI condiviso; ASIO non è ancora disponibile.
+Su Windows si usa WASAPI condiviso. Il supporto ASIO è in preparazione e non è ancora incluso nelle versioni
+pubblicate. Nelle versioni che lo includono, i driver installati compaiono nel gruppo **ASIO** dell'elenco delle
+schede: la frequenza di campionamento è quella impostata nel pannello del driver e, di solito, nessun altro
+programma può usare la scheda nel frattempo. Se il driver scelto non è disponibile (scheda scollegata o occupata)
+LiveTools mostra l'errore nella barra di stato e non passa da solo ad altre uscite: scegli un'altra scheda per
+tornare a suonare.
+
+*ASIO is a trademark of Steinberg Media Technologies GmbH, registered in Europe and other countries.*
 
 ### 4.5 Rehearsal
 
@@ -191,8 +198,8 @@ Strumenti nella barra dell'Arrangement (tasti **1–5**):
 
 | Tasto | Strumento | Uso |
 |---|---|---|
-| 1 | Selezione | seleziona la traccia |
-| 2 | Sposta | trascina i segmenti (con *Griglia* attiva si aggancia ai movimenti, Shift inverte) |
+| 1 | Selezione | seleziona la traccia; trascinando un bordo accorcia il segmento (l'audio resta dov'è) |
+| 2 | Sposta | trascina il segmento intero, da qualsiasi punto (con *Griglia* attiva il suo inizio si aggancia ai movimenti, Shift inverte) |
 | 3 | Taglia | taglia dove clicchi |
 | 4 | Muta | muta / riattiva un segmento |
 | 5 | Elimina | elimina un segmento |

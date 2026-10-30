@@ -7,7 +7,7 @@
 //                                        publish the installer already built for the current version
 //
 // Updates are GitHub Releases of a public repo (only installers there, the code
-// stays private): the app reads releases/latest/download/latest.json, see
+// is in simcario/LiveToolsDesktop): the app reads releases/latest/download/latest.json, see
 // plugins.updater in tauri.conf.json.
 //
 // Outside the repo, in %USERPROFILE%\.tauri:
@@ -19,6 +19,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileS
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { asioEnv } from './asio.mjs';
 
 const RELEASES_REPO = 'simcario/LiveTools-releases';
 const PRODUCT = 'LiveTools';
@@ -111,7 +112,10 @@ function build(version) {
     const key = Object.keys(env).find((k) => k.toLowerCase() === 'path') || 'PATH';
     env[key] = `${MINGW_BIN};${env[key]}`;
   }
-  const r = spawnSync('npx tauri build', { cwd: root, env, stdio: 'inherit', shell: true });
+  // Off by default: publishing an installer with ASIO needs one of the SDK's two licenses (see README.md).
+  const asio = process.env.LIVETOOLS_ASIO === '1';
+  if (asio) Object.assign(env, asioEnv(TOOLCHAIN));
+  const r = spawnSync(`npx tauri build${asio ? ' --features asio' : ''}`, { cwd: root, env, stdio: 'inherit', shell: true });
   if (r.status !== 0) fail('Build non riuscita');
   return collect(version);
 }

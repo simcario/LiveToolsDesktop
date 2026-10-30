@@ -25,7 +25,7 @@ const MAX_PPS = 400;
 // Tools for the segments of the tracks (Cubase style), with their keys and cursors.
 const TOOLS = [
   ['select', 'pointer', 'Selezione · trascina un bordo per accorciare il segmento', '1', 'default'],
-  ['move', 'hand', 'Sposta: trascina i segmenti (i bordi li accorciano)', '2', 'grab'],
+  ['move', 'hand', 'Sposta: trascina il segmento intero, da qualsiasi punto', '2', 'grab'],
   ['cut', 'scissors', 'Taglia dove clicchi', '3', 'crosshair'],
   ['mute', 'x', 'Muta / riattiva un segmento', '4', 'pointer'],
   ['erase', 'eraser', 'Elimina un segmento', '5', 'not-allowed'],
@@ -634,7 +634,8 @@ export default function ArrangementView({ player, item, lanes, settings, update,
     });
     return best;
   };
-  const trimmable = (row) => row?.kind === 'audio' && !row.stem.live && canEditSong && (tool === 'select' || tool === 'move');
+  // Arrow only: the hand always moves the whole segment, even grabbed at its start.
+  const trimmable = (row) => row?.kind === 'audio' && !row.stem.live && canEditSong && tool === 'select';
 
   // New regions of one track: into the song's draft, undoable, heard at once.
   // The grid stays where it is even when the edited track is its reference.
@@ -776,7 +777,7 @@ export default function ArrangementView({ player, item, lanes, settings, update,
     // moves (on the beats with "Griglia", Shift = the other way), scissors
     // cut where clicked, X mutes / unmutes, eraser deletes.
     const row = rows[Math.floor((e.clientY - rect.top - RULER_H) / LANE_H)];
-    // Start or end of a segment (arrow or hand): drag to trim it, the audio stays where it is.
+    // Start or end of a segment (arrow): drag to trim it, the audio stays where it is.
     const trim = !warpOn && trimmable(row) ? edgeAt(row, t) : null;
     if (trim) {
       const stem = row.stem;

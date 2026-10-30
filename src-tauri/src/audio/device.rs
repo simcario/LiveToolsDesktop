@@ -26,9 +26,62 @@ pub struct DeviceInfo {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeviceEntry {
+    /// What open() takes: the name, with ASIO_PREFIX for an ASIO driver.
+    pub id: String,
     pub name: String,
-    pub channels: u32,
+    pub host: String,
+    /// Unknown for ASIO drivers until they are open.
+    pub channels: Option<u32>,
     pub is_default: bool,
+}
+
+const ASIO_PREFIX: &str = "asio:";
+
+/// ASIO loads one driver at a time and cpal tracks it per host, so the audio
+/// thread keeps the only host. Drivers are listed without loading them: that
+/// would take the interface, and fails while another driver is open.
+#[cfg(all(windows, feature = "asio"))]
+mod asio {
+    use cpal::traits::{DeviceTrait, HostTrait};
+
+    pub struct Drivers(cpal::Host);
+
+    impl Drivers {
+        pub fn new() -> Self {
+            Self(cpal::host_from_id(cpal::HostId::Asio).expect("host ASIO"))
+        }
+
+        pub fn names(&self) -> Vec<String> {
+            asio_sys::Asio::new().driver_names()
+        }
+
+        pub fn device(&self, driver: &str) -> Result<cpal::Device, String> {
+            self.0
+                .devices()
+                .map_err(|e| e.to_string())?
+                .find(|d| d.name().ok().as_deref() == Some(driver))
+                .ok_or_else(|| format!("driver ASIO “{driver}” non disponibile: la scheda è collegata, o la usa un altro programma?"))
+        }
+    }
+}
+
+#[cfg(not(all(windows, feature = "asio")))]
+mod asio {
+    pub struct Drivers;
+
+    impl Drivers {
+        pub fn new() -> Self {
+            Self
+        }
+
+        pub fn names(&self) -> Vec<String> {
+            Vec::new()
+        }
+
+        pub fn device(&self, _driver: &str) -> Result<cpal::Device, String> {
+            Err("ASIO non è incluso in questa versione".into())
+        }
+    }
 }
 
 enum HostCmd {
@@ -40,6 +93,9 @@ enum HostCmd {
     },
     Close {
         reply: Sender<()>,
+    },
+    List {
+        reply: Sender<Vec<DeviceEntry>>,
     },
 }
 
@@ -53,13 +109,14 @@ impl AudioHost {
         thread::Builder::new()
             .name("livetools-audio-host".into())
             .spawn(move || {
+                let asio = asio::Drivers::new();
                 let mut current: Option<cpal::Stream> = None;
                 for cmd in rx {
                     match cmd {
                         HostCmd::Open { name, buffer, renderer, reply } => {
                             current = None;
                             *error.lock() = None;
-                            let res = open(name, buffer, *renderer, &shared, &error).map(|(s, info)| {
+                            let res = open(&asio, name, buffer, *renderer, &shared, &error).map(|(s, info)| {
                                 current = Some(s);
                                 info
                             });
@@ -68,6 +125,9 @@ impl AudioHost {
                         HostCmd::Close { reply } => {
                             current = None;
                             let _ = reply.send(());
+                        }
+                        HostCmd::List { reply } => {
+                            let _ = reply.send(list(&asio));
                         }
                     }
                 }
@@ -91,6 +151,14 @@ impl AudioHost {
             let _ = rx.recv();
         }
     }
+
+    pub fn list(&self) -> Vec<DeviceEntry> {
+        let (reply, rx) = channel();
+        if self.tx.send(HostCmd::List { reply }).is_err() {
+            return Vec::new();
+        }
+        rx.recv().unwrap_or_default()
+    }
 }
 
 fn supported(f: SampleFormat) -> bool {
@@ -104,19 +172,35 @@ fn max_channels(device: &cpal::Device) -> u32 {
         .unwrap_or(2)
 }
 
-pub fn list() -> Vec<DeviceEntry> {
+fn list(asio: &asio::Drivers) -> Vec<DeviceEntry> {
     let host = cpal::default_host();
+    let host_name = host.id().name().to_string();
     let default = host.default_output_device().and_then(|d| d.name().ok());
-    host.output_devices()
+    let mut entries: Vec<DeviceEntry> = host
+        .output_devices()
         .map(|devices| {
             devices
                 .filter_map(|d| {
                     let name = d.name().ok()?;
-                    Some(DeviceEntry { channels: max_channels(&d), is_default: Some(&name) == default.as_ref(), name })
+                    Some(DeviceEntry {
+                        id: name.clone(),
+                        host: host_name.clone(),
+                        channels: Some(max_channels(&d)),
+                        is_default: Some(&name) == default.as_ref(),
+                        name,
+                    })
                 })
                 .collect()
         })
-        .unwrap_or_default()
+        .unwrap_or_default();
+    entries.extend(asio.names().into_iter().map(|name| DeviceEntry {
+        id: format!("{ASIO_PREFIX}{name}"),
+        host: "ASIO".to_string(),
+        channels: None,
+        is_default: false,
+        name,
+    }));
+    entries
 }
 
 /// The configuration with the most output channels at the interface's own
@@ -149,18 +233,27 @@ fn best_config(device: &cpal::Device) -> Result<SupportedStreamConfig, String> {
 }
 
 fn open(
+    asio: &asio::Drivers,
     name: Option<String>,
     buffer: Option<u32>,
     renderer: Renderer,
     shared: &Arc<Shared>,
     error: &Arc<Mutex<Option<String>>>,
 ) -> Result<(cpal::Stream, DeviceInfo), String> {
-    let host = cpal::default_host();
-    let device = name
-        .as_ref()
-        .and_then(|n| host.output_devices().ok()?.find(|d| d.name().ok().as_ref() == Some(n)))
-        .or_else(|| host.default_output_device())
-        .ok_or("Nessuna uscita audio disponibile")?;
+    // A missing ASIO driver is an error, not the default output: on stage the
+    // click must not end up on the laptop speakers.
+    let (device, host_name) = match name.as_deref().and_then(|n| n.strip_prefix(ASIO_PREFIX)) {
+        Some(driver) => (asio.device(driver)?, "ASIO".to_string()),
+        None => {
+            let host = cpal::default_host();
+            let device = name
+                .as_ref()
+                .and_then(|n| host.output_devices().ok()?.find(|d| d.name().ok().as_ref() == Some(n)))
+                .or_else(|| host.default_output_device())
+                .ok_or("Nessuna uscita audio disponibile")?;
+            (device, host.id().name().to_string())
+        }
+    };
     let cfg = best_config(&device)?;
     let mut config: StreamConfig = cfg.config();
     let mut buffer_size = None;
@@ -189,7 +282,7 @@ fn open(
             channels,
             sample_rate: config.sample_rate.0,
             buffer_size,
-            host: host.id().name().to_string(),
+            host: host_name,
         },
     ))
 }

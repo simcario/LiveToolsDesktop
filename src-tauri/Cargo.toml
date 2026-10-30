@@ -1,6 +1,6 @@
 [package]
 name = "livetools-desktop"
-version = "0.1.1"
+version = "0.1.2"
 description = "LiveTools Desktop: lettore di sequenze multitraccia e video per il live"
 edition = "2021"
 
@@ -29,9 +29,19 @@ tauri-plugin-dialog = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 
+# ASIO needs the Steinberg SDK and libclang to build (scripts/asio.mjs), and before an installer
+# is published Steinberg's signed license or a GPLv3 release of the app: off by default.
+[features]
+asio = ["cpal/asio", "dep:asio-sys"]
+
 # Bluetooth devices connected (page-turner pedals), see bluetooth.rs.
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62", features = ["Devices_Bluetooth", "Devices_Enumeration", "Foundation_Collections"] }
+asio-sys = { version = "0.2", optional = true }
+
+# asio-sys 0.2.6 with one line changed in build.rs, so its bindings compile with MinGW.
+[patch.crates-io]
+asio-sys = { path = "vendor/asio-sys" }
 
 # Decoding and mixing must keep up in real time even in debug builds.
 [profile.dev]

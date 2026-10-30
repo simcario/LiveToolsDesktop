@@ -10,15 +10,15 @@ mod oauth;
 use std::time::Duration;
 
 use audio::beats::{self, SyncAnalysis, SyncRequest};
-use audio::device::{self, DeviceEntry, DeviceInfo};
+use audio::device::{DeviceEntry, DeviceInfo};
 use audio::tempo::{SyncSpec, TempoMap};
 use audio::engine::{SongLoad, TrackLoad};
 use audio::{ClickParams, Engine, SongSpec, TrackMix};
 use tauri::{Emitter, State};
 
-#[tauri::command]
-fn audio_devices() -> Vec<DeviceEntry> {
-    device::list()
+#[tauri::command(async)]
+fn audio_devices(engine: State<'_, Engine>) -> Vec<DeviceEntry> {
+    engine.0.lock().devices()
 }
 
 #[tauri::command(async)]
