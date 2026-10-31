@@ -27,7 +27,7 @@ import Icon from './Icon';
 // "Sequenze, Video & PDF" of a song in the setlist page: same data as the web app,
 // saved as soon as it changes (uploads and deletions cannot wait for “Salva”).
 
-function StemRow({ stem, index, count, canEdit, cache, onPatch, onMove, onRemove }) {
+function StemRow({ stem, canEdit, cache, className, onPatch, onGrip, onRemove }) {
   const [name, setName] = useState(stem.name);
   const instrument = instrumentOf(stem);
   const commit = () => {
@@ -36,7 +36,12 @@ function StemRow({ stem, index, count, canEdit, cache, onPatch, onMove, onRemove
     else setName(stem.name);
   };
   return (
-    <div className={`md-row role-${stem.role || 'main'}`}>
+    <div data-stem className={`md-row role-${stem.role || 'main'} ${className}`}>
+      {canEdit && (
+        <span className="se-grip" onPointerDown={onGrip} title="Trascina per riordinare">
+          <Icon name="grip" size={13} />
+        </span>
+      )}
       <span className="swatch" />
       <span className="md-main">
         <input
@@ -89,12 +94,6 @@ function StemRow({ stem, index, count, canEdit, cache, onPatch, onMove, onRemove
             title={stem.muted ? 'Disattivata di default' : 'Disattiva di default'}
           >
             M
-          </button>
-          <button className="toggle" disabled={index === 0} onClick={() => onMove(-1)} title="Sposta su">
-            <Icon name="chevron-up" size={11} />
-          </button>
-          <button className="toggle" disabled={index === count - 1} onClick={() => onMove(1)} title="Sposta giù">
-            <Icon name="chevron-down" size={11} />
           </button>
           <button className="toggle" onClick={onRemove} title="Elimina la traccia">
             <Icon name="trash" size={11} />
@@ -174,6 +173,8 @@ function Section({ title, icon, count, canEdit, multiple, accept, onFiles, butto
 
 export default function MediaFields({ setlistId, item, canEdit: canEditSetlist, onTrack, notify }) {
   const cache = useMediaCache();
+  const stemList = useRef(null);
+  const [drag, setDrag] = useState(null); // { from, before }
   const uploads = useUploads().filter((u) => u.itemId === item.id);
   const stems = stemsOf(item);
   const video = videoOf(item);
@@ -194,11 +195,45 @@ export default function MediaFields({ setlistId, item, canEdit: canEditSetlist, 
   };
 
   const patchStem = (id, p) => saveStems(db, target, stems.map((s) => (s.id === id ? { ...s, ...p } : s))).catch(fail);
-  const moveStem = (i, d) => {
-    const next = [...stems];
-    [next[i], next[i + d]] = [next[i + d], next[i]];
-    saveStems(db, target, next).catch(fail);
+
+  // Reorder by dragging the grip, as the rows of the setlist.
+  const startDrag = (e, from) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const grip = e.currentTarget;
+    grip.setPointerCapture(e.pointerId);
+    const beforeAt = (y) => {
+      const rows = [...stemList.current.querySelectorAll('[data-stem]')];
+      const k = rows.findIndex((r) => {
+        const b = r.getBoundingClientRect();
+        return y < b.top + b.height / 2;
+      });
+      return k < 0 ? rows.length : k;
+    };
+    const move = (ev) => setDrag({ from, before: beforeAt(ev.clientY) });
+    const up = (ev) => {
+      grip.removeEventListener('pointermove', move);
+      grip.removeEventListener('pointerup', up);
+      setDrag(null);
+      const before = beforeAt(ev.clientY);
+      const to = before > from ? before - 1 : before;
+      if (to === from) return;
+      const next = [...stems];
+      next.splice(to, 0, next.splice(from, 1)[0]);
+      saveStems(db, target, next).catch(fail);
+    };
+    grip.addEventListener('pointermove', move);
+    grip.addEventListener('pointerup', up);
+    setDrag({ from, before: from });
   };
+  const dragClass = (i) => {
+    if (!drag) return '';
+    if (drag.from === i) return 'is-dragging';
+    if (drag.before === drag.from || drag.before === drag.from + 1) return '';
+    if (drag.before === i) return 'drop-before';
+    return drag.before === stems.length && i === stems.length - 1 ? 'drop-after' : '';
+  };
+
   const removeStem = async (stem) => {
     if (!confirm(`Eliminare la traccia “${stem.name}” di “${item.title}”? Il file viene eliminato ${everywhere}.`)) return;
     try {
@@ -248,7 +283,8 @@ export default function MediaFields({ setlistId, item, canEdit: canEditSetlist, 
     <div className="se-form">
       <p className="small muted" style={{ margin: 0 }}>
         Le modifiche di questa scheda vengono salvate subito, per tutta la band. I file caricati da qui restano anche su
-        questo computer, pronti da suonare. Il ruolo decide l’uscita (impianto o cuffie, vedi matrice uscite).
+        questo computer, pronti da suonare. Il ruolo decide l’uscita (impianto o cuffie, vedi matrice uscite). Trascina la
+        maniglia per riordinare.
         {item.songId && ' Tracce e video sono quelli del brano in libreria: valgono per tutte le scalette che lo usano.'}
         {canEditSetlist && !canEdit && ' Li modifica solo chi può modificare il brano in libreria.'}
       </p>
@@ -270,19 +306,20 @@ export default function MediaFields({ setlistId, item, canEdit: canEditSetlist, 
         }
         empty={!stems.length && !stemUploads.length && (canEdit ? 'Trascina qui gli stem (click, guide, basi…) o usa “Aggiungi tracce”.' : 'Nessuna traccia.')}
       >
-        {stems.map((s, i) => (
-          <StemRow
-            key={s.id}
-            stem={s}
-            index={i}
-            count={stems.length}
-            canEdit={canEdit}
-            cache={cache[s.path]}
-            onPatch={(p) => patchStem(s.id, p)}
-            onMove={(d) => moveStem(i, d)}
-            onRemove={() => removeStem(s)}
-          />
-        ))}
+        <div className="md-stems" ref={stemList}>
+          {stems.map((s, i) => (
+            <StemRow
+              key={s.id}
+              stem={s}
+              canEdit={canEdit}
+              cache={cache[s.path]}
+              className={dragClass(i)}
+              onPatch={(p) => patchStem(s.id, p)}
+              onGrip={(e) => startDrag(e, i)}
+              onRemove={() => removeStem(s)}
+            />
+          ))}
+        </div>
         {stemUploads.map((u) => (
           <UploadRow key={u.key} upload={u} />
         ))}

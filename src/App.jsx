@@ -9,7 +9,7 @@ import { buildLanes } from './lib/lanes';
 import { clearHistory } from './lib/arrangeHistory';
 import { discardDraft, isDirty, saveDraft, useDraftItems } from './lib/drafts';
 import { checkCache } from './lib/mediaCache';
-import { useSettings } from './lib/settings';
+import { toggleZone, useSettings } from './lib/settings';
 import { hideSplash } from './lib/splash';
 import { usePlayer } from './lib/usePlayer';
 import { usePrompterBroadcast, usePrompterOutput } from './lib/prompter';
@@ -28,8 +28,10 @@ import SettingsModal from './components/SettingsModal';
 import PreferencesPanel from './components/PreferencesPanel';
 import HelpPanel from './components/HelpPanel';
 import Transport from './components/Transport';
+import { ZoneResizer, zoneFrame } from './components/Zones';
 
 const VIEWS = ['session', 'arrangement', 'prompter', 'score'];
+const ZONE_KEYS = { KeyL: 'left', KeyE: 'lower', KeyR: 'right' };
 // Pages (tabs at the bottom, as the pages of a video editor): playing and editing the setlist.
 const PAGES = [
   ['live', 'Live', 'play'],
@@ -239,6 +241,13 @@ function Workspace({ user }) {
         return;
       }
       if (e.target.closest?.('input, select, textarea')) return;
+      // Zones. Not while typing: Ctrl+Alt is also AltGr (AltGr+E = €).
+      const zone = (e.ctrlKey || e.metaKey) && e.altKey && ZONE_KEYS[e.code];
+      if (zone) {
+        e.preventDefault();
+        if (zone === 'left' || (zone === 'lower') === (page === 'live')) update((s) => toggleZone(s, zone));
+        return;
+      }
       // Editing page: only play/stop, the arrows move the selection in the list.
       if (page === 'songs') return;
       if (page === 'setlist' && e.key !== ' ') return;
@@ -287,8 +296,10 @@ function Workspace({ user }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [player, songs, selected, settings.view, settings.click, settingsOpen, prefsOpen, helpOpen, update, page]);
 
+  const frame = zoneFrame(settings.zones);
+
   return (
-    <div className="app">
+    <div className={`app ${frame.className}`} style={frame.style}>
       <Transport
         user={user}
         item={player.loadedItem || selected}
@@ -300,6 +311,7 @@ function Workspace({ user }) {
         notify={notify}
         device={device}
         liveOn={!!setlist?.live?.startedAt}
+        page={page}
         showViews={page === 'live'}
         onSettings={() => setSettingsOpen(true)}
         onPrefs={() => setPrefsOpen(true)}
@@ -400,8 +412,12 @@ function Workspace({ user }) {
           />
         )}
       </main>
-      {page === 'live' && (
-        <DetailView item={selected} number={selected ? numbers[selected.id] : null} lanes={lanes} player={player} onVideoOutput={openVideoOutput} />
+      <ZoneResizer zone="left" />
+      {page === 'live' && settings.zones.lower.open && (
+        <>
+          <DetailView item={selected} number={selected ? numbers[selected.id] : null} lanes={lanes} player={player} onVideoOutput={openVideoOutput} />
+          <ZoneResizer zone="lower" />
+        </>
       )}
       <StatusBar message={message} device={device} page={page} onPage={(p) => update({ page: p })} onUpdates={() => setPrefsOpen('updates')} />
       {prefsOpen && (

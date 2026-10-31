@@ -37,6 +37,10 @@ chiude, si aggiorna e si riapre. Non aggiornare a ridosso di un concerto.
 | **Dettaglio** (sotto) | dati del brano, tracce, stato dei download, anteprima video, barra *Rehearsal* |
 | **Barra di stato** | pagine **Live** (Ctrl+1), **Scaletta** (Ctrl+2), **Brani** (Ctrl+3); avviso aggiornamenti |
 
+I pannelli intorno alla vista centrale (Browser, Dettaglio e, nelle pagine Scaletta e Brani, l'ispettore) si
+chiudono e riaprono con i pulsanti nella Control bar o con **Ctrl+Alt+L / E / R**. Si ridimensionano trascinandone
+il bordo; doppio clic sul bordo per tornare alla misura iniziale. Misure e stato restano su questo computer.
+
 ### Pagine
 
 - **Live** — il player: Session, Arrangement, Gobbo, Spartito.
@@ -53,7 +57,7 @@ Nella pagina **Scaletta**:
 
 - scrivi il titolo in fondo all'elenco e premi Invio per aggiungere un brano; aggiungi blocchi *pausa*,
   *discorso*, *separatore*;
-- riordina trascinando la maniglia o con ↑/↓; elimina con il cestino;
+- riordina trascinando la maniglia; elimina con la ×;
 - a destra l'**ispettore** del brano selezionato: schede *Brano*, *Palco*, *Spartito*, *Testo gobbo*,
   *Sequenze & Video*, *MIDI*, *Colonne*. Salva con **Ctrl+S** (salva anche da solo quando cambi brano o
   pagina).
@@ -78,7 +82,9 @@ pulsante. Per ogni stem scegli:
 
 - **Ruolo** — decide l'uscita della scheda audio: *Main*, *Click*, *Guide/Cue*, *Solo monitor*;
 - **Strumento** — Batteria, Basso, Chitarre, Tastiere, Voce, Cori… (serve al Rehearsal);
-- nome, ordine, mute di default.
+- nome e mute di default; l'ordine si cambia trascinando la maniglia.
+
+Se le righe sono strette, allarga l'ispettore trascinandone il bordo.
 
 Per il video: un file per brano, con **offset** rispetto all'audio. Formati audio letti: wav, aiff, flac,
 mp3, ogg, m4a/aac, alac. Il video è muto (la colonna sonora sta negli stem).
@@ -89,6 +95,9 @@ I caricamenti continuano anche se cambi brano o pagina, e ogni file caricato è 
 
 Prima del concerto, nel Browser premi **Scarica tutta la scaletta**: i media finiscono nella cartella media
 del computer e l'app suona senza rete. Lo stato di ogni brano è visibile accanto al titolo.
+
+Se carichi un brano che non è ancora sul computer, l'app lo scarica in quel momento: nella barra in alto compare
+una barra di avanzamento con la percentuale, che sparisce appena il brano è pronto.
 
 La cartella media si cambia da **Impostazioni › Generale › Posizione**: l'app sposta i file esistenti e si
 ricarica.
@@ -109,6 +118,7 @@ ricarica.
 | **Home** | inizio del brano |
 | **C** | click acceso / spento |
 | **Ctrl+1 / 2 / 3** | pagina Live / Scaletta / Brani |
+| **Ctrl+Alt+L / E / R** | apre o chiude Browser / Dettaglio / ispettore |
 | **Ctrl+,** | Impostazioni |
 | **F1** | Questo manuale (anche dal pulsante **?** in alto) |
 

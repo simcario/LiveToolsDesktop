@@ -10,7 +10,7 @@ import { dbToGain, engine, engineStatus, onSongEnded } from './engine';
 import { driveStage } from './data';
 import { editDraft } from './drafts';
 import { liveCueLocal, liveCuePlan, makeLiveCues } from './cueTrack';
-import { ensureFile, requestPeaks } from './mediaCache';
+import { ensureFile, missingFiles, requestPeaks } from './mediaCache';
 import { clickVoice, getMix, setMix } from './settings';
 import { GRID_KEY } from './arrange';
 import { analyze, getSyncChoice, rangeKey, resolveSource, setSyncChoice, syncSpec } from './sync';
@@ -95,6 +95,7 @@ const refRegions = (item, sync) => {
 export function usePlayer({ user, setlist, items, settings, canDrive, notify }) {
   const [loaded, setLoaded] = useState(null); // { itemId, duration, tempo, tracks: [{ stem, local, info, error }], video }
   const [busy, setBusy] = useState(null);
+  const [downloading, setDownloading] = useState(null); // files of the song being loaded, not on disk yet
   const [solos, setSolos] = useState({});
   const [leftOut, setLeftOut] = useState({}); // rehearsal group → true
   const token = useRef(0);
@@ -111,9 +112,15 @@ export function usePlayer({ user, setlist, items, settings, canDrive, notify }) 
       const stems = stemsOf(item).filter((s) => s.id !== cuePlan?.skip);
       const video = videoOf(item);
       try {
-        if (stems.length || video) setBusy(`Preparo “${item.title}”…`);
+        const toFetch = missingFiles([...stems, ...(video ? [video] : [])].map((m) => ({ path: m.path, size: m.size })));
+        setDownloading(toFetch.length ? toFetch : null);
+        if (stems.length || video) setBusy(`${toFetch.length ? 'Scarico' : 'Preparo'} “${item.title}”…`);
         const locals = await Promise.all(stems.map((s) => ensureFile({ path: s.path, size: s.size })));
         const videoLocal = video ? await ensureFile({ path: video.path, size: video.size }) : null;
+        if (t === token.current && toFetch.length) {
+          setDownloading(null);
+          setBusy(`Preparo “${item.title}”…`);
+        }
         let cueLocal = cuePlan ? await liveCueLocal(cuePlan).catch(() => null) : null;
         if (t !== token.current) return;
         const available = stems.map((stem, i) => ({ stem, local: locals[i] })).filter((x) => x.local);
@@ -168,7 +175,10 @@ export function usePlayer({ user, setlist, items, settings, canDrive, notify }) 
       } catch (e) {
         notify(`Caricamento non riuscito: ${e?.message || e}`, true);
       } finally {
-        if (t === token.current) setBusy(null);
+        if (t === token.current) {
+          setBusy(null);
+          setDownloading(null);
+        }
       }
     },
     [notify],
@@ -447,6 +457,7 @@ export function usePlayer({ user, setlist, items, settings, canDrive, notify }) 
     loaded,
     loadedItem,
     busy,
+    downloading,
     solos,
     leftOut,
     toggleGroup,

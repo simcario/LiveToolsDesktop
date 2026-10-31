@@ -54,6 +54,8 @@
   --ruler-h: 30px;
   --headers-w: 250px;
   --browser-w: 270px;
+  --detail-h: 230px;
+  --inspector-w: 400px;
 
   color-scheme: dark;
 }
@@ -315,8 +317,69 @@ input[type='range'].slider:hover::-webkit-slider-thumb {
 .app {
   display: grid;
   grid-template-rows: var(--transport-h) minmax(0, 1fr) auto var(--status-h);
-  grid-template-columns: var(--browser-w) minmax(0, 1fr);
+  grid-template-columns: min(var(--browser-w), 40vw) minmax(0, 1fr);
   height: 100%;
+}
+/* Zones (components/Zones.jsx): closed ones stay mounted when they hold a draft */
+.app.zone-left-closed {
+  grid-template-columns: 0 minmax(0, 1fr);
+}
+.app.zone-left-closed .browser,
+.app.zone-right-closed .se-inspector {
+  display: none;
+}
+.app.zone-right-closed .se-main {
+  grid-template-columns: minmax(0, 1fr);
+}
+.zone-resizer {
+  position: relative;
+  z-index: 10;
+  touch-action: none;
+}
+.zone-resizer::after {
+  content: '';
+  position: absolute;
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity var(--t-fast, 120ms) ease;
+}
+.zone-resizer:hover::after,
+.zone-resizer:active::after {
+  opacity: 1;
+}
+.zone-resizer-left,
+.zone-resizer-right {
+  width: 6px;
+  justify-self: start;
+  cursor: col-resize;
+}
+.zone-resizer-left::after,
+.zone-resizer-right::after {
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 2px;
+}
+.zone-resizer-left {
+  grid-column: 2;
+  grid-row: 2 / 4;
+}
+.zone-resizer-right {
+  grid-column: 2;
+  grid-row: 1;
+}
+.zone-resizer-lower {
+  grid-column: 2;
+  grid-row: 3;
+  height: 6px;
+  align-self: start;
+  cursor: row-resize;
+}
+.zone-resizer-lower::after {
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 2px;
 }
 .app::before {
   content: '';
@@ -474,6 +537,21 @@ input[type='range'].slider:hover::-webkit-slider-thumb {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.t-download {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.t-download > .ellipsis {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.t-download .bar-progress {
+  flex: 1 0 60px;
+  max-width: 220px;
+  display: block;
 }
 .view-switch {
   display: inline-flex;
@@ -1162,7 +1240,7 @@ input.fader:hover::-webkit-slider-thumb {
 .detail {
   grid-row: 3;
   grid-column: 2;
-  height: 230px;
+  height: min(var(--detail-h), 60vh);
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) 340px;
   border-top: 1px solid var(--border-strong);
@@ -1933,9 +2011,11 @@ select.select:disabled {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(360px, 34%);
+  grid-template-columns: minmax(0, 1fr) min(var(--inspector-w), 60vw);
 }
 .se-list-wrap {
+  grid-column: 1;
+  grid-row: 1;
   min-width: 0;
   min-height: 0;
   display: flex;
@@ -1981,11 +2061,14 @@ select.select:disabled {
   min-height: 34px;
   background: rgba(139, 92, 246, 0.06);
 }
-.se-row.is-dragging {
+.se-row.is-dragging,
+.md-row.is-dragging {
   opacity: 0.45;
 }
 .se-row.drop-before::before,
-.se-row.drop-after::after {
+.se-row.drop-after::after,
+.md-row.drop-before::before,
+.md-row.drop-after::after {
   content: '';
   position: absolute;
   left: 0;
@@ -1994,10 +2077,12 @@ select.select:disabled {
   background: var(--accent);
   box-shadow: var(--glow-accent);
 }
-.se-row.drop-before::before {
+.se-row.drop-before::before,
+.md-row.drop-before::before {
   top: -1px;
 }
-.se-row.drop-after::after {
+.se-row.drop-after::after,
+.md-row.drop-after::after {
   bottom: -1px;
 }
 .se-lead {
@@ -2017,7 +2102,8 @@ select.select:disabled {
 .se-grip:hover {
   color: var(--text);
 }
-.se-row.is-dragging .se-grip {
+.se-row.is-dragging .se-grip,
+.md-row.is-dragging .se-grip {
   cursor: grabbing;
 }
 .se-num {
@@ -2096,6 +2182,8 @@ select.select:disabled {
 
 /* Inspector */
 .se-inspector {
+  grid-column: 2;
+  grid-row: 1;
   min-width: 0;
   min-height: 0;
   display: flex;
@@ -2260,8 +2348,12 @@ textarea.se-fill {
   text-transform: none;
   letter-spacing: 0;
 }
+.md-stems {
+  display: contents;
+}
 .md-row {
   --role-color: #f59e0b;
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;

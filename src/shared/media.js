@@ -133,14 +133,6 @@ export function rehearsalGroups(item) {
   return [...Object.keys(INSTRUMENTS), 'click', 'guide'].filter((k) => present.has(k));
 }
 
-// "03 Amazing Grace - Rehearsal senza Basso.wav"
-export function rehearsalFileName(item, left, number) {
-  const title = (item.title || 'Brano').replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim();
-  const num = number ? `${String(number).padStart(2, '0')} ` : '';
-  const without = left.length ? ` senza ${left.map(groupLabel).join(', ')}` : '';
-  return `${num}${title} - Rehearsal${without}.wav`;
-}
-
 export const stemsOf = (item) => (Array.isArray(item?.stems) ? item.stems : []);
 export const videoOf = (item) => (item?.video?.path ? item.video : null);
 

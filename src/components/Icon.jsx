@@ -137,6 +137,18 @@ const PATHS = {
       <path d="M3 15h18" />
     </>
   ),
+  'panel-left': (
+    <>
+      <rect width="18" height="18" x="3" y="3" rx="2" />
+      <path d="M9 3v18" />
+    </>
+  ),
+  'panel-right': (
+    <>
+      <rect width="18" height="18" x="3" y="3" rx="2" />
+      <path d="M15 3v18" />
+    </>
+  ),
   lyrics: (
     <>
       <path d="M17 6H3" />

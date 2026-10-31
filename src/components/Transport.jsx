@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { changeTempo } from '../lib/arrange';
 import { formatTime, useEngineStatus } from '../lib/engine';
+import { downloadProgress, useMediaCache } from '../lib/mediaCache';
 import { keyLabel } from '../shared/music.js';
 import { TIME_SIGNATURES } from '../shared/setlists.js';
 import Icon from './Icon';
+import { ZoneToggles } from './Zones';
 
 function Lcd() {
   const bar = useEngineStatus((s) => s.bar);
@@ -63,7 +65,22 @@ function BpmField({ bpm, disabled, onChange }) {
   );
 }
 
-export default function Transport({ user, item, player, settings, update, canDrive, canEdit, notify, device, onSettings, onPrefs, onHelp, onSignOut, liveOn, showViews = true }) {
+// First load of a song: progress of the files it still has to download.
+function DownloadBar({ label, files }) {
+  const cache = useMediaCache();
+  const percent = Math.round(downloadProgress(files, cache) * 100);
+  return (
+    <span className="t-download" role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}>
+      <span className="small muted ellipsis">{label}</span>
+      <span className="bar-progress">
+        <span style={{ width: `${percent}%` }} />
+      </span>
+      <span className="small mono">{percent}%</span>
+    </span>
+  );
+}
+
+export default function Transport({ user, item, player, settings, update, canDrive, canEdit, notify, device, onSettings, onPrefs, onHelp, onSignOut, liveOn, page, showViews = true }) {
   const playing = useEngineStatus((s) => s.playing);
   const waiting = useEngineStatus((s) => s.waiting);
   const loaded = player.loaded;
@@ -156,7 +173,11 @@ export default function Transport({ user, item, player, settings, update, canDri
 
       <div className="now-playing">
         <strong>{loaded ? item?.title || '—' : 'Nessun brano caricato'}</strong>
-        <span className="small muted ellipsis">{player.busy || item?.artist || ' '}</span>
+        {player.downloading ? (
+          <DownloadBar label={player.busy} files={player.downloading} />
+        ) : (
+          <span className="small muted ellipsis">{player.busy || item?.artist || ' '}</span>
+        )}
       </div>
 
       <div className="t-group">
@@ -198,6 +219,8 @@ export default function Transport({ user, item, player, settings, update, canDri
           </button>
         </div>
       )}
+
+      <ZoneToggles page={page} />
 
       <button className="device-chip" onClick={onSettings} title="Scheda audio e matrice uscite">
         <span className={`dot ${device?.error ? 'err' : device ? 'ok' : 'warn'}`} />

@@ -82,8 +82,24 @@ export function ensureFile(entry) {
     });
     pump();
   });
-  set(entry.path, { promise });
+  set(entry.path, { promise, error: null, received: 0 });
   return promise;
+}
+
+/** The files not on disk yet, among [{ path, size }]. */
+export const missingFiles = (files) => files.filter((f) => !state[f.path]?.ready);
+
+/** How much of these files is done, 0..1, weighted by size (failed ones count as done). */
+export function downloadProgress(files, cache = state) {
+  let done = 0;
+  let total = 0;
+  files.forEach((f) => {
+    const c = cache[f.path] || {};
+    const size = f.size || c.total || 1;
+    total += size;
+    done += c.ready || c.error ? size : Math.min(c.received || 0, size);
+  });
+  return total ? done / total : 0;
 }
 
 const CHUNK = 8 * 1024 * 1024;

@@ -32,7 +32,12 @@ export const DEFAULT_SETTINGS = {
   view: 'session',
   setlistId: null,
   pxPerSec: 40,
-  detailOpen: true,
+  // Zones around the main view: open or closed and size in px (see components/Zones.jsx).
+  zones: {
+    left: { open: true, size: 270 },
+    lower: { open: true, size: 230 },
+    right: { open: true, size: 400 },
+  },
   prompterLead: 0,
   prompterNext: true,
   updateCheck: true, // look for a new release at startup (never installs on its own)
@@ -63,8 +68,15 @@ function merge(saved) {
     outputs: { ...DEFAULT_SETTINGS.outputs, ...(saved?.outputs || {}) },
     click: { ...DEFAULT_SETTINGS.click, ...(saved?.click || {}) },
     pedal: pedalOf(saved?.pedal),
+    zones: {
+      left: { ...DEFAULT_SETTINGS.zones.left, ...(saved?.zones?.left || {}) },
+      lower: { ...DEFAULT_SETTINGS.zones.lower, ...(saved?.zones?.lower || {}) },
+      right: { ...DEFAULT_SETTINGS.zones.right, ...(saved?.zones?.right || {}) },
+    },
   };
 }
+
+export const toggleZone = (s, zone) => ({ zones: { ...s.zones, [zone]: { ...s.zones[zone], open: !s.zones[zone].open } } });
 
 let settings = merge(read(KEY, {}));
 let mix = read(MIX_KEY, {});

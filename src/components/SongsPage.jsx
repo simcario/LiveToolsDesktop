@@ -17,6 +17,7 @@ import { useAccess } from '../lib/data';
 import { db, storage } from '../lib/firebase';
 import Icon from './Icon';
 import { SongInspector } from './SetlistEditor';
+import { ZoneResizer } from './Zones';
 
 // "Brani" page: the song library shared with the web app. Songs are edited
 // with the same inspector as the setlist page; their stems and video belong
@@ -258,6 +259,7 @@ export default function SongsPage({ user, setlists, setlist, setlistItems, canEd
             notify={notify}
           />
         )}
+        <ZoneResizer zone="right" />
       </div>
     </div>
   );

@@ -26,6 +26,7 @@ import { createSong, itemFromSong, updateSong, useLibrary } from '../shared/song
 import { useAccess } from '../lib/data';
 import { db, storage } from '../lib/firebase';
 import Icon from './Icon';
+import { ZoneResizer } from './Zones';
 import MediaFields from './MediaFields';
 
 // Setlist page: the same editing as the web app (songs and blocks, order,
@@ -770,7 +771,7 @@ export default function SetlistEditor({ user, setlist, items, itemDocs, numbers,
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  const grid = { gridTemplateColumns: `52px minmax(180px, 1fr) 64px 84px 56px ${tableCols.map(() => 'minmax(70px, 120px)').join(' ')} ${canEdit ? '76px' : ''}` };
+  const grid = { gridTemplateColumns: `52px minmax(180px, 1fr) 64px 84px 56px ${tableCols.map(() => 'minmax(70px, 120px)').join(' ')} ${canEdit ? '28px' : ''}` };
   const dropClass = (i) => {
     if (!drag || drag.before === drag.from || drag.before === drag.from + 1) return '';
     if (drag.before === i) return 'drop-before';
@@ -812,12 +813,6 @@ export default function SetlistEditor({ user, setlist, items, itemDocs, numbers,
               const cls = `se-row ${sep ? 'is-sep' : ''} ${it.id === editId ? 'is-selected' : ''} ${drag?.from === i ? 'is-dragging' : ''} ${dropClass(i)}`;
               const actions = canEdit && (
                 <span className="se-actions">
-                  <button className="toggle" disabled={i === 0} onClick={(e) => (e.stopPropagation(), reorder(i, i - 1))} title="Sposta su">
-                    <Icon name="chevron-up" size={11} />
-                  </button>
-                  <button className="toggle" disabled={i === items.length - 1} onClick={(e) => (e.stopPropagation(), reorder(i, i + 1))} title="Sposta giù">
-                    <Icon name="chevron-down" size={11} />
-                  </button>
                   <button className="toggle" onClick={(e) => (e.stopPropagation(), removeItem(it))} title="Elimina">
                     <Icon name="x" size={11} />
                   </button>
@@ -908,6 +903,7 @@ export default function SetlistEditor({ user, setlist, items, itemDocs, numbers,
             onOpenPrompter={() => onOpenPrompter(editing.id)}
           />
         )}
+        <ZoneResizer zone="right" />
       </div>
     </div>
   );

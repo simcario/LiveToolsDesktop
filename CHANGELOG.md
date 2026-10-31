@@ -12,6 +12,14 @@ versioni [SemVer](https://semver.org/lang/it/). Procedura di rilascio: [docs/REL
 - Pedale collegato mostrato nella vista; **Impostazioni › Pedale & spartito** con elenco dei dispositivi
   Bluetooth collegati, prova del pedale e apprendimento dei tasti.
 
+### Player
+- Al primo caricamento di un brano, barra di download con percentuale nella barra in alto.
+
+### Interfaccia
+- Browser, Dettaglio e ispettore si ridimensionano trascinando il bordo e si chiudono dalla Control bar o con
+  Ctrl+Alt+L / E / R.
+- Tracce del brano e scaletta si riordinano solo trascinando la maniglia: tolti i pulsanti su/giù.
+
 ### Audio
 - Driver ASIO selezionabili in *Audio & uscite*, solo nelle build con la feature `asio` (non ancora negli
   installer pubblicati, vedi README).
