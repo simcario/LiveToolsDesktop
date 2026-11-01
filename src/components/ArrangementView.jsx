@@ -12,7 +12,7 @@ import SyncControl from './SyncControl';
 import { CueHeader, cueCellAt, drawCueLane, useCueTrack, useNowCue } from './CueLane';
 import { CuePicker } from './CuePicker';
 import InsertBarsModal from './InsertBarsModal';
-import { cutAt, keepGrid, moveSegment, removeSegment, segmentEnd, segmentIndexAt, snapToBeat, stemRegions, toggleSegmentMute, trimSegment } from '../lib/arrange';
+import { closeLeadingGap, cutAt, keepGrid, moveSegment, removeSegment, segmentEnd, segmentIndexAt, snapToBeat, stemRegions, toggleSegmentMute, trimSegment } from '../lib/arrange';
 import { clearHistory, recordStep, travel, useHistory } from '../lib/arrangeHistory';
 import { discardDraft, editDraft, saveDraft, useDrafts } from '../lib/drafts';
 import { regionsOf, stemsOf } from '../shared/media.js';
@@ -642,11 +642,36 @@ export default function ArrangementView({ player, item, lanes, settings, update,
   const commitRegions = (stem, regions, label) => {
     let all = { ...regionsOf(song), [stem.id]: regions };
     if (stem.id === loaded?.sync?.source?.id) all = keepGrid(all, stemRegions(song, stem.id), stem.id);
+    const closed = closeLeadingGap(song, all);
+    if (closed) {
+      writeClosedGap(closed, label);
+      notify(`${label}: tolti ${closed.gap.toFixed(1)} s vuoti all’inizio`);
+      return;
+    }
     editDraft(song.id, { media: { regions: all } });
     recordStep(song.id, { label, before: { media: { regions: song.regions ?? null }, item: {} }, after: { media: { regions: all }, item: {} } });
     player.applyRegions({ ...song, regions: all }, { [stem.id]: regions });
     notify(label);
   };
+
+  // The song without its empty start: into the draft, undoable; the grid moved too, so it reloads.
+  const writeClosedGap = ({ media, fields }, label) => {
+    const before = (o) => Object.fromEntries(Object.keys(o).map((k) => [k, song[k] ?? null]));
+    editDraft(song.id, { media, item: fields });
+    recordStep(song.id, { label, reload: true, before: { media: before(media), item: before(fields) }, after: { media, item: fields } });
+    player.reload();
+  };
+
+  // Songs saved with an empty start: once per session, so undo and "Scarta" stay final.
+  const gapChecked = useRef(new Set());
+  useEffect(() => {
+    if (!song || !canEditSong || loaded?.itemId !== song.id || gapChecked.current.has(song.id)) return;
+    gapChecked.current.add(song.id);
+    const closed = closeLeadingGap(song);
+    if (!closed) return;
+    writeClosedGap(closed, 'Tolto il vuoto all’inizio');
+    notify(`Tolti ${closed.gap.toFixed(1)} s vuoti all’inizio di “${song.title}”: “Salva” per tenerlo, Ctrl+Z per annullare`);
+  });
 
   const selectedStem = selection && stemsOf(song).find((s) => s.id === selection.stemId);
 

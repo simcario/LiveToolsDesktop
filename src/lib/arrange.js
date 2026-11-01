@@ -22,11 +22,58 @@ export function keepGrid(all, before, stemId) {
   return { ...all, [GRID_KEY]: { stemId, regions: before } };
 }
 
+// regions._lead = seconds of empty bars asked for at the very start ("Aggiungi
+// → Battute…"): the only silence a song may start with. Not a stem either.
+export const LEAD_KEY = '_lead';
+
 /** Regions of a stem (the whole file from 0 when it was never moved). */
 export const stemRegions = (item, stemId) => {
   const r = regionsOf(item)[stemId];
   return Array.isArray(r) && r.length ? r : WHOLE;
 };
+
+// Where the first segment of the song starts. The rendered "Cues" file has no
+// say: it follows the song.
+function firstStart(item, all) {
+  const starts = stemsOf(item)
+    .filter((s) => s.generated !== 'cues')
+    .flatMap((s) => stemRegions({ regions: all }, s.id).filter((g) => g.len == null || g.len > 0).map((g) => g.at));
+  return starts.length ? Math.min(...starts) : 0;
+}
+
+// Less than this is a track aligned by hand, not an empty bar.
+const MIN_GAP = 0.5;
+
+/**
+ * The song must start with its first segment, unless empty bars were asked for
+ * (LEAD_KEY). With silence left before it (every track moved or trimmed later),
+ * the whole song moves back: tracks, grid, gobbo changes and video, so they
+ * stay aligned to each other. Cues follow the grid (they are in beats).
+ * Resolves to the fields to write, { gap, media, fields }, or null without a gap.
+ */
+export function closeLeadingGap(item, all = regionsOf(item)) {
+  const gap = firstStart(item, all) - (Number(all[LEAD_KEY]) || 0);
+  if (gap < MIN_GAP) return null;
+  const earlier = (g) => {
+    const at = r4(g.at - gap);
+    return at >= 0 ? { ...g, at } : { ...g, at: 0, from: r4((g.from || 0) - at), len: g.len == null ? null : r4(Math.max(0, g.len + at)) };
+  };
+  const regions = { ...all };
+  stemsOf(item).forEach((s) => {
+    regions[s.id] = stemRegions({ regions: all }, s.id).map(earlier);
+  });
+  // The pinned reference may go below 0: it only tells where the grid falls.
+  if (all[GRID_KEY]) regions[GRID_KEY] = { ...all[GRID_KEY], regions: all[GRID_KEY].regions.map((g) => ({ ...g, at: r4(g.at - gap) })) };
+  const media = { regions };
+  const video = videoOf(item);
+  if (video) media.video = { ...video, offset: r4((video.offset || 0) - gap) };
+  const fields = {};
+  const grid = gridOf(item);
+  if (grid.anchors.length) fields.grid = { ...item.grid, anchors: grid.anchors.map((a) => ({ ...a, t: r4(a.t - gap) })) };
+  if (item.prompter?.cues?.length) fields.prompter = { ...item.prompter, cues: item.prompter.cues.map((c) => ({ ...c, t: Math.max(0, r4(c.t - gap)) })) };
+  if (item.duration) fields.duration = Math.max(0, Math.round(item.duration - gap));
+  return { gap, media, fields };
+}
 
 export const moveRegions = (regions, delta) => regions.map((r) => ({ ...r, at: Math.round((r.at + delta) * 1e4) / 1e4 }));
 
@@ -94,6 +141,8 @@ export async function insertBars({ item, tempo, position, n }) {
     regions[s.id] = insertGap(stemRegions(item, s.id), p, d);
   });
   if (regions[GRID_KEY]) regions[GRID_KEY] = { ...regions[GRID_KEY], regions: insertGap(regions[GRID_KEY].regions, p, d) };
+  // Before everything: this silence was asked for, closeLeadingGap leaves it.
+  if (p <= firstStart(item, regionsOf(item)) + 1e-3) regions[LEAD_KEY] = (Number(regions[LEAD_KEY]) || 0) + d;
   const media = { regions };
   if (item.cueTrack) {
     const sheet = cueTrackOf(item);

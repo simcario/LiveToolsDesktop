@@ -28,6 +28,9 @@ versioni [SemVer](https://semver.org/lang/it/). Procedura di rilascio: [docs/REL
 - Arrangement: con lo strumento **Sposta**, afferrare una clip vicino a un bordo la accorciava invece di
   spostarla: compariva spazio vuoto all'inizio e l'audio restava fuori griglia. Ora Sposta muove sempre la clip
   intera; i bordi si accorciano solo con **Selezione**.
+- Arrangement: spostando o accorciando tutte le tracce restava un vuoto all'inizio del brano. Ora il brano parte dal
+  suo primo audio; le battute vuote iniziali restano solo se inserite con *Aggiungi → Battute…*. I brani già salvati
+  con un vuoto vengono corretti all'apertura nell'Arrangement, come modifica da salvare.
 - Eliminazione di tracce, sequenze, video, spartiti e brani: il file viene cancellato prima dallo storage cloud e
   solo dopo tolto dall'elenco. Se lo storage rifiuta l'operazione compare un errore e l'elemento resta in elenco,
   così si può riprovare; prima il file restava nel cloud senza più riferimenti. La conferma dice cosa succede ai

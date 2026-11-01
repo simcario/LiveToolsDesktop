@@ -225,6 +225,12 @@ Altre azioni: **Ctrl+E** taglia la traccia selezionata alla testina, **Canc** el
 **Aggiungi → Battute…** inserisce battute vuote alla battuta della testina: sposta in avanti stem, cue,
 ancoraggi della griglia, cambi del gobbo e sezioni.
 
+Dalla prossima versione un brano parte sempre dal suo primo audio: se tutte le tracce finiscono più avanti (per
+esempio trascinate sul "1" della griglia), il vuoto iniziale viene tolto e il brano si sposta indietro con griglia,
+gobbo e video. Battute vuote all'inizio restano solo se le inserisci con *Aggiungi → Battute…*. Vale anche per i
+brani già salvati con un vuoto: all'apertura nell'Arrangement la correzione è *Non salvata*, quindi la tieni con
+**Salva** o la annulli con **Ctrl+Z**.
+
 I file audio non vengono mai riscritti: l'app salva solo dove suonare ogni pezzo. Il video si sposta solo se
 il taglio è prima del suo inizio.
 
