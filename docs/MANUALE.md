@@ -86,6 +86,11 @@ pulsante. Per ogni stem scegli:
 
 Se le righe sono strette, allarga l'ispettore trascinandone il bordo.
 
+Eliminare una traccia, l'intera sequenza, il video o lo spartito chiede sempre conferma e cancella il file
+anche dallo storage cloud, per tutta la band. Fanno eccezione i file di una scaletta duplicata, che
+appartengono all'originale e restano nello storage. La copia già scaricata su questo computer resta nella
+cartella media.
+
 Per il video: un file per brano, con **offset** rispetto all'audio. Formati audio letti: wav, aiff, flac,
 mp3, ogg, m4a/aac, alac. Il video è muto (la colonna sonora sta negli stem).
 

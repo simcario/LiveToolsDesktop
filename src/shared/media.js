@@ -257,14 +257,32 @@ export async function deleteMediaFile(storage, path, owner) {
 export const mediaPaths = (song) =>
   [...stemsOf(song).map((s) => s.path), videoOf(song)?.path, song?.score?.path].filter(Boolean);
 
-// Best effort: the list is already saved without them.
-const deleteFiles = (storage, paths, owner) =>
-  Promise.all(paths.map((p) => deleteMediaFile(storage, p, owner).catch(() => {})));
+// For the confirmation of a deletion: what happens to these files in the cloud.
+export function deletionNote(target, paths) {
+  const owned = paths.filter((p) => ownsMedia(target, p)).length;
+  const everywhere = target.songId ? ' e da tutte le scalette che usano il brano' : '';
+  const gone = owned === 1 ? `Il file viene eliminato definitivamente dallo storage cloud${everywhere}.` : `I ${owned} file vengono eliminati definitivamente dallo storage cloud${everywhere}.`;
+  const kept = paths.length - owned;
+  return [owned > 0 && gone, kept > 0 && `${kept === 1 ? 'Un file resta' : `${kept} file restano`} nello storage perché ${kept === 1 ? 'appartiene' : 'appartengono'} alla scaletta da cui questa è stata duplicata.`]
+    .filter(Boolean)
+    .join(' ');
+}
 
-/** Deletes the whole sequence of a song: every stem leaves the song and Storage. */
+const notDeleted = (failed) => new Error(`${failed.length} file non eliminati dallo storage cloud: ${failed[0].reason?.message || failed[0].reason}`);
+
+// Every file is attempted. A failure rejects, so the caller keeps the reference
+// and the deletion can be retried instead of leaving the file orphaned.
+async function deleteFiles(storage, paths, owner) {
+  const failed = (await Promise.allSettled(paths.map((p) => deleteMediaFile(storage, p, owner)))).filter((r) => r.status === 'rejected');
+  if (failed.length) throw notDeleted(failed);
+}
+
+/** Deletes the whole sequence of a song: every stem leaves Storage and the song; a stem whose file can't be deleted stays listed. */
 export async function deleteAllStems(db, storage, target, stems) {
-  await saveStems(db, target, []);
-  await deleteFiles(storage, stems.map((s) => s.path).filter(Boolean), target);
+  const results = await Promise.allSettled(stems.map((s) => deleteMediaFile(storage, s.path, target)));
+  await saveStems(db, target, stems.filter((_, i) => results[i].status === 'rejected'));
+  const failed = results.filter((r) => r.status === 'rejected');
+  if (failed.length) throw notDeleted(failed);
 }
 
 // Every file of a library song, before deleting the song itself.

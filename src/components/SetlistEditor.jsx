@@ -20,7 +20,7 @@ import {
   totalDuration,
 } from '../shared/setlists.js';
 import { chartLyricBlocks, KEYS, lyricBlocksText, plainLyricBlocks } from '../shared/music.js';
-import { deleteItemMedia, stemsOf, videoOf } from '../shared/media.js';
+import { deleteItemMedia, deletionNote, mediaPaths, mediaTarget, stemsOf, videoOf } from '../shared/media.js';
 import { autoSnapshot, logChange } from '../shared/history.js';
 import { createSong, itemFromSong, updateSong, useLibrary } from '../shared/songs.js';
 import { useAccess } from '../lib/data';
@@ -706,17 +706,20 @@ export default function SetlistEditor({ user, setlist, items, itemDocs, numbers,
 
   const removeItem = (item) => {
     const note = item.songId
-      ? ' Il brano resta nella libreria Brani con le sue tracce: per cancellarle eliminalo da lì.'
-      : stemsOf(item).length || videoOf(item)
-        ? ' Verranno eliminati anche tracce e video dallo storage.'
-        : '';
-    if (!confirm(`Eliminare “${item.title}” dalla scaletta?${note}`)) return;
+      ? 'Il brano resta nella libreria Brani con le sue tracce: per cancellarle eliminalo da lì.'
+      : deletionNote(mediaTarget(setlistId, item), mediaPaths(item));
+    if (!confirm(`Eliminare “${item.title}” dalla scaletta? ${note}`)) return;
     deleting.current.add(item.id);
     if (item.id === editId) setEditId(null);
     safely(async () => {
-      track(`Eliminato “${item.title}”`);
-      await deleteDoc(itemRef(item.id));
-      deleteItemMedia(storage, setlistId, item);
+      try {
+        await deleteItemMedia(storage, setlistId, item);
+        track(`Eliminato “${item.title}”`);
+        await deleteDoc(itemRef(item.id));
+      } catch (e) {
+        deleting.current.delete(item.id);
+        throw e;
+      }
     });
   };
 

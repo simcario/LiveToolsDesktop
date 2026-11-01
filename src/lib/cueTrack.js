@@ -207,6 +207,6 @@ export async function makeLiveCues(plan, tempo, duration) {
 export async function removeRenderedCues(setlistId, item) {
   const target = mediaTarget(setlistId, item);
   const old = stemsOf(item).filter((s) => s.generated === 'cues');
+  await Promise.all(old.map((s) => deleteMediaFile(storage, s.path, target)));
   await saveStems(db, target, stemsOf(item).filter((s) => s.generated !== 'cues'));
-  await Promise.all(old.map((s) => deleteMediaFile(storage, s.path, target).catch(() => {})));
 }

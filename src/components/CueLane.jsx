@@ -60,7 +60,7 @@ export function useCueTrack({ player, setlistId, canEdit: canEditSetlist, notify
   const save = (list) => write({ ...sheet, cues: [...list].sort((a, b) => a.g - b.g) });
   const add = () => write({ resolution: 4, cues: [], renderedKey: null }, 'Traccia cue aggiunta');
   const remove = async () => {
-    const what = [cues.length && `le ${cues.length} cue`, rendered && 'il file audio “Cues”'].filter(Boolean).join(' e ');
+    const what = [cues.length && `le ${cues.length} cue`, rendered && 'il file audio “Cues” (anche dallo storage cloud)'].filter(Boolean).join(' e ');
     if (!confirm(`Rimuovere la traccia cue di “${item.title}”?${what ? ` Vengono eliminati ${what}.` : ''}`)) return;
     try {
       if (rendered) await removeRenderedCues(setlistId, item);
@@ -108,7 +108,7 @@ export function useCueTrack({ player, setlistId, canEdit: canEditSetlist, notify
     }
   };
   const removeFile = async () => {
-    if (!confirm(`Eliminare il file audio “Cues” di “${item.title}”? Le cue restano: sul desktop si sentono come traccia live, sul web non più.`)) return;
+    if (!confirm(`Eliminare il file audio “Cues” di “${item.title}”, anche dallo storage cloud? Le cue restano: sul desktop si sentono come traccia live, sul web non più.`)) return;
     try {
       setBusy('Eliminazione…');
       await removeRenderedCues(setlistId, item);

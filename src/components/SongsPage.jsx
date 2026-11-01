@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { addDoc, collection, doc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { formatDuration, getRole, PLAYBACK_TYPES, ROLE_LABELS } from '../shared/setlists.js';
-import { formatBytes, stemsOf, videoOf } from '../shared/media.js';
+import { deletionNote, formatBytes, mediaPaths, stemsOf, videoOf } from '../shared/media.js';
 import {
   canEditSong,
   canManageSong,
@@ -71,14 +71,14 @@ export default function SongsPage({ user, setlists, setlist, setlistItems, canEd
       .catch(fail);
 
   const remove = async (song) => {
-    const media = stemsOf(song).length || videoOf(song);
-    if (!confirm(`Eliminare definitivamente “${song.title}” dalla libreria?${media ? ' Tracce e video vengono cancellati dallo storage, anche nelle scalette che usano il brano.' : ''}`)) return;
+    if (!confirm(`Eliminare definitivamente “${song.title}” dalla libreria? ${deletionNote({ songId: song.id }, mediaPaths(song))}`)) return;
     try {
       deleting.current.add(song.id);
       if (selectedId === song.id) setSelectedId(null);
       await deleteSong(storage, song);
       notify(`Eliminato “${song.title}” dalla libreria`);
     } catch (e) {
+      deleting.current.delete(song.id);
       fail(e);
     }
   };

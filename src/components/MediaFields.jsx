@@ -3,6 +3,7 @@ import {
   AUDIO_EXTENSIONS,
   deleteAllStems,
   deleteMediaFile,
+  deletionNote,
   formatBytes,
   instrumentOf,
   INSTRUMENTS,
@@ -181,7 +182,6 @@ export default function MediaFields({ setlistId, item, canEdit: canEditSetlist, 
   // Library media are changed by who can edit the song, not the setlist.
   const canEdit = canEditSetlist && item.songEditable !== false;
   const target = mediaTarget(setlistId, item);
-  const everywhere = item.songId ? 'dalla libreria e da tutte le scalette che usano il brano' : 'per tutti';
   const fail = (e) => notify(`Media non aggiornati: ${e.message || e}`, true);
 
   const score = scoreOf(item);
@@ -235,17 +235,17 @@ export default function MediaFields({ setlistId, item, canEdit: canEditSetlist, 
   };
 
   const removeStem = async (stem) => {
-    if (!confirm(`Eliminare la traccia “${stem.name}” di “${item.title}”? Il file viene eliminato ${everywhere}.`)) return;
+    if (!confirm(`Eliminare la traccia “${stem.name}” di “${item.title}”? ${deletionNote(target, [stem.path])}`)) return;
     try {
-      await saveStems(db, target, stems.filter((s) => s.id !== stem.id));
       await deleteMediaFile(storage, stem.path, target);
+      await saveStems(db, target, stems.filter((s) => s.id !== stem.id));
       onTrack(`Eliminata la traccia “${stem.name}” di “${item.title}”`);
     } catch (e) {
       fail(e);
     }
   };
   const removeSequence = async () => {
-    if (!confirm(`Eliminare l’intera sequenza di “${item.title}” (${stems.length} tracce)? I file vengono cancellati dallo storage ${everywhere}.`)) return;
+    if (!confirm(`Eliminare l’intera sequenza di “${item.title}” (${stems.length} tracce)? ${deletionNote(target, stems.map((s) => s.path))}`)) return;
     try {
       await deleteAllStems(db, storage, target, stems);
       onTrack(`Eliminata la sequenza di “${item.title}” (${stems.length} tracce)`);
@@ -254,10 +254,10 @@ export default function MediaFields({ setlistId, item, canEdit: canEditSetlist, 
     }
   };
   const removeVideo = async () => {
-    if (!confirm(`Eliminare il video di “${item.title}”? Il file viene eliminato ${everywhere}.`)) return;
+    if (!confirm(`Eliminare il video di “${item.title}”? ${deletionNote(target, [video.path])}`)) return;
     try {
-      await saveVideo(db, target, null);
       await deleteMediaFile(storage, video.path, target);
+      await saveVideo(db, target, null);
       onTrack(`Eliminato il video di “${item.title}”`);
     } catch (e) {
       fail(e);
@@ -265,10 +265,10 @@ export default function MediaFields({ setlistId, item, canEdit: canEditSetlist, 
   };
 
   const removeScore = async () => {
-    if (!confirm(`Eliminare lo spartito PDF di “${item.title}”? Il file viene eliminato ${everywhere}.`)) return;
+    if (!confirm(`Eliminare lo spartito PDF di “${item.title}”? ${deletionNote(target, [score.path])}`)) return;
     try {
-      await saveScore(db, target, null);
       await deleteMediaFile(storage, score.path, target);
+      await saveScore(db, target, null);
       onTrack(`Eliminato lo spartito di “${item.title}”`);
     } catch (e) {
       fail(e);

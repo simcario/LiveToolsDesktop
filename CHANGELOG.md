@@ -28,6 +28,10 @@ versioni [SemVer](https://semver.org/lang/it/). Procedura di rilascio: [docs/REL
 - Arrangement: con lo strumento **Sposta**, afferrare una clip vicino a un bordo la accorciava invece di
   spostarla: compariva spazio vuoto all'inizio e l'audio restava fuori griglia. Ora Sposta muove sempre la clip
   intera; i bordi si accorciano solo con **Selezione**.
+- Eliminazione di tracce, sequenze, video, spartiti e brani: il file viene cancellato prima dallo storage cloud e
+  solo dopo tolto dall'elenco. Se lo storage rifiuta l'operazione compare un errore e l'elemento resta in elenco,
+  così si può riprovare; prima il file restava nel cloud senza più riferimenti. La conferma dice cosa succede ai
+  file, compresi quelli di una scaletta duplicata che restano all'originale.
 
 ## [0.1.0] — 2026-10-28
 
