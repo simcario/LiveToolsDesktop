@@ -28,15 +28,28 @@ rand = "0.8"
 tauri-plugin-dialog = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+# NDI outputs: the NDI runtime is loaded when one is turned on, see ndi/sdk.rs.
+libloading = "0.8"
+# Key and tempo changed offline (MIT), vendored without bindgen: see vendor/signalsmith-stretch.
+signalsmith-stretch = { path = "vendor/signalsmith-stretch" }
 
 # ASIO needs the Steinberg SDK and libclang to build (scripts/asio.mjs), and before an installer
 # is published Steinberg's signed license or a GPLv3 release of the app: off by default.
 [features]
 asio = ["cpal/asio", "dep:asio-sys"]
 
-# Bluetooth devices connected (page-turner pedals), see bluetooth.rs.
+# Bluetooth devices connected (page-turner pedals), see bluetooth.rs; Media Foundation
+# decodes the video of the NDI output, see ndi/video.rs.
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.62", features = ["Devices_Bluetooth", "Devices_Enumeration", "Foundation_Collections"] }
+windows = { version = "0.62", features = [
+    "Devices_Bluetooth",
+    "Devices_Enumeration",
+    "Foundation_Collections",
+    "Win32_Media_MediaFoundation",
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_Variant",
+] }
 asio-sys = { version = "0.2", optional = true }
 
 # asio-sys 0.2.6 with one line changed in build.rs, so its bindings compile with MinGW.

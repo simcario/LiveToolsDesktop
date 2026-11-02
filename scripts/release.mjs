@@ -26,7 +26,16 @@ const PRODUCT = 'LiveTools';
 // The Visual Studio install on the dev PC can't link MSVC binaries: build with the GNU toolchain.
 const TOOLCHAIN = process.env.LIVETOOLS_TOOLCHAIN || 'stable-x86_64-pc-windows-gnu';
 const MINGW_BIN = join(homedir(), 'scoop', 'apps', 'mingw', 'current', 'bin');
-const VC_REDIST_URL = 'https://aka.ms/vs/17/release/vc_redist.x64.exe';
+// Prerequisites in the installer (src-tauri/windows/hooks.nsh), downloaded into windows/redist/
+// (not in the repo). The NDI runtime is Vizrt's redistributable: the NDI outputs need it.
+const REDIST = [
+  { file: 'vc_redist.x64.exe', name: 'Microsoft Visual C++ Redistributable (x64)', urls: ['https://aka.ms/vs/17/release/vc_redist.x64.exe'] },
+  {
+    file: 'NDI 6 Runtime.exe',
+    name: 'NDI 6 Runtime',
+    urls: ['https://ndi.link/NDIRedistV6', 'https://downloads.ndi.tv/SDK/NDI_SDK/NDI%206%20Runtime.exe'],
+  },
+];
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const tauriDir = join(root, 'src-tauri');
@@ -35,7 +44,7 @@ const paths = {
   pkg: join(root, 'package.json'),
   conf: join(tauriDir, 'tauri.conf.json'),
   cargo: join(tauriDir, 'Cargo.toml'),
-  redist: join(tauriDir, 'windows', 'redist', 'vc_redist.x64.exe'),
+  redist: join(tauriDir, 'windows', 'redist'),
   key: process.env.TAURI_SIGNING_PRIVATE_KEY_PATH || join(keyDir, 'livetools.key'),
   token: join(keyDir, 'github-token'),
 };
@@ -91,12 +100,23 @@ function setVersion(version) {
 // ---------- Build ----------
 
 async function fetchRedist() {
-  if (existsSync(paths.redist) && statSync(paths.redist).size > 1e6) return;
-  step('Download di Microsoft Visual C++ Redistributable (x64)');
-  const res = await fetch(VC_REDIST_URL);
-  if (!res.ok) fail(`Download vc_redist non riuscito: HTTP ${res.status}`);
-  mkdirSync(dirname(paths.redist), { recursive: true });
-  writeFileSync(paths.redist, Buffer.from(await res.arrayBuffer()));
+  for (const { file, name, urls } of REDIST) {
+    const dest = join(paths.redist, file);
+    if (existsSync(dest) && statSync(dest).size > 1e6) continue;
+    step(`Download di ${name}`);
+    let error = '';
+    for (const url of urls) {
+      const res = await fetch(url).catch((e) => ({ ok: false, status: e.message }));
+      if (!res.ok) {
+        error += `\n  ${url}: HTTP ${res.status}`;
+        continue;
+      }
+      mkdirSync(paths.redist, { recursive: true });
+      writeFileSync(dest, Buffer.from(await res.arrayBuffer()));
+      break;
+    }
+    if (!existsSync(dest)) fail(`Download di ${name} non riuscito:${error}\n  Mettilo a mano in ${dest}`);
+  }
 }
 
 function build(version) {

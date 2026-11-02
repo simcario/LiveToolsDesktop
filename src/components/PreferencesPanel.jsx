@@ -8,6 +8,7 @@ import { engine, engineStatus, useEngineStatus } from '../lib/engine';
 import { CLICK_KINDS, CLICK_SOUNDS, DEFAULT_KIND, DEFAULT_SETTINGS, clickKind } from '../lib/settings';
 import { checkForUpdates, installUpdate, useUpdater } from '../lib/updater';
 import { pedalDevice, useBluetoothDevices } from '../lib/pedal';
+import { defaultNdiName, useNdiStatus } from '../lib/ndi';
 import { DEFAULT_PEDAL, keyLabel, PEDAL_LAYOUTS, teachPedal, usePedalTest } from '../shared/score.js';
 import Icon from './Icon';
 
@@ -15,6 +16,7 @@ const SECTIONS = [
   { id: 'general', label: 'Generale', icon: 'settings' },
   { id: 'transport', label: 'Trasporto', icon: 'metronome' },
   { id: 'pedal', label: 'Pedale & spartito', icon: 'file-text' },
+  { id: 'ndi', label: 'Uscite NDI', icon: 'radio' },
   { id: 'updates', label: 'Aggiornamenti', icon: 'download' },
 ];
 
@@ -110,6 +112,27 @@ const SETTINGS = [
     description: 'Una pagina o due affiancate; “Automatico” ne mostra due quando la vista è più larga che alta (con due pagine il pedale gira di due).',
     keywords: 'pdf affiancate doppia pagina',
     Control: PedalLayout,
+  },
+  {
+    id: 'ndi.video',
+    section: 'ndi',
+    category: 'NDI',
+    title: 'Uscita video',
+    description:
+      'Manda in rete come sorgente NDI il video del brano nel player, a tempo con l’audio, anche con la finestra Uscita video chiusa: ' +
+      'la ricevono vMix, OBS, un mixer video o uno schermo NDI. Senza video l’uscita resta nera.',
+    keywords: 'ndi rete vmix obs regia proiettore streaming',
+    Control: NdiVideo,
+  },
+  {
+    id: 'ndi.prompter',
+    section: 'ndi',
+    category: 'NDI',
+    title: 'Uscita gobbo',
+    description:
+      'Manda in rete come sorgente NDI il gobbo (1920×1080), uguale alla finestra Gobbo: la slide del momento e, se attiva, la successiva.',
+    keywords: 'ndi rete testi slide prompter vmix obs',
+    Control: NdiPrompter,
   },
   {
     id: 'updates.version',
@@ -311,6 +334,51 @@ function MediaLocation({ onBusy, settings, update, ...item }) {
       {error && <p className="pref-error">{error}</p>}
     </PrefItem>
   );
+}
+
+// ---------- Uscite NDI ----------
+
+function NdiOutput({ kind, settings, update, onBusy, ...item }) {
+  const ndi = useNdiStatus();
+  const out = settings.ndi[kind];
+  const [draft, setDraft] = useState(out.name);
+  useEffect(() => setDraft(out.name), [out.name]);
+  const fallback = defaultNdiName(kind);
+  const set = (patch) => update((s) => ({ ndi: { ...s.ndi, [kind]: { ...s.ndi[kind], ...patch } } }));
+  // The source is renamed when the field is left, not at every key.
+  const commit = () => draft.trim() !== out.name && set({ name: draft.trim() });
+  const on = ndi[kind];
+
+  return (
+    <PrefItem {...item} modified={out.enabled || !!out.name} onReset={() => set({ ...D.ndi[kind] })}>
+      <label className="check">
+        <input type="checkbox" checked={out.enabled} onChange={(e) => set({ enabled: e.target.checked })} />
+        Attiva
+      </label>
+      <div className="pref-row">
+        <input
+          className="input"
+          value={draft}
+          placeholder={fallback}
+          spellCheck={false}
+          aria-label="Nome della sorgente NDI"
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+        />
+      </div>
+      {out.enabled && (on ? <span className="hint">In rete come “{out.name || fallback}”</span> : ndi.error && <p className="pref-error">{ndi.error}</p>)}
+    </PrefItem>
+  );
+}
+
+// Declarations, not consts: SETTINGS (above) uses them while the module loads.
+function NdiVideo(props) {
+  return <NdiOutput kind="video" {...props} />;
+}
+
+function NdiPrompter(props) {
+  return <NdiOutput kind="prompter" {...props} />;
 }
 
 // ---------- Aggiornamenti ----------

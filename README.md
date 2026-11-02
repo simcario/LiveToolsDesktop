@@ -11,6 +11,10 @@ Documentazione: [manuale d'uso](docs/MANUALE.md) · [come rilasciare una version
   (wav, aiff, flac, mp3, ogg, m4a/aac, alac), streaming da disco con ring buffer lock-free, resampling,
   mix sample-accurate, mute/solo/volume/pan, **routing per ruolo su uscite multicanale**, click generato
   dal motore con count-in e cambi di tempo/metro per sezione (stesse regole del metronomo web).
+  Vista Palco come Playback: transizioni tra brani sul campione esatto (seconda corsia nel renderer), fade delle
+  tracce, pad d'ambiente sintetizzato, tonalità e tempo cambiati offline (`audio/stretch.rs`) con
+  [Signalsmith Stretch](https://github.com/Signalsmith-Audio/signalsmith-stretch) (MIT, © Geraint Luff / Signalsmith
+  Audio; wrapper Rust MIT © Colin Marc) in `src-tauri/vendor/signalsmith-stretch`, senza bindgen: niente libclang.
 - **Video** sincronizzato all'orologio audio, in anteprima e su una **seconda finestra** per proiettore
   (doppio clic: schermo intero).
 
@@ -160,7 +164,10 @@ anche i prerequisiti:
 - **WebView2**: se manca lo scarica e installa in silenzio il bootstrapper incluso;
 - **Microsoft Visual C++ 2015-2022 Redistributable (x64)**: incluso nell'installer e installato solo se non
   c'è già (`src-tauri/windows/hooks.nsh`). Lo script lo scarica da Microsoft in `src-tauri/windows/redist/`
-  (escluso da git) alla prima build.
+  (escluso da git) alla prima build;
+- **NDI 6 Runtime** (redistributable ufficiale di Vizrt), per le uscite NDI: incluso e installato in silenzio
+  solo se manca (`NDI_RUNTIME_DIR_V6` non impostata o senza la DLL). Lo script lo scarica da `ndi.link/NDIRedistV6`
+  (o da `downloads.ndi.tv`) nella stessa cartella. Il disinstallatore lo lascia: è condiviso con le altre app NDI.
 
 Gli aggiornamenti sono le Release del repo **pubblico** [simcario/LiveTools-releases](https://github.com/simcario/LiveTools-releases)
 (solo installer, il codice resta privato). L'app legge `releases/latest/download/latest.json`, verifica la firma

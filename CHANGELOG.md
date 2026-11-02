@@ -5,6 +5,14 @@ versioni [SemVer](https://semver.org/lang/it/). Procedura di rilascio: [docs/REL
 
 ## [Non rilasciato]
 
+### Uscite NDI
+- **Video e gobbo in rete come sorgenti NDI®** (Impostazioni › Uscite NDI), anche con le finestre di uscita chiuse:
+  il video a tempo con l'audio, il gobbo a 1920×1080 come nella finestra Gobbo.
+- Nomi delle sorgenti personalizzabili; di default *LiveTools - Video* e *LiveTools - Gobbo* (il nome del
+  computer lo aggiunge NDI davanti).
+- L'installer installa **NDI 6 Runtime** se manca; senza runtime LiveTools funziona come prima e le Impostazioni
+  lo segnalano.
+
 ### Spartito PDF
 - Spartito PDF del brano (scheda *Sequenze, Video & PDF*), scaricato in cache come stem e video.
 - Vista **Spartito** nella pagina Live: una o due pagine affiancate, schermo intero, pagine girate con pedale
@@ -26,6 +34,22 @@ versioni [SemVer](https://semver.org/lang/it/). Procedura di rilascio: [docs/REL
 - **Sezioni create sulla forma d'onda** come marker agganciati alle battute: si aggiungono alla testina con il pulsante **+**
   (il tocco sulla forma d'onda sposta solo la testina), si spostano, rinominano ed eliminano nella vista Palco e si
   salvano con *Salva*. Ogni sezione ha un colore diverso. Griglia e cue già create non cambiano.
+- **Fade delle tracce** (F): le tracce sfumano nel tempo scelto in Impostazioni, click e pad restano.
+- **Pad** (P): pad d'ambiente generato nel motore, anche a brano fermo, sulla sua uscita della matrice. Segue la
+  tonalità del brano o una scelta a mano, cambia tonalità con una dissolvenza, può accendersi da solo al play.
+- **Transizioni tra brani** come in Playback, scelte toccando il cerchio tra due tessere e condivise con la band:
+  *Prepara il prossimo*, *Resta nel brano*, *AutoLink*, *Sovrapponi*, *Dissolvenza*. Il brano successivo viene
+  preparato in anticipo e il motore lo fa partire sul campione esatto, senza buchi.
+- **Tonalità e tempo** di un brano nella scaletta (±6 semitoni, ±20 BPM): le tracce si rielaborano offline con
+  Signalsmith Stretch (MIT) e restano in cache accanto ai file. Click, guide e cue cambiano solo il tempo. Griglia,
+  sezioni, cue e video restano allineati.
+
+- Le battute della griglia del brano caricato si salvano con la scaletta (`beatMap`), per il nuovo **Player palco** del
+  web: i suoi salti cadono sulle stesse battute del desktop. Si scrivono solo se cambiano e se puoi modificare la scaletta.
+
+### Traccia cue
+- Un quadratino messo sulla battuta sbagliata si trascina con la freccia sul quadratino giusto; un clic apre ancora il
+  menu.
 
 ### Arrangement
 - **Corsia delle sezioni** come la Marker Track di Cubase: clic per andarci (anche a brano in corso), trascinamento

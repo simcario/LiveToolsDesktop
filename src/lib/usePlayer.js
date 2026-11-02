@@ -6,14 +6,17 @@ import { emit, listen } from '@tauri-apps/api/event';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { regionsOf, rehearsalGroup, stemsOf, videoOf } from '../shared/media.js';
 import { isSeparator } from '../shared/setlists.js';
-import { dbToGain, engine, engineStatus, onSongEnded } from './engine';
+import { dbToGain, engine, engineStatus, onSongEnded, onStretchProgress, subscribeStatus } from './engine';
 import { driveStage } from './data';
 import { editDraft } from './drafts';
+import { setNdiVideoSource } from './ndi';
 import { liveCueLocal, liveCuePlan, makeLiveCues } from './cueTrack';
 import { ensureFile, missingFiles, requestPeaks } from './mediaCache';
 import { clickVoice, getMix, setMix } from './settings';
 import { GRID_KEY } from './arrange';
 import { analyze, getSyncChoice, rangeKey, resolveSource, setSyncChoice, syncSpec } from './sync';
+import { beatMapOf, publishBeatMap } from './beatMap';
+import { isLinked, keepsPitch, keyPitch, playedKey, songChange, transitionOf, transitionPlan } from './songChange';
 
 function routeOf(stem, settings) {
   return getMix(stem.id).route || settings.outputs[stem.role || 'main'] || settings.outputs.main;
@@ -101,86 +104,131 @@ const refRegions = (item, sync) => {
   return kept?.stemId === sync.source.id ? kept.regions : all[sync.source.id] || null;
 };
 
-export function usePlayer({ user, setlist, items, settings, canDrive, notify }) {
+export function usePlayer({ user, setlist, items, settings, canDrive, canEdit, notify }) {
   const [loaded, setLoaded] = useState(null); // { itemId, duration, tempo, tracks: [{ stem, local, info, error }], video }
   const [busy, setBusy] = useState(null);
   const [downloading, setDownloading] = useState(null); // files of the song being loaded, not on disk yet
   const [solos, setSolos] = useState({});
   const [leftOut, setLeftOut] = useState({}); // rehearsal group → true
   const token = useRef(0);
+  // The next song prepared for a transition: { itemId, prepared, item } once the engine has it.
+  const queued = useRef(null);
+  const queueToken = useRef(0);
+  const [padOn, setPadOn] = useState(false);
   const ctx = useRef({});
   ctx.current = { setlist, items, settings, canDrive, user, loaded, solos, leftOut };
+
+  // Everything a song needs before the engine: files on disk, grid, live cues,
+  // stems in another key or tempo. `send(spec)` gives it to the engine (load or
+  // queue as the next song); null when `alive()` turns false on the way.
+  const prepare = useCallback(async (item, { send, alive, ui }) => {
+    const { settings: st, leftOut: out } = ctx.current;
+    // Cues not rendered to a file (or changed since): played from a local track.
+    const cuePlan = liveCuePlan(item);
+    const stems = stemsOf(item).filter((s) => s.id !== cuePlan?.skip);
+    const video = videoOf(item);
+    const toFetch = missingFiles([...stems, ...(video ? [video] : [])].map((m) => ({ path: m.path, size: m.size })));
+    ui.setDownloading(toFetch.length ? toFetch : null);
+    if (stems.length || video) ui.setBusy(`${toFetch.length ? 'Scarico' : 'Preparo'} “${item.title}”…`);
+    const locals = await Promise.all(stems.map((s) => ensureFile({ path: s.path, size: s.size })));
+    const videoLocal = video ? await ensureFile({ path: video.path, size: video.size }) : null;
+    if (alive() && toFetch.length) {
+      ui.setDownloading(null);
+      ui.setBusy(`Preparo “${item.title}”…`);
+    }
+    let cueLocal = cuePlan ? await liveCueLocal(cuePlan).catch(() => null) : null;
+    if (!alive()) return null;
+    const available = stems.map((stem, i) => ({ stem, local: locals[i] })).filter((x) => x.local);
+    const missing = stems.length - available.length;
+    const placed = regionsOf(item);
+    const change = songChange(item);
+    const specOf = ({ stem, local }) => ({ id: stem.id, path: local, name: stem.name, regions: placed[stem.id] || [], ...trackMix(stem, st, false, out) });
+    const spec = { ...songSpec(item, available.map(specOf), st), rate: change.rate };
+    const sync = await analyzeSource(item, available, getSyncChoice(item.id), ui.setBusy);
+    if (!alive()) return null;
+    spec.sync = syncSpec(item, sync.analysis, sync.choice, refRegions(item, sync));
+    const withCues = () => {
+      if (!cueLocal) return;
+      const cue = { stem: cuePlan.stem, local: cueLocal };
+      available.push(cue);
+      spec.tracks = [...spec.tracks, specOf(cue)];
+    };
+    // Key or tempo changed: the engine plays files rendered once (cached on disk);
+    // the waveforms and every time stay those of the original files.
+    const stretch = async () => {
+      if (!change.changed) return spec;
+      const stemOf = new Map(available.map((a) => [a.stem.id, a.stem]));
+      const off = onStretchProgress(({ done, total }) => ui.setBusy(`Cambio ${change.semitones ? 'tonalità' : 'tempo'} di “${item.title}”: ${done}/${total}…`));
+      ui.setBusy(`Cambio ${change.semitones ? 'tonalità' : 'tempo'} di “${item.title}”…`);
+      try {
+        const res = await engine.stretchTracks(spec.tracks.map((tr) => ({ path: tr.path, semitones: keepsPitch(stemOf.get(tr.id) || {}) ? 0 : change.semitones, rate: change.rate })));
+        const failed = res.filter((r) => r.error);
+        if (failed.length) throw new Error(failed[0].error);
+        return { ...spec, tracks: spec.tracks.map((tr, i) => ({ ...tr, path: res[i].path })) };
+      } finally {
+        off();
+      }
+    };
+    withCues();
+    let result = await send(await stretch());
+    if (!alive()) return null;
+    // First load after a change of the cues: the track needs the tempo map.
+    if (cuePlan && !cueLocal && result.tempo && result.duration > 0) {
+      ui.setBusy(`Creo le cue di “${item.title}”…`);
+      cueLocal = await makeLiveCues(cuePlan, result.tempo, result.duration).catch((e) => {
+        notify(`Cue non create: ${e?.message || e}`, true);
+        return null;
+      });
+      if (!alive()) return null;
+      if (cueLocal) {
+        withCues();
+        result = await send(await stretch());
+        if (!alive()) return null;
+      }
+    }
+    return {
+      missing,
+      state: {
+        itemId: item.id,
+        duration: result.duration,
+        tempo: result.tempo,
+        rate: change.rate,
+        change: `${change.semitones}:${change.rate}`,
+        tracks: available.map((a, i) => ({ ...a, info: result.tracks[i]?.info, error: result.tracks[i]?.error })),
+        video: videoLocal ? { ...video, local: videoLocal, src: convertFileSrc(videoLocal) } : null,
+        sync,
+      },
+    };
+  }, [notify]);
+
+  // A song is now the one in the player (loaded, or taken over by a transition).
+  const commit = useCallback(
+    (item, prepared) => {
+      const { state, missing } = prepared;
+      const { settings: st, setlist: sl, canDrive: drive, user: u } = ctx.current;
+      setSolos({});
+      setLoaded(state);
+      if (state.sync.error) notify(`Griglia non allineata: ${state.sync.error}`, true);
+      requestPeaks(state.tracks.map((a) => a.local));
+      if (missing) notify(`${missing} tracce di “${item.title}” non disponibili (offline o non scaricate)`, true);
+      else if (!state.sync.error) notify(null);
+      if (st.driveStage && drive && sl && sl.live?.itemId !== item.id) {
+        driveStage(sl, item.id, u).catch((e) => notify(`Guida la band: ${e.message}`, true));
+      }
+    },
+    [notify],
+  );
 
   const load = useCallback(
     async (item, { play = false } = {}) => {
       if (!item || isSeparator(item)) return;
       const t = ++token.current;
-      const { settings: st, leftOut: out } = ctx.current;
-      // Cues not rendered to a file (or changed since): played from a local track.
-      const cuePlan = liveCuePlan(item);
-      const stems = stemsOf(item).filter((s) => s.id !== cuePlan?.skip);
-      const video = videoOf(item);
+      queued.current = null;
       try {
-        const toFetch = missingFiles([...stems, ...(video ? [video] : [])].map((m) => ({ path: m.path, size: m.size })));
-        setDownloading(toFetch.length ? toFetch : null);
-        if (stems.length || video) setBusy(`${toFetch.length ? 'Scarico' : 'Preparo'} “${item.title}”…`);
-        const locals = await Promise.all(stems.map((s) => ensureFile({ path: s.path, size: s.size })));
-        const videoLocal = video ? await ensureFile({ path: video.path, size: video.size }) : null;
-        if (t === token.current && toFetch.length) {
-          setDownloading(null);
-          setBusy(`Preparo “${item.title}”…`);
-        }
-        let cueLocal = cuePlan ? await liveCueLocal(cuePlan).catch(() => null) : null;
-        if (t !== token.current) return;
-        const available = stems.map((stem, i) => ({ stem, local: locals[i] })).filter((x) => x.local);
-        const missing = stems.length - available.length;
-        const placed = regionsOf(item);
-        const specOf = ({ stem, local }) => ({ id: stem.id, path: local, name: stem.name, regions: placed[stem.id] || [], ...trackMix(stem, st, false, out) });
-        const spec = songSpec(item, available.map(specOf), st);
-        const sync = await analyzeSource(item, available, getSyncChoice(item.id), setBusy);
-        if (t !== token.current) return;
-        spec.sync = syncSpec(item, sync.analysis, sync.choice, refRegions(item, sync));
-        const withCues = () => {
-          if (!cueLocal) return;
-          const cue = { stem: cuePlan.stem, local: cueLocal };
-          available.push(cue);
-          spec.tracks = [...spec.tracks, specOf(cue)];
-        };
-        withCues();
-        let result = await engine.load(spec);
-        if (t !== token.current) return;
-        // First load after a change of the cues: the track needs the tempo map.
-        if (cuePlan && !cueLocal && result.tempo && result.duration > 0) {
-          setBusy(`Creo le cue di “${item.title}”…`);
-          cueLocal = await makeLiveCues(cuePlan, result.tempo, result.duration).catch((e) => {
-            notify(`Cue non create: ${e?.message || e}`, true);
-            return null;
-          });
-          if (t !== token.current) return;
-          if (cueLocal) {
-            withCues();
-            result = await engine.load(spec);
-            if (t !== token.current) return;
-          }
-        }
-        setSolos({});
-        setLoaded({
-          itemId: item.id,
-          duration: result.duration,
-          tempo: result.tempo,
-          tracks: available.map((a, i) => ({ ...a, info: result.tracks[i]?.info, error: result.tracks[i]?.error })),
-          video: videoLocal ? { ...video, local: videoLocal, src: convertFileSrc(videoLocal) } : null,
-          sync,
-        });
-        if (sync.error) notify(`Griglia non allineata: ${sync.error}`, true);
-        requestPeaks(available.map((a) => a.local));
-        if (missing) notify(`${missing} tracce di “${item.title}” non disponibili (offline o non scaricate)`, true);
-        else if (!sync.error) notify(null);
-        if (play) await engine.play(st.countIn);
-        const { setlist: sl, canDrive: drive, user: u } = ctx.current;
-        if (st.driveStage && drive && sl && sl.live?.itemId !== item.id) {
-          driveStage(sl, item.id, u).catch((e) => notify(`Guida la band: ${e.message}`, true));
-        }
+        const prepared = await prepare(item, { send: (spec) => engine.load(spec), alive: () => t === token.current, ui: { setBusy, setDownloading } });
+        if (!prepared) return;
+        commit(item, prepared);
+        if (play) await engine.play(ctx.current.settings.countIn);
       } catch (e) {
         notify(`Caricamento non riuscito: ${e?.message || e}`, true);
       } finally {
@@ -190,7 +238,7 @@ export function usePlayer({ user, setlist, items, settings, canDrive, notify }) 
         }
       }
     },
-    [notify],
+    [notify, prepare, commit],
   );
 
   // Grid source / fine correction of the song in the player, applied live.
@@ -456,14 +504,113 @@ export function usePlayer({ user, setlist, items, settings, canDrive, notify }) 
       .catch(() => {});
   }, [reloadTick, load]);
 
-  // End of the song: cue the next one (Ableton "follow action" for a set).
+  // End of the song: its transition says what follows (Playback). Cue next
+  // loads the next one; the linked ones were already queued in the engine, and
+  // if that failed the next one is at least cued.
   useEffect(
     () =>
       onSongEnded(() => {
-        if (ctx.current.settings.autoAdvance) step(1);
+        const { loaded: l, items: its, settings: st } = ctx.current;
+        const item = its.find((i) => i.id === l?.itemId);
+        const mode = transitionOf(item, st);
+        if (mode === 'cue' || isLinked(mode)) step(1);
       }),
     [step],
   );
+
+  // The song after the one loaded, and how to get there.
+  const songList = items.filter((i) => !isSeparator(i));
+  const loadedIndex = songList.findIndex((x) => x.id === loaded?.itemId);
+  const nextSong = loadedIndex >= 0 ? songList[loadedIndex + 1] || null : null;
+  const loadedSong = loadedIndex >= 0 ? songList[loadedIndex] : null;
+  const linkMode = loadedSong ? transitionOf(loadedSong, settings) : null;
+  const nextKey = nextSong && isLinked(linkMode) ? `${loaded.itemId}>${nextSong.id}:${linkMode}:${loaded.duration}:${nextSong.updatedAt?.seconds ?? ''}` : null;
+
+  // AutoLink, overlap and crossfade: the next song is prepared and waits in the
+  // engine, which starts it at the frame of the transition without gaps.
+  useEffect(() => {
+    const t = ++queueToken.current;
+    queued.current = null;
+    if (!nextKey) {
+      engine.cancelNext().catch(() => {});
+      return undefined;
+    }
+    const l = ctx.current.loaded;
+    const next = ctx.current.items.find((i) => i.id === nextSong.id);
+    const plan = transitionPlan(linkMode, l.duration, l.tempo, next);
+    const alive = () => t === queueToken.current && ctx.current.loaded?.itemId === l.itemId;
+    const quiet = { setBusy: () => {}, setDownloading: () => {} };
+    // A stale preparation must not reach the engine after a newer one.
+    const send = (spec) => (alive() ? engine.queueNext(spec, plan) : Promise.reject(new Error('superata')));
+    prepare(next, { send, alive, ui: quiet })
+      .then((prepared) => {
+        if (prepared && alive()) queued.current = { itemId: next.id, item: next, prepared };
+      })
+      .catch((e) => alive() && notify(`Transizione verso “${next.title}” non pronta: ${e?.message || e}`, true));
+    return () => {
+      queueToken.current += 1;
+    };
+    // The key holds what matters: the song, the next one and the transition.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nextKey, prepare, notify]);
+
+  // The engine changed song: the next one is now the song in the player.
+  useEffect(
+    () =>
+      subscribeStatus((s) => {
+        const q = queued.current;
+        if (!q || s.songId !== q.itemId || ctx.current.loaded?.itemId === q.itemId) return;
+        queued.current = null;
+        token.current += 1;
+        commit(q.item, q.prepared);
+      }),
+    [commit],
+  );
+
+  // Key or tempo of the song in the player changed (here or by the band): its stems
+  // are rendered again and it goes on from the same point.
+  const changeNow = loadedSong ? (({ semitones, rate }) => `${semitones}:${rate}`)(songChange(loadedSong)) : null;
+  useEffect(() => {
+    if (!changeNow || !loaded?.change || changeNow === loaded.change) return;
+    reload();
+  }, [changeNow, loaded?.change, reload]);
+
+  // The bars of the song in the player for the Player palco of the web (lib/beatMap.js), once the grid has settled.
+  const tempoKey = loaded ? `${loaded.itemId}:${JSON.stringify(loaded.tempo?.segments?.length)}:${loaded.tempo?.origin}:${loaded.duration}` : null;
+  useEffect(() => {
+    if (!tempoKey || !canEdit || !setlist?.id) return undefined;
+    const timer = setTimeout(() => {
+      const l = ctx.current.loaded;
+      const item = l && ctx.current.items.find((i) => i.id === l.itemId);
+      if (item) publishBeatMap(setlist.id, item, beatMapOf(l.tempo, l.duration)).catch(() => {});
+    }, 4000);
+    return () => clearTimeout(timer);
+  }, [tempoKey, canEdit, setlist?.id, loaded?.tempo]);
+
+  // Pad Player: the key of the song in the player, or the one chosen live.
+  const padKey = settings.pad.mode === 'live' ? keyPitch(settings.pad.key) : keyPitch(playedKey(loadedSong));
+  useEffect(() => {
+    const r = settings.outputs.pad || settings.outputs.main;
+    engine
+      .setPad({ enabled: padOn && padKey != null && r.mode !== 'off', key: padKey ?? 0, gain: dbToGain(settings.pad.gainDb), outStart: r.start, mono: r.mode !== 'stereo' })
+      .catch(() => {});
+  }, [padOn, padKey, settings.pad.gainDb, settings.outputs.pad, settings.outputs.main]);
+
+  // "Start pad with song": the pad comes in when a song starts.
+  useEffect(() => {
+    let was = engineStatus().playing;
+    return subscribeStatus((s) => {
+      if (s.playing && !was && ctx.current.settings.pad.withSong) setPadOn(true);
+      was = s.playing;
+    });
+  }, []);
+
+  // Tracks Fade: out while playing, back in if already out (or going out).
+  const toggleFade = useCallback(() => {
+    const s = engineStatus();
+    if (!s.playing) return;
+    engine.fade(s.fadeTarget > 0.5, Number(ctx.current.settings.fadeSeconds) || 5);
+  }, []);
 
   // Palco Sync: follow the song chosen by the band's master.
   const liveItemId = setlist?.live?.itemId;
@@ -479,6 +626,7 @@ export function usePlayer({ user, setlist, items, settings, canDrive, notify }) 
   useEffect(() => {
     const payload = video ? { src: video.src, offset: video.offset || 0, name: video.name } : null;
     emit('video-source', payload);
+    setNdiVideoSource(video);
     const un = listen('video-hello', () => emit('video-source', payload));
     return () => {
       un.then((f) => f());
@@ -496,6 +644,12 @@ export function usePlayer({ user, setlist, items, settings, canDrive, notify }) 
     leftOut,
     toggleGroup,
     setGroup,
+    padOn,
+    padKey,
+    togglePad: () => setPadOn((v) => !v),
+    toggleFade,
+    nextSong,
+    linkMode,
     songs,
     load,
     reload,

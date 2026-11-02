@@ -13,6 +13,7 @@ import { toggleZone, useSettings } from './lib/settings';
 import { hideSplash } from './lib/splash';
 import { usePlayer } from './lib/usePlayer';
 import { usePrompterBroadcast, usePrompterOutput } from './lib/prompter';
+import { useNdiOutputs, useNdiPrompter } from './lib/ndi';
 import { checkForUpdates, useUpdater } from './lib/updater';
 import ArrangementView from './components/ArrangementView';
 import Browser from './components/Browser';
@@ -173,13 +174,13 @@ function Workspace({ user }) {
   const email = (user.email || '').toLowerCase();
   const role = getRole(setlist, user.uid, email, isAdmin);
   const canDrive = ['owner', 'admin', 'editor', 'stage'].includes(role);
+  const canEdit = ['owner', 'admin', 'editor'].includes(role);
 
-  const player = usePlayer({ user, setlist, items, settings, canDrive, notify });
+  const player = usePlayer({ user, setlist, items, settings, canDrive, canEdit, notify });
   const songs = player.songs;
   const numbers = useMemo(() => Object.fromEntries(songs.map((s, i) => [s.id, i + 1])), [songs]);
   const lanes = useMemo(() => buildLanes(songs), [songs]);
   const selected = items.find((i) => i.id === selectedId && !isSeparator(i)) || player.loadedItem || songs[0] || null;
-  const canEdit = ['owner', 'admin', 'editor'].includes(role);
   const page = ['setlist', 'songs'].includes(settings.page) ? settings.page : 'live';
   // Palco takes the whole window: the setlist is inside it, no Browser and no Dettaglio.
   const stage = page === 'live' && settings.view === 'stage' && !!setlistId;
@@ -201,7 +202,9 @@ function Workspace({ user }) {
   }, [loadedId]);
   const askItem = askSave && items.find((i) => i.id === askSave);
 
-  usePrompterOutput(player.loadedItem, settings);
+  const prompterSource = usePrompterOutput(player.loadedItem, settings);
+  useNdiOutputs(settings);
+  useNdiPrompter(prompterSource, settings.ndi.prompter.enabled);
   usePrompterBroadcast({ setlist, loadedItem: player.loadedItem, settings, enabled: settings.driveStage && canDrive, user, notify });
 
   // Audio interface (re)opened when the choice changes.

@@ -14,6 +14,9 @@ export default function SyncedVideo({ src, offset = 0 }) {
       const s = engineStatus();
       const target = livePosition() - offset;
       const end = Number.isFinite(v.duration) ? v.duration : Infinity;
+      // Tempo of the song changed: the video keeps the original times, at the new speed.
+      const rate = s.rate || 1;
+      if (Math.abs(v.playbackRate - rate) > 1e-3) v.playbackRate = rate;
       if (s.playing && !s.waiting && target >= 0 && target < end) {
         if (v.paused) {
           v.currentTime = target;

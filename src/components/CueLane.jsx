@@ -70,6 +70,16 @@ export function useCueTrack({ player, setlistId, canEdit: canEditSetlist, notify
     }
   };
   const setCue = (g, label) => save([...cues.filter((c) => c.g !== g), ...(label ? [{ g, label }] : [])]);
+  // One cue dragged to another square (wrong bar): it takes the place of the one there, if any.
+  const moved = (from, to) => {
+    const label = byG.get(from);
+    return label == null || from === to ? cues : [...cues.filter((c) => c.g !== from && c.g !== to), { g: to, label }];
+  };
+  const moveCue = (from, to) => {
+    if (from === to || !byG.has(from)) return;
+    const over = byG.get(to);
+    write({ ...sheet, cues: moved(from, to).sort((a, b) => a.g - b.g) }, over ? `Cue “${byG.get(from)}” al posto di “${over}”` : `Cue “${byG.get(from)}” spostata`);
+  };
   // The whole track moved by `delta` beats (hand tool): cues out of the song are dropped.
   const lastG = bars.at(-1)?.cells.at(-1)?.g ?? 0;
   const shifted = (delta) => cues.map((c) => ({ ...c, g: c.g + delta })).filter((c) => c.g >= 0 && c.g <= lastG);
@@ -140,6 +150,8 @@ export function useCueTrack({ player, setlistId, canEdit: canEditSetlist, notify
     setCue,
     shifted,
     shift,
+    moved,
+    moveCue,
     countBar,
     setResolution,
     render,

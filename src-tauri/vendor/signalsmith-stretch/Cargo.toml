@@ -1,0 +1,16 @@
+# signalsmith-stretch 0.1.3 (MIT, Colin Marc) without bindgen: the bindings of
+# src/wrapper.h are written by hand in src/lib.rs, so the build doesn't need libclang.
+[package]
+name = "signalsmith-stretch"
+version = "0.1.3"
+edition = "2021"
+license = "MIT"
+build = "build.rs"
+publish = false
+
+[lib]
+name = "signalsmith_stretch"
+path = "src/lib.rs"
+
+[build-dependencies]
+cc = "1"

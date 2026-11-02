@@ -15,6 +15,11 @@ const EMPTY = {
   beats: 4,
   ended: false,
   underruns: 0,
+  jump: null,
+  next: null, // the next song waiting to take over (transition): { songId, mode, at }
+  fade: 1, // Tracks Fade: gain of the tracks now, and where it is going
+  fadeTarget: 1,
+  rate: 1, // speed of the song loaded (tempo changed): times stay those of the original
   meters: [],
   outputs: [],
   device: null,
@@ -59,7 +64,16 @@ export const engineStatus = () => status;
 // Smooth playhead between two status updates (for requestAnimationFrame).
 export function livePosition() {
   if (!status.playing || status.waiting) return status.position;
-  return status.position + Math.min(0.1, (performance.now() - receivedAt) / 1000);
+  return status.position + Math.min(0.1, (performance.now() - receivedAt) / 1000) * (status.rate || 1);
+}
+
+const progressListeners = new Set();
+listen('stretch-progress', (e) => progressListeners.forEach((f) => f(e.payload)));
+
+// Progress of a change of key or tempo: f({ done, total }).
+export function onStretchProgress(f) {
+  progressListeners.add(f);
+  return () => progressListeners.delete(f);
 }
 
 export const dbToGain = (db) => (db <= -60 ? 0 : 10 ** (db / 20));
@@ -83,6 +97,14 @@ export const engine = {
   setSections: (sections) => invoke('engine_set_sections', { sections }),
   setRegions: (regions) => invoke('engine_set_regions', { regions }),
   replaceTrack: (id, newId, path) => invoke('engine_replace_track', { id, newId, path }),
+  // Tracks Fade: the tracks out (or back in) in `seconds`; click and pad go on.
+  fade: (out, seconds) => invoke('engine_fade', { out: !!out, seconds }),
+  setPad: (pad) => invoke('engine_set_pad', { pad }),
+  // The next song takes over at transition.at seconds: { mode: 'overlap' | 'crossfade', at, fade }.
+  queueNext: (song, transition) => invoke('engine_queue_next', { song, transition }),
+  cancelNext: () => invoke('engine_cancel_next'),
+  // Stems in another key / tempo, rendered once: [{ path, semitones, rate }] → [{ path, error }].
+  stretchTracks: (jobs) => invoke('stretch_tracks', { jobs }),
 };
 
 export function formatTime(sec) {

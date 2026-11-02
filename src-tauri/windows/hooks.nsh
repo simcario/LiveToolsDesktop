@@ -1,6 +1,6 @@
 ; Tauri NSIS installer hooks: installs the prerequisites the app needs besides
 ; WebView2 (handled by Tauri's bootstrapper, see bundle.windows.webviewInstallMode).
-; redist/ is filled by scripts/fetch-redist.mjs before every build.
+; redist/ is filled by scripts/release.mjs (fetchRedist) before every build.
 
 ; Resolved here, at include time: inside the macros __FILEDIR__ would point at
 ; the generated installer.nsi.
@@ -26,6 +26,21 @@
       DetailPrint "Visual C++ Redistributable: codice di uscita $1"
     ${EndIf}
     Delete "$PLUGINSDIR\vc_redist.x64.exe"
+  ${EndIf}
+
+  ; NDI 6 Runtime (Vizrt's redistributable) for the NDI outputs, only if missing.
+  ; Shared with other NDI apps: the uninstaller leaves it.
+  ReadRegStr $0 HKLM "SYSTEM\CurrentControlSet\Control\Session Manager\Environment" "NDI_RUNTIME_DIR_V6"
+  ${If} $0 == ""
+  ${OrIfNot} ${FileExists} "$0\Processing.NDI.Lib.x64.dll"
+    DetailPrint "Installazione di NDI 6 Runtime…"
+    InitPluginsDir
+    File "/oname=$PLUGINSDIR\ndi-runtime.exe" "${LT_REDIST_DIR}\NDI 6 Runtime.exe"
+    ExecWait '"$PLUGINSDIR\ndi-runtime.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-' $1
+    ${If} $1 != 0
+      DetailPrint "NDI 6 Runtime: codice di uscita $1 (le uscite NDI non saranno disponibili)"
+    ${EndIf}
+    Delete "$PLUGINSDIR\ndi-runtime.exe"
   ${EndIf}
 !macroend
 

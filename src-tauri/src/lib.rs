@@ -5,15 +5,18 @@
 mod audio;
 mod bluetooth;
 mod media;
+mod ndi;
 mod oauth;
 
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use audio::beats::{self, SyncAnalysis, SyncRequest};
 use audio::device::{DeviceEntry, DeviceInfo};
 use audio::tempo::{SyncSpec, TempoMap};
-use audio::engine::{JumpSpec, SongLoad, TrackLoad};
+use audio::engine::{JumpSpec, SongLoad, TrackLoad, TransitionSpec};
+use audio::stretch::{self, StretchJob, StretchResult};
 use audio::{ClickParams, Engine, SongSpec, TrackMix};
 use tauri::{Emitter, Manager, State};
 
@@ -82,6 +85,40 @@ fn engine_set_master(engine: State<'_, Engine>, gain_db: f32) {
     engine.0.lock().set_master(gain_db);
 }
 
+#[tauri::command]
+fn engine_fade(engine: State<'_, Engine>, out: bool, seconds: f32) {
+    engine.0.lock().fade(out, seconds);
+}
+
+#[tauri::command]
+fn engine_set_pad(engine: State<'_, Engine>, pad: audio::render::PadParams) {
+    engine.0.lock().set_pad(pad);
+}
+
+#[tauri::command(async)]
+fn engine_queue_next(engine: State<'_, Engine>, song: SongSpec, transition: TransitionSpec) -> Result<SongLoad, String> {
+    engine.0.lock().queue_next(song, transition)
+}
+
+#[tauri::command]
+fn engine_cancel_next(engine: State<'_, Engine>) {
+    engine.0.lock().cancel_next();
+}
+
+/// Renders the stems of a song in another key or tempo (cached next to each
+/// file); "stretch-progress" { done, total } after each one.
+#[tauri::command]
+async fn stretch_tracks(app: tauri::AppHandle, jobs: Vec<StretchJob>) -> Result<Vec<StretchResult>, String> {
+    let cancel = Arc::new(AtomicBool::new(false));
+    tauri::async_runtime::spawn_blocking(move || {
+        stretch::render_all(jobs, cancel, |done, total| {
+            let _ = app.emit("stretch-progress", serde_json::json!({ "done": done, "total": total }));
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
 /// Lines the grid up with a click or rhythm stem (result cached next to the file).
 #[tauri::command]
 async fn analyze_sync(request: SyncRequest) -> Result<SyncAnalysis, String> {
@@ -127,11 +164,13 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .manage(engine)
+        .manage(ndi::Ndi::new(monitor.clone()))
         .setup(move |app| {
             media::init(app.handle());
             // ~30 status updates per second to every window (transport, meters, video sync).
             let handle = app.handle().clone();
             let mut jump_seen = 0;
+            let mut next_seen = 0;
             std::thread::Builder::new()
                 .name("livetools-status".into())
                 .spawn(move || loop {
@@ -143,6 +182,11 @@ pub fn run() {
                     if fired != jump_seen {
                         jump_seen = fired;
                         handle.state::<Engine>().0.lock().jump_fired(fired);
+                    }
+                    let changed = monitor.shared.next_fired.load(Ordering::Relaxed);
+                    if changed != next_seen {
+                        next_seen = changed;
+                        handle.state::<Engine>().0.lock().next_fired(changed);
                     }
                     let _ = handle.emit("engine-status", monitor.status());
                 })?;
@@ -166,6 +210,11 @@ pub fn run() {
             engine_set_sections,
             engine_set_regions,
             engine_replace_track,
+            engine_fade,
+            engine_set_pad,
+            engine_queue_next,
+            engine_cancel_next,
+            stretch_tracks,
             analyze_sync,
             track_onsets,
             media::media_dir,
@@ -178,6 +227,10 @@ pub fn run() {
             media::store_media_done,
             oauth::google_sign_in,
             bluetooth::bluetooth_devices,
+            ndi::ndi_status,
+            ndi::ndi_configure,
+            ndi::ndi_video_source,
+            ndi::ndi_prompter_frame,
         ])
         .run(tauri::generate_context!())
         .expect("errore all'avvio di LiveTools");

@@ -2,11 +2,12 @@ import { useEffect, useState } from 'react';
 import { emit, listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useEngineStatus } from './lib/engine';
-import { cueIndexAt } from './lib/cues';
+import { outputCueIndex, outputSlides } from './lib/cues';
 import SlideText from './components/SlideText';
 
 // Second window for the singers' screen: the slide of the song in the player
 // at the position of the audio engine. Double click: full screen.
+// The NDI output draws the same picture (lib/ndi.js).
 export default function PrompterWindow() {
   const [source, setSource] = useState(null);
 
@@ -18,14 +19,8 @@ export default function PrompterWindow() {
     };
   }, []);
 
-  const cues = source?.cues || [];
-  const lead = source?.lead || 0;
-  const index = useEngineStatus((s) => (s.songId && s.songId === source?.itemId ? cueIndexAt(cues, s.position + lead) : -1));
-  const slides = source?.slides || [];
-  const current = index >= 0 ? slides.find((s) => s.id === cues[index].slide) : null;
-  // Before the first change, the first slide waits as "next".
-  const nextCue = cues.slice(index + 1).find((c) => c.slide);
-  const next = nextCue && slides.find((s) => s.id === nextCue.slide);
+  const index = useEngineStatus((s) => outputCueIndex(source, s));
+  const { current, next } = outputSlides(source, index);
 
   const toggleFullscreen = async () => {
     const w = getCurrentWindow();
@@ -39,7 +34,7 @@ export default function PrompterWindow() {
       ) : (
         <>
           <SlideText text={current?.text} className="pw-current" />
-          {source.showNext && next && next !== current && <SlideText text={next.text} className="pw-next" max={48} />}
+          {next && <SlideText text={next.text} className="pw-next" max={48} />}
         </>
       )}
     </div>

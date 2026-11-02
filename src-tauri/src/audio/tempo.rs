@@ -371,8 +371,14 @@ impl TempoMap {
     }
 
     /// Sample-accurate view of the map for the audio thread.
+    #[cfg(test)]
     pub fn frames(&self, sample_rate: u32) -> TempoFrames {
-        let sr = sample_rate as f64;
+        self.frames_per(sample_rate as f64)
+    }
+
+    /// As `frames`, with `sr` frames per second of the map: with the tempo of
+    /// the song changed, the sample rate divided by the speed.
+    pub fn frames_per(&self, sr: f64) -> TempoFrames {
         TempoFrames {
             segs: self
                 .segments

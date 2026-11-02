@@ -6,6 +6,7 @@ pub mod engine;
 pub mod render;
 mod resample;
 pub mod stream;
+pub mod stretch;
 pub mod tempo;
 
 pub use engine::{Engine, SongSpec, TrackMix};

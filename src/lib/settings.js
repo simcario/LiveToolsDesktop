@@ -15,11 +15,15 @@ export const DEFAULT_SETTINGS = {
     click: { start: 2, mode: 'mono' },
     guide: { start: 3, mode: 'mono' },
     monitor: { start: 2, mode: 'stereo' },
+    pad: { start: 0, mode: 'stereo' },
   },
   // Metronome: synthesised sound and, for each kind of beat, level (dB) and
   // pitch (semitones) on top of the sound's own.
   click: { enabled: true, gainDb: -6, sound: 'beep', kinds: {} },
   masterDb: 0,
+  // Pad Player (Palco): synthesised ambient pad. mode 'link' = key of the song loaded, 'live' = key chosen here.
+  pad: { gainDb: -10, mode: 'link', key: 'C', withSong: false },
+  fadeSeconds: 5, // Tracks Fade of the Palco view
   countIn: true,
   defaultCountIn: 1,
   followStage: false,
@@ -49,6 +53,8 @@ export const DEFAULT_SETTINGS = {
   toolbarLabels: false, // names of the categories over the groups
   prompterLead: 0,
   prompterNext: true,
+  // NDI outputs of the video and of the Gobbo (lib/ndi.js); empty name = "LiveTools - Video/Gobbo".
+  ndi: { video: { enabled: false, name: '' }, prompter: { enabled: false, name: '' } },
   updateCheck: true, // look for a new release at startup (never installs on its own)
   pedal: DEFAULT_PEDAL, // page turner of the PDF score: keys for next / previous page, layout
 };
@@ -78,6 +84,11 @@ function merge(saved) {
     view: saved?.view === 'session' ? 'stage' : saved?.view ?? DEFAULT_SETTINGS.view,
     outputs: { ...DEFAULT_SETTINGS.outputs, ...(saved?.outputs || {}) },
     click: { ...DEFAULT_SETTINGS.click, ...(saved?.click || {}) },
+    pad: { ...DEFAULT_SETTINGS.pad, ...(saved?.pad || {}) },
+    ndi: {
+      video: { ...DEFAULT_SETTINGS.ndi.video, ...(saved?.ndi?.video || {}) },
+      prompter: { ...DEFAULT_SETTINGS.ndi.prompter, ...(saved?.ndi?.prompter || {}) },
+    },
     pedal: pedalOf(saved?.pedal),
     zones: {
       left: { ...DEFAULT_SETTINGS.zones.left, ...(saved?.zones?.left || {}) },
@@ -160,6 +171,7 @@ export const OUTPUT_ROLES = [
   ['click', 'Click'],
   ['guide', 'Guide / Cue'],
   ['monitor', 'Solo monitor'],
+  ['pad', 'Pad'],
 ];
 
 // Select options for an interface with `channels` outputs.

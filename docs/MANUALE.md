@@ -14,10 +14,13 @@ dell'app web: una scaletta creata sul web si apre qui, e viceversa.
 1. Scarica `LiveTools_<versione>_x64-setup.exe` dall'ultima release:
    <https://github.com/simcario/LiveTools-releases/releases/latest>.
 2. Avvia l'installer (installa per tutto il computer, servono i permessi di amministratore). Se mancano,
-   installa da solo **WebView2** e **Visual C++ Redistributable**.
+   installa da solo **WebView2**, **Visual C++ Redistributable** e **NDI 6 Runtime** (per le uscite NDI), se mancano.
 3. Apri **LiveTools** e accedi con Google: il login si apre nel browser, poi torna all'app.
 4. Se non hai ancora un ruolo, l'app mostra la pagina di attesa: chiedi l'abilitazione all'amministratore
    (dall'app web, *Amministrazione*).
+
+La schermata di avvio elenca in basso il software di terze parti usato dall'app (framework, plugin Tauri,
+librerie audio e video, font).
 
 ### Aggiornamenti
 
@@ -139,6 +142,8 @@ ricarica.
 | **1 … 9** | vista Palco: salta alla sezione con quel numero |
 | **L** | vista Palco: loop della sezione in corso, o esce dal loop |
 | **Esc** | vista Palco: annulla il salto in coda o esce dal loop |
+| **F** | vista Palco: fade delle tracce (e di nuovo per riportarle dentro) |
+| **P** | vista Palco: pad acceso / spento |
 | **Ins** | Arrangement: nuova sezione alla battuta della testina |
 | **Home** | inizio del brano |
 | **C** | click acceso / spento |
@@ -147,7 +152,8 @@ ricarica.
 | **Ctrl+,** | Impostazioni |
 | **F1** | Questo manuale (anche dal pulsante **?** in alto) |
 
-*Auto-avanzamento*: a fine brano prepara il successivo.
+*Auto-avanzamento*: a fine brano prepara il successivo, se il brano non ha una transizione sua (vedi *Transizioni*
+nella vista Palco).
 
 ### 4.2 Palco
 
@@ -156,13 +162,13 @@ lontano e i comandi sono grandi anche per il touch. La disposizione è quella di
 basso:
 
 - **Barra del trasporto**: metro e BPM, battuta con i movimenti, tempo trascorso e rimanente, ⏮ (torna all'inizio, a
-  brano fermo), ▶/■ grande, titolo, tonalità e artista. A destra *Video* (uscita video del brano), *Modifica* (crea e
-  sposta le sezioni) e il menu della scaletta.
+  brano fermo), ▶/■ grande, **FADE**, **PAD**, titolo, tonalità e artista. A destra *Video* (uscita video del brano),
+  *Modifica* (crea e sposta le sezioni) e il menu della scaletta.
 - **Scaletta**: i brani in fila come tessere, con numero, tonalità, BPM e durata; quello caricato è evidenziato. Tocca
   una tessera per caricare il brano. Mentre la musica suona il tocco lo seleziona soltanto e il brano in corso continua.
-  Il cerchio tra due tessere mostra cosa succede a fine brano: ⏭ se l'*auto-avanzamento* carica il successivo, ■ se
-  resta quello in corso. Attenzione: ⏮ ⏭ nella Control bar e i tasti **← →** cambiano brano subito, anche durante
-  l'esecuzione.
+  Il cerchio tra due tessere è la **transizione** (vedi sotto). Il pulsante con i cursori in alto a destra di una
+  tessera cambia **tonalità e tempo**. Attenzione: ⏮ ⏭ nella Control bar e i tasti **← →** cambiano brano subito,
+  anche durante l'esecuzione.
 - **Forma d'onda**: tutto il brano, con le sezioni come etichette colorate in alto (numero, nome, battute). Quella in
   corso è piena e ha a destra l'icona del loop. Tocca un punto della forma d'onda per andare alla linea della griglia più
   vicina, o alla battuta più vicina se la griglia è nascosta. Sopra leggi quante battute mancano alla sezione successiva.
@@ -171,7 +177,47 @@ basso:
   ogni gruppo di strumenti del brano caricato, gli stessi dei pulsanti *Rehearsal* (batteria, basso, tastiere, click,
   guide…). Il volume del gruppo si somma a quello delle sue tracce e resta salvato su questo computer per tutti i brani.
   Come in Playback, **tocca il nome** per togliere il gruppo dal mix (diventa rosso e barrato) o per spegnere il
-  metronomo; **S** mette in solo tutte le tracce del gruppo.
+  metronomo; **S** mette in solo tutte le tracce del gruppo. Accanto al metronomo c'è la striscia del **Pad**.
+
+**Fade delle tracce.** *FADE* (**F**) sfuma le tracce del brano in corso; click e pad restano. L'anello del pulsante
+si svuota mentre sfuma. Premilo di nuovo (*IN*) per riportarle dentro. La durata si sceglie in **Impostazioni →
+Palco** (5 secondi se non la cambi). Stop o cambio brano riportano le tracce a pieno volume.
+
+**Pad.** *PAD* (**P**) accende un pad d'ambiente generato dall'app, come l'Ambient Pad di Playback: suona anche a
+brano fermo, sull'uscita *Pad* della matrice (Impostazioni audio) e con il master. Entra e esce in pochi secondi.
+Nel mixer, il menu della striscia sceglie la tonalità:
+
+- *Brano*: segue la tonalità del brano caricato (cambio di tonalità compreso). Quando cambia brano il pad passa alla
+  nuova tonalità con una dissolvenza, così può fare da tappeto tra un brano e l'altro.
+- una tonalità precisa (*C*, *Db*, …): resta quella, qualunque brano carichi.
+
+Il nome *Pad* accende e spegne, il fader ne regola il volume. Con **Impostazioni → Palco → Accendi il pad quando parte
+un brano** il pad si accende da solo al play. Se il brano non ha una tonalità, scegline una nel menu.
+
+**Transizioni.** Come in Playback, il cerchio tra due tessere dice cosa succede alla fine del brano. Toccalo (serve
+poter modificare la scaletta) e scegli; la scelta vale per tutta la band:
+
+- ⏭ *Prepara il prossimo*: a fine brano carica il successivo senza farlo partire.
+- ■ *Resta nel brano*: a fine brano resta caricato questo.
+- ▶ *AutoLink*: il successivo parte appena finisce questo, senza buchi.
+- *Sovrapponi*: il successivo parte a pieno volume sull'ultima parte di questo, la più corta tra l'ultima sezione,
+  la prima sezione del successivo e 5 secondi. Questo prosegue fino alla sua fine.
+- *Dissolvenza*: negli ultimi 5 secondi questo sfuma mentre il successivo entra.
+- *Come l'auto-avanzamento*: la scelta predefinita. Segue l'opzione *Auto-avanzamento* di questo computer
+  (prepara il prossimo se è accesa, resta nel brano se è spenta).
+
+Con *AutoLink*, *Sovrapponi* e *Dissolvenza* il brano successivo viene preparato appena carichi quello prima. Quando il
+cerchio diventa pieno, l'app è pronta a fare la transizione. Il successivo parte dall'inizio, senza count-in. Se non
+si riesce a prepararlo (per esempio perché è offline e non è scaricato), a fine brano viene solo caricato.
+
+**Tonalità e tempo.** Il pulsante con i cursori di una tessera cambia la tonalità (fino a 6 semitoni sopra o sotto) e il
+tempo (fino a 20 BPM in più o in meno, se il brano ha un BPM) del brano in questa scaletta, come in Playback. Le tracce si
+rielaborano una volta su ogni computer, alla prima apertura. Mentre l'app lavora la barra in basso mostra quante ne ha
+fatte, e il risultato resta salvato accanto ai file. Click, guide e cue cambiano solo il tempo, non la tonalità.
+Griglia, sezioni, cue, gobbo e video restano allineati: tutto segue il nuovo tempo. *Originale* toglie le modifiche.
+Sulle tessere un BPM con l'asterisco è cambiato, una tonalità bordata di viola è cambiata. Cambia tonalità o tempo a
+brano fermo: se il brano sta suonando, la rielaborazione lo interrompe per qualche secondo. Sul web il brano si
+sente ancora nella tonalità e nel tempo originali.
 
 **Zoom e griglia.** I comandi sono nella barra sopra la forma d'onda, anche mentre modifichi le sezioni, e le scelte
 restano salvate su questo computer.
@@ -210,6 +256,10 @@ ingrandisce fino a quando non premi *Fine* nello stesso punto. Un tocco sulla fo
 
 Le stesse sezioni si modificano anche nella pagina **Scaletta**, scheda **Brano**, *Cambi di tempo*: lì puoi dare a una
 sezione un tempo o un metro diversi. Se una sezione cambia il tempo, spostarne il marker sposta anche il cambio.
+
+**Sul web.** L'app web ha un *Player palco* con sezioni, salti, loop, fade e pad. Le sezioni si creano qui. Quando
+carichi un brano, e se puoi modificare la scaletta, il desktop salva con la scaletta anche le battute della sua griglia:
+così i salti del web cadono sulle stesse battute. Transizioni, tonalità e tempo ci sono solo qui.
 
 I marker non toccano le **cue**: la griglia resta la stessa e le cue già create, live o renderizzate, restano dove sono.
 Se il brano ha delle cue, la vista Palco rifiuta solo le modifiche che cambierebbero davvero il tempo, come spostare o
@@ -339,8 +389,11 @@ Utile quando un brano non ha una traccia guida.
 1. **Aggiungi → Traccia cue** nell'Arrangement.
 2. La corsia è divisa in quadratini (quarti o ottavi per battuta): clicca un quadratino e scegli la cue
    ("Strofa", "Ritornello", "Bridge", conteggi…).
-3. La **mano** sposta tutte le cue trascinando (dalla prossima versione non apre il menu: per inserire usa un altro
-   strumento), la **gomma** ne cancella una.
+3. Hai sbagliato battuta? Dalla prossima versione, con la **freccia**, trascina il quadratino di una cue sul quadratino
+   giusto: la cue si sposta lì (se c'era già un'altra cue, la sostituisce). Un clic senza trascinare apre il menu
+   come prima. **Ctrl+Z** annulla lo spostamento.
+4. La **mano** sposta tutte le cue insieme trascinando (dalla prossima versione non apre il menu: per inserire usa un
+   altro strumento), la **gomma** ne cancella una.
 
 Le cue si sentono subito come traccia *live*, generata su questo computer. Con **Renderizza in file audio**
 diventano uno stem "Cues" caricato online, che si ascolta anche dal Rehearsal del web. Se modifichi le cue
@@ -363,7 +416,8 @@ Vista **Gobbo** (Tab):
 3. **Ritocca** — trascina i cambi nella timeline o spostali di ±50 ms nella lista.
 
 **Uscita gobbo** apre una seconda finestra per lo schermo dei cantanti (doppio clic = schermo intero), con la
-slide successiva in piccolo e un anticipo regolabile.
+slide successiva in piccolo e un anticipo regolabile. Lo stesso gobbo può andare in rete come sorgente
+**NDI** (vedi *10. Video*).
 
 Con **Guida** attivo il gobbo arriva anche a telefoni e tablet: nell'app web, pulsante **Gobbo** della
 scaletta.
@@ -396,6 +450,22 @@ permette di provare il pedale e, con **Impara**, di assegnare i tasti di un peda
 Il video del brano segue l'orologio audio. Si vede nell'anteprima del dettaglio e in una **seconda
 finestra** per proiettore o secondo schermo (pulsante nell'Arrangement; doppio clic = schermo intero).
 
+### Uscite NDI
+
+Video e gobbo possono andare anche in rete come sorgenti **NDI®**, per vMix, OBS, un mixer video o uno
+schermo NDI, senza tenere aperte le finestre di uscita. Si attivano in **Impostazioni › Uscite NDI**:
+
+- **Uscita video** — il video del brano nel player, a tempo con l'audio (prima dell'inizio il primo
+  fotogramma, dopo la fine l'ultimo); senza video l'uscita resta nera.
+- **Uscita gobbo** — la slide del momento e, se attiva, la successiva, a 1920×1080, come nella finestra Gobbo.
+
+I nomi delle sorgenti si possono cambiare; di default sono **LiveTools - Video** e **LiveTools - Gobbo**
+(i programmi NDI mostrano davanti il nome del computer: *NOMEPC (LiveTools - Video)*). Serve il runtime NDI: l'installer di LiveTools installa **NDI 6 Runtime** se manca (anche **NDI Tools**,
+da [ndi.video](https://ndi.video), lo contiene); se non c'è, le Impostazioni lo segnalano.
+Il video viene decodificato con i codec di Windows (MP4/H.264 e gli altri formati che Windows legge).
+
+<small>NDI® is a registered trademark of Vizrt NDI AB.</small>
+
 ---
 
 ## 11. Problemi frequenti
@@ -408,6 +478,7 @@ finestra** per proiettore o secondo schermo (pulsante nell'Arrangement; doppio c
 | Nessun suono su un'uscita | controlla la matrice uscite: le uscite che la scheda non ha vanno su Out 1-2 |
 | File AIFF non suonano sul web | normale: Chrome non legge l'AIFF, usa il desktop |
 | L'aggiornamento non compare | Impostazioni › Aggiornamenti › *Cerca aggiornamenti* (serve la rete) |
+| La sorgente NDI non compare | Impostazioni › Uscite NDI: controlla che non segnali il runtime mancante; il computer che riceve dev'essere sulla stessa rete (e il firewall non deve bloccare LiveTools) |
 | Il pedale non gira le pagine | Impostazioni › Pedale & spartito: controlla che sia tra i dispositivi collegati, premilo e usa *Impara* |
 
 ## 12. Dove sono i dati

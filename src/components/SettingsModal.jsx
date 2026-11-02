@@ -148,6 +148,27 @@ export default function SettingsModal({ settings, update, device, onClose }) {
                 Segui il brano attivato dal master (Palco Sync)
               </label>
             </div>
+            <div className="field">
+              <span>Palco</span>
+              <label className="check">
+                <input type="checkbox" checked={settings.pad.withSong} onChange={(e) => update({ pad: { ...settings.pad, withSong: e.target.checked } })} />
+                Accendi il pad quando parte un brano
+              </label>
+              <label className="check">
+                Durata del fade delle tracce
+                <input
+                  className="input"
+                  type="number"
+                  min={1}
+                  max={30}
+                  step={1}
+                  style={{ width: 64, marginLeft: 8 }}
+                  value={settings.fadeSeconds}
+                  onChange={(e) => update({ fadeSeconds: Math.max(1, Math.min(30, Number(e.target.value) || 5)) })}
+                />
+                s
+              </label>
+            </div>
           </div>
 
           <p className="hint">

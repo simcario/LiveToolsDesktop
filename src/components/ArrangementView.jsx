@@ -455,6 +455,7 @@ export default function ArrangementView({ player, item, lanes, settings, update,
   const [cueHover, setCueHover] = useState(null); // g of the square under the pointer
   const [picking, setPicking] = useState(null); // { cell, beats, rect }
   const [cueDrag, setCueDrag] = useState(null); // beats the cue track is moved by while dragging
+  const [cueMove, setCueMove] = useState(null); // { from, to }: one cue dragged to another square
   const [addOpen, setAddOpen] = useState(false);
   const [barsOpen, setBarsOpen] = useState(false); // "Aggiungi → Battute" dialog
   const [clipDrag, setClipDrag] = useState(null); // { stemId, index, delta } moving a segment, { stemId, index, edge, t } trimming it
@@ -545,8 +546,8 @@ export default function ArrangementView({ player, item, lanes, settings, update,
   useEffect(() => {
     if (canvas.current) {
       const warp = warpOn ? { grid, onsets, refStemId: refTrack?.stem.id, drag } : null;
-      const byG = cueDrag ? new Map(cue.shifted(cueDrag).map((c) => [c.g, c.label])) : cue.byG;
-      const cueDraw = { bars: cue.bars, byG, status: cue.busy || cue.status, hover: cueDrag ? null : cueHover, nowG: nowCue };
+      const byG = cueDrag ? new Map(cue.shifted(cueDrag).map((c) => [c.g, c.label])) : cueMove ? new Map(cue.moved(cueMove.from, cueMove.to).map((c) => [c.g, c.label])) : cue.byG;
+      const cueDraw = { bars: cue.bars, byG, status: cue.busy || cue.status, hover: cueDrag ? null : cueMove ? cueMove.to : cueHover, nowG: nowCue };
       draw(canvas.current, { width: view.width, height, scroll: view.scroll, pps, t0, tempo, rows, peaks, duration, warp, cue: cueDraw, sections: drawnSections });
     }
   });
@@ -850,7 +851,7 @@ export default function ArrangementView({ player, item, lanes, settings, update,
     const onSegment = row?.kind === 'audio' && !row.stem.live && segmentAt(row, pt) >= 0;
     const onEdge = trimmable(row) && !!edgeAt(row, pt);
     const toolCursor = TOOLS.find(([k]) => k === tool)[4];
-    const cueCursor = tool === 'move' ? 'grab' : tool === 'erase' ? 'not-allowed' : 'pointer';
+    const cueCursor = tool === 'move' || (tool !== 'erase' && hit && cue.byG.has(hit.cell.g)) ? 'grab' : tool === 'erase' ? 'not-allowed' : 'pointer';
     e.currentTarget.style.cursor = hit ? cueCursor : onEdge ? 'ew-resize' : onSegment && (canEditSong || tool === 'select') ? toolCursor : '';
     const g = tool === 'move' ? null : hit?.cell.g ?? null;
     if (g !== cueHover) setCueHover(g);
@@ -872,8 +873,35 @@ export default function ArrangementView({ player, item, lanes, settings, update,
         if (cue.byG.has(hit.cell.g)) cue.setCue(hit.cell.g, null);
         return;
       }
+      // Arrow: a touch opens the menu; a cue dragged goes to the square where it is dropped.
       if (tool !== 'move') {
-        open();
+        if (!cue.byG.has(hit.cell.g)) {
+          open();
+          return;
+        }
+        e.preventDefault();
+        const el = e.currentTarget;
+        el.setPointerCapture(e.pointerId);
+        const x0 = e.clientX;
+        let to = null;
+        const move = (ev) => {
+          if (to == null && Math.abs(ev.clientX - x0) < 4) return;
+          const at = cueCellAt(cue.bars, (ev.clientX - rect.left) / pps + t0);
+          if (!at) return;
+          to = at.cell.g;
+          setCueMove({ from: hit.cell.g, to });
+        };
+        const up = () => {
+          el.removeEventListener('pointermove', move);
+          el.removeEventListener('pointerup', up);
+          el.removeEventListener('pointercancel', up);
+          setCueMove(null);
+          if (to == null) open();
+          else cue.moveCue(hit.cell.g, to);
+        };
+        el.addEventListener('pointermove', move);
+        el.addEventListener('pointerup', up);
+        el.addEventListener('pointercancel', up);
         return;
       }
       // Hand: the whole cue track moves square by square; it never opens the menu.

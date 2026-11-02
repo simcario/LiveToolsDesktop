@@ -4,7 +4,7 @@
 //   { slides: [{ id, label, text }], order: [slideId], cues: [{ t, slide }] }
 // `order` is the planned sequence (a chorus appears in it more than once),
 // `cues` the recorded changes: t = seconds of the song, slide = id or null (blank).
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { emit, listen } from '@tauri-apps/api/event';
 import { doc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { newId } from '../shared/setlists.js';
@@ -153,14 +153,16 @@ export function usePrompterOutput(loadedItem, settings) {
     ? { itemId: loadedItem.id, title: loadedItem.title, lead: settings.prompterLead, showNext: settings.prompterNext, ...normalizePrompter(data) }
     : null;
   const json = JSON.stringify(payload);
+  const source = useMemo(() => JSON.parse(json), [json]);
   useEffect(() => {
-    const p = JSON.parse(json);
-    emit('prompter-source', p);
-    const un = listen('prompter-hello', () => emit('prompter-source', p));
+    emit('prompter-source', source);
+    const un = listen('prompter-hello', () => emit('prompter-source', source));
     return () => {
       un.then((f) => f());
     };
-  }, [json]);
+  }, [source]);
+  // Also drawn for the NDI output (lib/ndi.js).
+  return source;
 }
 
 // ---------- Gobbo on the band's phones and tablets ----------

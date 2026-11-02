@@ -1,6 +1,10 @@
 ﻿//! Engine controller: loads songs, drives the transport and the mix. Runs on
 //! the command threads; talks to the audio callback only through the queue
 //! and atomics.
+//!
+//! A song with its tempo changed plays files rendered at the new speed
+//! (stretch.rs): inside, times are those of the files; to the UI every time
+//! (position, duration, jumps, regions) stays that of the original song.
 
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
@@ -13,7 +17,7 @@ use serde::{Deserialize, Serialize};
 
 use super::decode::{self, ProbeInfo};
 use super::device::{AudioHost, DeviceEntry, DeviceInfo};
-use super::render::{ClickParams, Garbage, Renderer, RtCmd, RtTrack, Shared, TrackControl, OUT_MONO, OUT_OFF, OUT_STEREO};
+use super::render::{ClickParams, Garbage, NextSong, PadParams, Renderer, RtCmd, RtTrack, Shared, TrackControl, OUT_MONO, OUT_OFF, OUT_STEREO};
 use super::stream::{self, DecoderHandle, Region, TrackStream};
 use super::tempo::{ClickKind, SectionSpec, SyncSpec, TempoMap};
 
@@ -41,6 +45,10 @@ pub struct TrackMix {
     pub out_mode: Option<String>,
 }
 
+fn one() -> f64 {
+    1.0
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SongSpec {
@@ -55,11 +63,23 @@ pub struct SongSpec {
     /// Grid lined up with a click or rhythm stem (None: song data from 0).
     #[serde(default)]
     pub sync: Option<SyncSpec>,
+    /// Speed of the files of the tracks: new tempo / original tempo (they are
+    /// already rendered at it). Bpm, sections, sync and regions stay the original ones.
+    #[serde(default = "one")]
+    pub rate: f64,
 }
 
 impl SongSpec {
     fn tempo(&self) -> TempoMap {
         TempoMap::from_sync(self.sync.as_ref(), self.bpm, self.time_sig.as_deref(), self.count_in_bars, &self.sections)
+    }
+
+    fn rate(&self) -> f64 {
+        if self.rate.is_finite() {
+            self.rate.clamp(0.5, 2.0)
+        } else {
+            1.0
+        }
     }
 }
 
@@ -91,6 +111,27 @@ pub struct JumpSpec {
     pub repeat: bool,
 }
 
+/// How the next song takes over, at `at` seconds of the one playing:
+/// "overlap" (this one goes on to its end, also AutoLink with `at` = the end)
+/// or "crossfade" in `fade` seconds.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TransitionSpec {
+    pub mode: String,
+    pub at: f64,
+    #[serde(default)]
+    pub fade: f64,
+}
+
+/// The next song waiting in the engine.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NextInfo {
+    pub song_id: String,
+    pub mode: String,
+    pub at: f64,
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Status {
@@ -107,6 +148,13 @@ pub struct Status {
     pub underruns: u32,
     /// The jump or loop waiting to happen.
     pub jump: Option<JumpSpec>,
+    /// The next song waiting to take over.
+    pub next: Option<NextInfo>,
+    /// Tracks Fade: gain now (0..1) and where it is going.
+    pub fade: f32,
+    pub fade_target: f32,
+    /// Speed of the song loaded (1 = its own tempo).
+    pub rate: f64,
     /// [left, right] peak of each track since the last status.
     pub meters: Vec<[f32; 2]>,
     /// Peak of each output of the interface.
@@ -121,16 +169,26 @@ pub struct Monitor {
     pub controls: RwLock<Vec<Arc<TrackControl>>>,
     pub tempo: RwLock<Option<TempoMap>>,
     pub song: RwLock<Option<(String, f64)>>,
+    pub rate: RwLock<f64>,
     pub jump: RwLock<Option<JumpSpec>>,
+    pub next: RwLock<Option<NextInfo>>,
     pub device: RwLock<Option<DeviceInfo>>,
     pub device_error: Arc<Mutex<Option<String>>>,
 }
 
 impl Monitor {
+    /// Seconds of the song now, without taking the meters (NDI video).
+    pub fn position(&self) -> f64 {
+        let s = &self.shared;
+        let sr = s.sample_rate.load(Ordering::Relaxed).max(1) as f64;
+        s.position.load(Ordering::Relaxed) as f64 / sr * *self.rate.read()
+    }
+
     pub fn status(&self) -> Status {
         let s = &self.shared;
         let sr = s.sample_rate.load(Ordering::Relaxed).max(1) as f64;
-        let position = s.position.load(Ordering::Relaxed) as f64 / sr;
+        let rate = *self.rate.read();
+        let position = s.position.load(Ordering::Relaxed) as f64 / sr * rate;
         let (bar, beat, beats) = self.tempo.read().as_ref().map_or((1, 1, 4), |t| t.position(position));
         let channels = s.channels.load(Ordering::Relaxed) as usize;
         let song = self.song.read().clone();
@@ -146,6 +204,10 @@ impl Monitor {
             ended: s.ended.swap(false, Ordering::Relaxed),
             underruns: s.underruns.load(Ordering::Relaxed),
             jump: *self.jump.read(),
+            next: self.next.read().clone(),
+            fade: s.fade.load(),
+            fade_target: s.fade_target.load(),
+            rate,
             meters: self.controls.read().iter().map(|c| [c.peak_l.swap(0.0), c.peak_r.swap(0.0)]).collect(),
             outputs: s.out_peaks.iter().take(channels).map(|p| p.swap(0.0)).collect(),
             device: self.device.read().clone(),
@@ -158,12 +220,28 @@ struct Loaded {
     spec: SongSpec,
     ids: Vec<String>,
     paths: Vec<Option<PathBuf>>,
+    /// Placement of each track in the times of the files (see `rate`).
     regions: Vec<Vec<Region>>,
     /// Length of each file (seconds), for the timeline end of its regions.
     files: Vec<Option<f64>>,
     decoders: Vec<Option<DecoderHandle>>,
+    controls: Vec<Arc<TrackControl>>,
     tempo: TempoMap,
+    /// In the times of the files.
     duration: f64,
+    rate: f64,
+}
+
+impl Loaded {
+    /// Seconds of the original song → seconds of the files.
+    fn real(&self, t: f64) -> f64 {
+        t / self.rate
+    }
+
+    /// Length of the original song.
+    fn song_duration(&self) -> f64 {
+        self.duration * self.rate
+    }
 }
 
 /// The jump in the audio thread, with the readers already filling its streams.
@@ -173,7 +251,21 @@ struct Armed {
     decoders: Vec<Option<DecoderHandle>>,
 }
 
-/// One reader per track, from `from` seconds of the song.
+/// The next song in the audio thread, its readers already at its start.
+struct Pending {
+    id: u64,
+    song: Loaded,
+}
+
+/// Regions of the original song in the times of files played at `rate`.
+fn scale_regions(regions: &[Region], rate: f64) -> Vec<Region> {
+    regions
+        .iter()
+        .map(|r| Region { at: r.at / rate, from: r.from / rate, len: r.len.map(|l| l / rate), muted: r.muted })
+        .collect()
+}
+
+/// One reader per track, from `from` seconds of the files.
 fn spawn_readers(song: &Loaded, from: f64, sr: u32) -> (Vec<Option<DecoderHandle>>, Vec<Option<TrackStream>>) {
     song.paths
         .iter()
@@ -195,8 +287,12 @@ pub struct Controller {
     cmd: Option<Producer<RtCmd>>,
     song: Option<Loaded>,
     click: ClickParams,
+    pad: PadParams,
     armed: Option<Armed>,
     jump_seq: u64,
+    next: Option<Pending>,
+    /// Readers of the song before, still heard in the crossfade or overlap.
+    tail: Vec<Option<DecoderHandle>>,
 }
 
 pub struct Engine(pub Mutex<Controller>);
@@ -245,7 +341,9 @@ impl Engine {
             controls: RwLock::new(Vec::new()),
             tempo: RwLock::new(None),
             song: RwLock::new(None),
+            rate: RwLock::new(1.0),
             jump: RwLock::new(None),
+            next: RwLock::new(None),
             device: RwLock::new(None),
             device_error: device_error.clone(),
         });
@@ -257,8 +355,11 @@ impl Engine {
             cmd: None,
             song: None,
             click: ClickParams::default(),
+            pad: PadParams::default(),
             armed: None,
             jump_seq: 0,
+            next: None,
+            tail: Vec::new(),
         };
         (Self(Mutex::new(controller)), monitor, garbage_rx)
     }
@@ -309,6 +410,7 @@ impl Controller {
         let (info, tx) = opened?;
         self.cmd = Some(tx);
         self.send(RtCmd::Click(self.click));
+        self.send(RtCmd::Pad(self.pad));
         // Streams are resampled for the interface: reload the song at the same point.
         if let Some(spec) = self.song.as_ref().map(|s| s.spec.clone()) {
             self.load(spec)?;
@@ -317,22 +419,24 @@ impl Controller {
         Ok(info)
     }
 
+    /// Seconds of the original song.
     pub fn position(&self) -> f64 {
-        self.shared().position.load(Ordering::Relaxed) as f64 / self.sample_rate().max(1) as f64
+        let rate = self.song.as_ref().map_or(1.0, |s| s.rate);
+        self.shared().position.load(Ordering::Relaxed) as f64 / self.sample_rate().max(1) as f64 * rate
     }
 
-    pub fn load(&mut self, spec: SongSpec) -> Result<SongLoad, String> {
-        self.shared().playing.store(false, Ordering::Relaxed);
-        self.cancel_jump();
+    /// Opens the tracks of a song, each reader at its start.
+    fn open_song(&self, spec: SongSpec) -> (Loaded, Vec<RtTrack>, SongLoad) {
         let sr = self.sample_rate();
         let tempo = spec.tempo();
-
+        let rate = spec.rate();
         let mut loads = Vec::new();
         let mut controls = Vec::new();
         let mut rt = Vec::new();
         let mut decoders = Vec::new();
         let mut paths = Vec::new();
         let mut files = Vec::new();
+        let mut regions = Vec::new();
         let mut duration = 0f64;
         for t in &spec.tracks {
             let control = Arc::new(TrackControl::new());
@@ -342,56 +446,139 @@ impl Controller {
                 Ok(i) => (Some(i), None),
                 Err(e) => (None, Some(e)),
             };
+            let placed = scale_regions(&t.regions, rate);
             let (decoder, stream) = if info.is_some() {
-                let (d, s) = stream::spawn(path.clone(), 0.0, sr, t.regions.clone());
+                let (d, s) = stream::spawn(path.clone(), 0.0, sr, placed.clone());
                 (Some(d), Some(s))
             } else {
                 (None, None)
             };
             let file = info.as_ref().and_then(|i| i.duration);
-            if let Some(d) = stream::timeline_end(&t.regions, file) {
+            if let Some(d) = stream::timeline_end(&placed, file) {
                 duration = duration.max(d);
             }
             paths.push(info.as_ref().map(|_| path));
             files.push(file);
+            regions.push(placed);
             loads.push(TrackLoad { id: t.id.clone(), info, error });
             rt.push(RtTrack::new(control.clone(), stream));
             controls.push(control);
             decoders.push(decoder);
         }
-
-        *self.monitor.controls.write() = controls;
-        *self.monitor.tempo.write() = Some(tempo.clone());
-        *self.monitor.song.write() = Some((spec.id.clone(), duration));
-        self.send(RtCmd::Tracks { tracks: Box::new(rt), position: 0 });
-        self.send(RtCmd::Tempo(Some(Box::new(tempo.frames(sr)))));
-        self.send(RtCmd::Duration((duration * sr as f64) as i64));
-
-        let result = SongLoad { id: spec.id.clone(), duration, tempo: tempo.clone(), tracks: loads };
-        // Old readers stop when their handles drop.
-        self.song = Some(Loaded {
+        let result = SongLoad { id: spec.id.clone(), duration: duration * rate, tempo: tempo.clone(), tracks: loads };
+        let song = Loaded {
             ids: spec.tracks.iter().map(|t| t.id.clone()).collect(),
-            regions: spec.tracks.iter().map(|t| t.regions.clone()).collect(),
+            regions,
             files,
             spec,
             paths,
             decoders,
+            controls,
             tempo,
             duration,
-        });
+            rate,
+        };
+        (song, rt, result)
+    }
+
+    /// The song for the monitor: tracks, grid, length and speed.
+    fn publish(&self, song: &Loaded) {
+        *self.monitor.controls.write() = song.controls.clone();
+        *self.monitor.tempo.write() = Some(song.tempo.clone());
+        *self.monitor.song.write() = Some((song.spec.id.clone(), song.song_duration()));
+        *self.monitor.rate.write() = song.rate;
+    }
+
+    /// Frames per second of the original song for the audio thread.
+    fn fps(&self, rate: f64) -> f64 {
+        self.sample_rate() as f64 / rate
+    }
+
+    pub fn load(&mut self, spec: SongSpec) -> Result<SongLoad, String> {
+        self.shared().playing.store(false, Ordering::Relaxed);
+        self.cancel_jump();
+        self.cancel_next();
+        self.tail.clear();
+        let sr = self.sample_rate();
+        let (song, rt, result) = self.open_song(spec);
+        self.publish(&song);
+        self.send(RtCmd::Tracks { tracks: Box::new(rt), position: 0 });
+        self.send(RtCmd::Tempo(Some(Box::new(song.tempo.frames_per(self.fps(song.rate))))));
+        self.send(RtCmd::Duration((song.duration * sr as f64) as i64));
+        // Old readers stop when their handles drop.
+        self.song = Some(song);
         Ok(result)
     }
 
     pub fn unload(&mut self) {
         self.shared().playing.store(false, Ordering::Relaxed);
         self.cancel_jump();
+        self.cancel_next();
+        self.tail.clear();
         self.send(RtCmd::Tracks { tracks: Box::new(Vec::new()), position: 0 });
         self.send(RtCmd::Tempo(None));
         self.send(RtCmd::Duration(0));
         self.monitor.controls.write().clear();
         *self.monitor.tempo.write() = None;
         *self.monitor.song.write() = None;
+        *self.monitor.rate.write() = 1.0;
         self.song = None;
+    }
+
+    /// Prepares the next song: at `t.at` seconds of this one it takes over,
+    /// from its start, without waiting for the disk. In place of the one waiting.
+    pub fn queue_next(&mut self, spec: SongSpec, t: TransitionSpec) -> Result<SongLoad, String> {
+        self.cancel_next();
+        let Some(cur) = self.song.as_ref() else { return Err("Nessun brano caricato".into()) };
+        let sr = self.sample_rate() as f64;
+        let end = cur.song_duration();
+        let at = t.at.clamp(0.0, end);
+        let at_frame = (cur.real(at) * sr).floor() as i64;
+        let overlap = t.mode != "crossfade";
+        let xfade = (t.fade.clamp(0.0, 30.0) / cur.rate * sr) as i64;
+        let (song, rt, result) = self.open_song(spec);
+        let tempo = song.tempo.frames_per(self.fps(song.rate));
+        self.jump_seq += 1;
+        let id = self.jump_seq;
+        *self.monitor.next.write() = Some(NextInfo { song_id: song.spec.id.clone(), mode: t.mode.clone(), at });
+        self.send(RtCmd::Next(Box::new(NextSong {
+            id,
+            at: at_frame,
+            tracks: Box::new(rt),
+            tempo: Some(Box::new(tempo)),
+            duration: (song.duration * sr) as i64,
+            overlap,
+            xfade,
+        })));
+        self.next = Some(Pending { id, song });
+        Ok(result)
+    }
+
+    pub fn cancel_next(&mut self) {
+        if let Some(old) = self.next.take() {
+            // The callback may be taking it right now: its readers must not be stopped.
+            old.song.decoders.into_iter().flatten().for_each(DecoderHandle::detach);
+            self.send(RtCmd::CancelNext);
+        }
+        *self.monitor.next.write() = None;
+    }
+
+    /// The audio thread changed song (`id`): the next one is the song loaded now,
+    /// the readers of the one before stay until its tail ends.
+    pub fn next_fired(&mut self, id: u64) {
+        if self.next.as_ref().is_none_or(|n| n.id != id) {
+            return;
+        }
+        let Some(next) = self.next.take() else { return };
+        if let Some(armed) = self.armed.take() {
+            armed.decoders.into_iter().flatten().for_each(DecoderHandle::detach);
+        }
+        *self.monitor.jump.write() = None;
+        *self.monitor.next.write() = None;
+        self.publish(&next.song);
+        if let Some(old) = self.song.replace(next.song) {
+            self.tail = old.decoders;
+        }
     }
 
     /// Moves the playhead and drops the jump or loop that was waiting.
@@ -415,10 +602,10 @@ impl Controller {
             return;
         };
         let rate = sr as f64;
-        let end = song.duration.max(0.0);
+        let end = song.song_duration().max(0.0);
         // Rounded down: a beat computed on a frame must not fall before the playhead (see clicks_in).
-        let at = (spec.at.clamp(0.0, end) * rate).floor() as i64;
-        let to = (spec.to.clamp(0.0, end) * rate).floor() as i64;
+        let at = (song.real(spec.at.clamp(0.0, end)) * rate).floor() as i64;
+        let to = (song.real(spec.to.clamp(0.0, end)) * rate).floor() as i64;
         let (decoders, streams) = spawn_readers(song, to as f64 / rate, sr);
         self.jump_seq += 1;
         let id = self.jump_seq;
@@ -452,16 +639,17 @@ impl Controller {
         }
     }
 
-    /// Moves the playhead; negative positions are inside the count-in.
+    /// Moves the playhead (original seconds); negative positions are inside the count-in.
     fn seek(&mut self, seconds: f64) {
         let sr = self.sample_rate();
         let Some(song) = self.song.as_ref() else { return };
-        let seconds = seconds.max(-song.tempo.pre_roll).min(song.duration.max(0.0));
+        let seconds = song.real(seconds.max(-song.tempo.pre_roll).min(song.song_duration().max(0.0)));
         let from = seconds.max(0.0);
         let (decoders, streams) = spawn_readers(song, from, sr);
         if let Some(song) = self.song.as_mut() {
             song.decoders = decoders;
         }
+        self.tail.clear();
         let position = (seconds * sr as f64).round() as i64;
         self.send(RtCmd::Streams { streams: Box::new(streams), position });
     }
@@ -487,8 +675,7 @@ impl Controller {
         self.send(RtCmd::Play { count_in: with_count_in });
     }
 
-    /// New alignment of the grid with the audio, without reloading the tracks.
-    /// New placement of some tracks (id â†’ regions), heard from where the
+    /// New placement of some tracks (id → regions), heard from where the
     /// playhead is; returns the new length of the song.
     pub fn set_regions(&mut self, regions: std::collections::HashMap<String, Vec<Region>>) -> Option<f64> {
         let sr = self.sample_rate();
@@ -496,7 +683,7 @@ impl Controller {
         let song = self.song.as_mut()?;
         for (i, id) in song.ids.iter().enumerate() {
             if let Some(r) = regions.get(id) {
-                song.regions[i] = r.clone();
+                song.regions[i] = scale_regions(r, song.rate);
                 song.spec.tracks[i].regions = r.clone();
             }
         }
@@ -525,7 +712,7 @@ impl Controller {
         Ok(TrackLoad { id: new_id, info: Some(info), error: None })
     }
 
-    /// Length of the song from its tracks, sent to the audio thread.
+    /// Length of the song from its tracks, sent to the audio thread; returns the original length.
     fn refresh_duration(&mut self, sr: u32) -> Option<f64> {
         let song = self.song.as_mut()?;
         let duration = song
@@ -538,32 +725,33 @@ impl Controller {
             .fold(0f64, f64::max);
         song.duration = duration;
         let id = song.spec.id.clone();
-        *self.monitor.song.write() = Some((id, duration));
+        let original = song.song_duration();
+        *self.monitor.song.write() = Some((id, original));
         self.send(RtCmd::Duration((duration * sr as f64) as i64));
-        Some(duration)
+        Some(original)
     }
 
-    pub fn set_sync(&mut self, sync: Option<SyncSpec>) -> Option<TempoMap> {
-        let sr = self.sample_rate();
+    fn send_tempo(&mut self) -> Option<TempoMap> {
         let song = self.song.as_mut()?;
-        song.spec.sync = sync;
         let tempo = song.spec.tempo();
         song.tempo = tempo.clone();
+        let rate = song.rate;
         *self.monitor.tempo.write() = Some(tempo.clone());
-        self.send(RtCmd::Tempo(Some(Box::new(tempo.frames(sr)))));
+        let frames = tempo.frames_per(self.fps(rate));
+        self.send(RtCmd::Tempo(Some(Box::new(frames))));
         Some(tempo)
+    }
+
+    /// New alignment of the grid with the audio, without reloading the tracks.
+    pub fn set_sync(&mut self, sync: Option<SyncSpec>) -> Option<TempoMap> {
+        self.song.as_mut()?.spec.sync = sync;
+        self.send_tempo()
     }
 
     /// New sections of the song, heard at once: only the tempo map changes, not the tracks.
     pub fn set_sections(&mut self, sections: Vec<SectionSpec>) -> Option<TempoMap> {
-        let sr = self.sample_rate();
-        let song = self.song.as_mut()?;
-        song.spec.sections = sections;
-        let tempo = song.spec.tempo();
-        song.tempo = tempo.clone();
-        *self.monitor.tempo.write() = Some(tempo.clone());
-        self.send(RtCmd::Tempo(Some(Box::new(tempo.frames(sr)))));
-        Some(tempo)
+        self.song.as_mut()?.spec.sections = sections;
+        self.send_tempo()
     }
 
     /// Ableton style: stop, and stop again to go back to the start.
@@ -572,6 +760,7 @@ impl Controller {
             self.cancel_jump();
             self.send(RtCmd::Stop);
             self.shared().playing.store(false, Ordering::Relaxed);
+            self.tail.clear();
         } else {
             self.locate(0.0);
         }
@@ -580,10 +769,20 @@ impl Controller {
     pub fn set_track(&mut self, id: &str, mix: TrackMix) {
         let Some(song) = &self.song else { return };
         if let Some(i) = song.ids.iter().position(|x| x == id) {
-            if let Some(c) = self.monitor.controls.read().get(i) {
+            if let Some(c) = song.controls.get(i) {
                 apply_mix(c, &mix);
             }
         }
+    }
+
+    /// Tracks Fade: the tracks go out (or back in) in `seconds`; click and pad stay.
+    pub fn fade(&mut self, out: bool, seconds: f32) {
+        self.send(RtCmd::Fade { target: if out { 0.0 } else { 1.0 }, seconds });
+    }
+
+    pub fn set_pad(&mut self, pad: PadParams) {
+        self.pad = pad;
+        self.send(RtCmd::Pad(pad));
     }
 
     pub fn set_click(&mut self, click: ClickParams) {
