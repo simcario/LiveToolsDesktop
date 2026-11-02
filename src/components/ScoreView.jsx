@@ -9,6 +9,7 @@ import { storage } from '../lib/firebase';
 import { ensureFile } from '../lib/mediaCache';
 import { pedalDevice, useBluetoothDevices } from '../lib/pedal';
 import Icon from './Icon';
+import Toolbar, { ToolGroup } from './Toolbar';
 
 // "Spartito" view of the Live page: the PDF score of the selected song, one
 // or two pages at a time, turned with a Bluetooth pedal (it sends keys, see
@@ -125,44 +126,48 @@ function Viewer({ item, score, settings, update, onPedalPrefs, active }) {
 
   return (
     <div className={`score ${full ? 'is-full' : ''}`}>
-      <div className="arr-toolbar">
-        <strong className="ellipsis">{item.title}</strong>
-        <span className="small muted ellipsis" title={score.file}>
-          {score.file}
-        </span>
-        <span className="t-sep" style={{ height: 18 }} />
-        <button className="btn btn-sm btn-icon" onClick={() => v.go(-1)} disabled={v.page <= 1} title="Pagina precedente (pedale sinistro)">
-          <Icon name="chevron-up" size={14} />
-        </button>
-        <span className="mono small sc-count">
-          {v.count ? (v.double && v.page < v.count ? `${v.page}-${v.page + 1}` : v.page) : '–'} / {v.count || '–'}
-        </span>
-        <button
-          className="btn btn-sm btn-icon"
-          onClick={() => v.go(1)}
-          disabled={!v.count || v.page + (v.double ? 1 : 0) >= v.count}
-          title="Pagina successiva (pedale destro)"
-        >
-          <Icon name="chevron-down" size={14} />
-        </button>
-        <select
-          className="select"
-          value={pedal.layout}
-          onChange={(e) => update({ pedal: { ...pedal, layout: e.target.value } })}
-          title="Pagine affiancate: “Automatico” ne mostra due quando lo schermo è largo"
-        >
-          {PEDAL_LAYOUTS.map(([k, l]) => (
-            <option key={k} value={k}>
-              {l}
-            </option>
-          ))}
-        </select>
-        <span className="grow" />
-        <PedalChip lastPedal={v.lastPedal} onClick={onPedalPrefs} />
-        <button className="btn btn-sm btn-icon" onClick={() => setFull((f) => !f)} title={full ? 'Esci da schermo intero (Esc)' : 'Schermo intero (F11)'}>
-          <Icon name={full ? 'x' : 'maximize'} size={14} />
-        </button>
-      </div>
+      <Toolbar id="score" title="Spartito" className="arr-toolbar">
+        <ToolGroup id="song" label="Brano" grow>
+          <strong className="ellipsis">{item.title}</strong>
+          <span className="small muted ellipsis" title={score.file}>
+            {score.file}
+          </span>
+        </ToolGroup>
+        <ToolGroup id="pages" label="Pagine">
+          <button className="btn btn-sm btn-icon" onClick={() => v.go(-1)} disabled={v.page <= 1} title="Pagina precedente (pedale sinistro)">
+            <Icon name="chevron-up" size={14} />
+          </button>
+          <span className="mono small sc-count">
+            {v.count ? (v.double && v.page < v.count ? `${v.page}-${v.page + 1}` : v.page) : '–'} / {v.count || '–'}
+          </span>
+          <button
+            className="btn btn-sm btn-icon"
+            onClick={() => v.go(1)}
+            disabled={!v.count || v.page + (v.double ? 1 : 0) >= v.count}
+            title="Pagina successiva (pedale destro)"
+          >
+            <Icon name="chevron-down" size={14} />
+          </button>
+          <select
+            className="select"
+            value={pedal.layout}
+            onChange={(e) => update({ pedal: { ...pedal, layout: e.target.value } })}
+            title="Pagine affiancate: “Automatico” ne mostra due quando lo schermo è largo"
+          >
+            {PEDAL_LAYOUTS.map(([k, l]) => (
+              <option key={k} value={k}>
+                {l}
+              </option>
+            ))}
+          </select>
+        </ToolGroup>
+        <ToolGroup id="view" label="Pedale e vista">
+          <PedalChip lastPedal={v.lastPedal} onClick={onPedalPrefs} />
+          <button className="btn btn-sm btn-icon" onClick={() => setFull((f) => !f)} title={full ? 'Esci da schermo intero (Esc)' : 'Schermo intero (F11)'}>
+            <Icon name={full ? 'x' : 'maximize'} size={14} />
+          </button>
+        </ToolGroup>
+      </Toolbar>
       <div className={`sc-body ${v.double ? 'is-double' : ''}`} ref={box} onClick={onPage}>
         {v.status === 'loading' && <span className="sc-msg">Carico lo spartito…</span>}
         {v.status === 'error' && <span className="sc-msg is-error">Spartito non leggibile: {v.error}</span>}

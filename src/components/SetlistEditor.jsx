@@ -26,6 +26,7 @@ import { createSong, itemFromSong, updateSong, useLibrary } from '../shared/song
 import { useAccess } from '../lib/data';
 import { db, storage } from '../lib/firebase';
 import Icon from './Icon';
+import Toolbar, { ToolGroup } from './Toolbar';
 import { ZoneResizer } from './Zones';
 import MediaFields from './MediaFields';
 
@@ -264,7 +265,7 @@ function StageFields({ d, set, setDraft }) {
         </p>
         {d.sections.map((s, i) => (
           <div key={i} className="se-line">
-            <input className="input grow" value={s.label || ''} onChange={(e) => setSection(i, 'label', e.target.value)} placeholder="Strofa" />
+            <input className="input grow" value={s.label || ''} onChange={(e) => setSection(i, 'label', e.target.value)} placeholder={s.gap ? 'Prima della prima sezione' : 'Strofa'} disabled={!!s.gap} />
             <input className="input se-short" inputMode="numeric" value={s.bars || ''} onChange={(e) => setSection(i, 'bars', e.target.value)} placeholder="Batt." />
             <input className="input se-short" inputMode="numeric" value={s.bpm || ''} onChange={(e) => setSection(i, 'bpm', e.target.value)} placeholder="BPM" />
             <select className="select" value={s.timeSig || ''} onChange={(e) => setSection(i, 'timeSig', e.target.value)}>
@@ -783,17 +784,22 @@ export default function SetlistEditor({ user, setlist, items, itemDocs, numbers,
 
   return (
     <div className="setlist-editor">
-      <div className="arr-toolbar">
-        <Icon name="list-music" size={15} />
-        <TitleEditor setlist={setlist} canEdit={canEdit} onRename={rename} />
-        <span className="small muted">
-          {songs.length} brani{total > 0 && ` · ${formatLong(total)}`}
-          {endTime && ` · fine prevista ${formatClock(endTime)}`}
-        </span>
-        {!canEdit && <span className="tag">Sola lettura</span>}
-        <span className="grow" />
-        <span className="small faint">Colonne e condivisione: app web</span>
-      </div>
+      <Toolbar id="setlist" title="Scaletta" className="arr-toolbar">
+        <ToolGroup id="title" label="Scaletta" locked grow>
+          <Icon name="list-music" size={15} />
+          <TitleEditor setlist={setlist} canEdit={canEdit} onRename={rename} />
+          {!canEdit && <span className="tag">Sola lettura</span>}
+        </ToolGroup>
+        <ToolGroup id="stats" label="Durata">
+          <span className="small muted">
+            {songs.length} brani{total > 0 && ` · ${formatLong(total)}`}
+            {endTime && ` · fine prevista ${formatClock(endTime)}`}
+          </span>
+        </ToolGroup>
+        <ToolGroup id="hint" label="Note">
+          <span className="small faint">Colonne e condivisione: app web</span>
+        </ToolGroup>
+      </Toolbar>
 
       <div className="se-main">
         <div className="se-list-wrap">

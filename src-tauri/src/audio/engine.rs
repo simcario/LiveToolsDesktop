@@ -80,6 +80,17 @@ pub struct SongLoad {
     pub tracks: Vec<TrackLoad>,
 }
 
+/// A move of the playhead planned ahead: at `at` seconds it goes to `to`.
+/// With `repeat` it is a loop, armed again each time.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JumpSpec {
+    pub at: f64,
+    pub to: f64,
+    #[serde(default)]
+    pub repeat: bool,
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Status {
@@ -94,6 +105,8 @@ pub struct Status {
     pub beats: u32,
     pub ended: bool,
     pub underruns: u32,
+    /// The jump or loop waiting to happen.
+    pub jump: Option<JumpSpec>,
     /// [left, right] peak of each track since the last status.
     pub meters: Vec<[f32; 2]>,
     /// Peak of each output of the interface.
@@ -108,6 +121,7 @@ pub struct Monitor {
     pub controls: RwLock<Vec<Arc<TrackControl>>>,
     pub tempo: RwLock<Option<TempoMap>>,
     pub song: RwLock<Option<(String, f64)>>,
+    pub jump: RwLock<Option<JumpSpec>>,
     pub device: RwLock<Option<DeviceInfo>>,
     pub device_error: Arc<Mutex<Option<String>>>,
 }
@@ -131,6 +145,7 @@ impl Monitor {
             beats,
             ended: s.ended.swap(false, Ordering::Relaxed),
             underruns: s.underruns.load(Ordering::Relaxed),
+            jump: *self.jump.read(),
             meters: self.controls.read().iter().map(|c| [c.peak_l.swap(0.0), c.peak_r.swap(0.0)]).collect(),
             outputs: s.out_peaks.iter().take(channels).map(|p| p.swap(0.0)).collect(),
             device: self.device.read().clone(),
@@ -151,6 +166,28 @@ struct Loaded {
     duration: f64,
 }
 
+/// The jump in the audio thread, with the readers already filling its streams.
+struct Armed {
+    id: u64,
+    spec: JumpSpec,
+    decoders: Vec<Option<DecoderHandle>>,
+}
+
+/// One reader per track, from `from` seconds of the song.
+fn spawn_readers(song: &Loaded, from: f64, sr: u32) -> (Vec<Option<DecoderHandle>>, Vec<Option<TrackStream>>) {
+    song.paths
+        .iter()
+        .zip(&song.regions)
+        .map(|(p, regions)| match p {
+            Some(path) => {
+                let (d, s) = stream::spawn(path.clone(), from, sr, regions.clone());
+                (Some(d), Some(s))
+            }
+            None => (None, None),
+        })
+        .unzip()
+}
+
 pub struct Controller {
     host: AudioHost,
     monitor: Arc<Monitor>,
@@ -158,6 +195,8 @@ pub struct Controller {
     cmd: Option<Producer<RtCmd>>,
     song: Option<Loaded>,
     click: ClickParams,
+    armed: Option<Armed>,
+    jump_seq: u64,
 }
 
 pub struct Engine(pub Mutex<Controller>);
@@ -206,6 +245,7 @@ impl Engine {
             controls: RwLock::new(Vec::new()),
             tempo: RwLock::new(None),
             song: RwLock::new(None),
+            jump: RwLock::new(None),
             device: RwLock::new(None),
             device_error: device_error.clone(),
         });
@@ -217,6 +257,8 @@ impl Engine {
             cmd: None,
             song: None,
             click: ClickParams::default(),
+            armed: None,
+            jump_seq: 0,
         };
         (Self(Mutex::new(controller)), monitor, garbage_rx)
     }
@@ -281,6 +323,7 @@ impl Controller {
 
     pub fn load(&mut self, spec: SongSpec) -> Result<SongLoad, String> {
         self.shared().playing.store(false, Ordering::Relaxed);
+        self.cancel_jump();
         let sr = self.sample_rate();
         let tempo = spec.tempo();
 
@@ -341,6 +384,7 @@ impl Controller {
 
     pub fn unload(&mut self) {
         self.shared().playing.store(false, Ordering::Relaxed);
+        self.cancel_jump();
         self.send(RtCmd::Tracks { tracks: Box::new(Vec::new()), position: 0 });
         self.send(RtCmd::Tempo(None));
         self.send(RtCmd::Duration(0));
@@ -350,28 +394,74 @@ impl Controller {
         self.song = None;
     }
 
-    /// Moves the playhead; negative positions are inside the count-in.
+    /// Moves the playhead and drops the jump or loop that was waiting.
     pub fn locate(&mut self, seconds: f64) {
+        self.cancel_jump();
+        self.seek(seconds);
+    }
+
+    /// Plans a move of the playhead, in place of the one that was waiting.
+    pub fn schedule_jump(&mut self, spec: JumpSpec) {
+        if let Some(old) = self.armed.take() {
+            old.decoders.into_iter().flatten().for_each(DecoderHandle::detach);
+        }
+        self.arm(spec);
+    }
+
+    fn arm(&mut self, spec: JumpSpec) {
         let sr = self.sample_rate();
-        let Some(song) = self.song.as_mut() else { return };
+        let Some(song) = self.song.as_ref() else {
+            *self.monitor.jump.write() = None;
+            return;
+        };
+        let rate = sr as f64;
+        let end = song.duration.max(0.0);
+        // Rounded down: a beat computed on a frame must not fall before the playhead (see clicks_in).
+        let at = (spec.at.clamp(0.0, end) * rate).floor() as i64;
+        let to = (spec.to.clamp(0.0, end) * rate).floor() as i64;
+        let (decoders, streams) = spawn_readers(song, to as f64 / rate, sr);
+        self.jump_seq += 1;
+        let id = self.jump_seq;
+        self.armed = Some(Armed { id, spec, decoders });
+        *self.monitor.jump.write() = Some(spec);
+        self.send(RtCmd::Jump { id, at, to, streams: Box::new(streams) });
+    }
+
+    pub fn cancel_jump(&mut self) {
+        if let Some(old) = self.armed.take() {
+            // The callback may be firing it right now: its readers must not be stopped.
+            old.decoders.into_iter().flatten().for_each(DecoderHandle::detach);
+            self.send(RtCmd::CancelJump);
+        }
+        *self.monitor.jump.write() = None;
+    }
+
+    /// The audio thread made jump `id`: its readers are the current ones; a loop is armed again.
+    pub fn jump_fired(&mut self, id: u64) {
+        if self.armed.as_ref().is_none_or(|a| a.id != id) {
+            return;
+        }
+        let Some(armed) = self.armed.take() else { return };
+        if let Some(song) = self.song.as_mut() {
+            song.decoders = armed.decoders;
+        }
+        if armed.spec.repeat {
+            self.arm(armed.spec);
+        } else {
+            *self.monitor.jump.write() = None;
+        }
+    }
+
+    /// Moves the playhead; negative positions are inside the count-in.
+    fn seek(&mut self, seconds: f64) {
+        let sr = self.sample_rate();
+        let Some(song) = self.song.as_ref() else { return };
         let seconds = seconds.max(-song.tempo.pre_roll).min(song.duration.max(0.0));
         let from = seconds.max(0.0);
-        let mut streams: Vec<Option<TrackStream>> = Vec::with_capacity(song.paths.len());
-        let mut decoders = Vec::with_capacity(song.paths.len());
-        for (p, regions) in song.paths.iter().zip(&song.regions) {
-            match p {
-                Some(path) => {
-                    let (d, s) = stream::spawn(path.clone(), from, sr, regions.clone());
-                    decoders.push(Some(d));
-                    streams.push(Some(s));
-                }
-                None => {
-                    decoders.push(None);
-                    streams.push(None);
-                }
-            }
+        let (decoders, streams) = spawn_readers(song, from, sr);
+        if let Some(song) = self.song.as_mut() {
+            song.decoders = decoders;
         }
-        song.decoders = decoders;
         let position = (seconds * sr as f64).round() as i64;
         self.send(RtCmd::Streams { streams: Box::new(streams), position });
     }
@@ -390,7 +480,7 @@ impl Controller {
                 // doesn't leave room for it.
                 let pre = song.tempo.pre_roll;
                 if pre > 0.0 {
-                    self.locate(-pre);
+                    self.seek(-pre);
                 }
             }
         }
@@ -464,9 +554,22 @@ impl Controller {
         Some(tempo)
     }
 
+    /// New sections of the song, heard at once: only the tempo map changes, not the tracks.
+    pub fn set_sections(&mut self, sections: Vec<SectionSpec>) -> Option<TempoMap> {
+        let sr = self.sample_rate();
+        let song = self.song.as_mut()?;
+        song.spec.sections = sections;
+        let tempo = song.spec.tempo();
+        song.tempo = tempo.clone();
+        *self.monitor.tempo.write() = Some(tempo.clone());
+        self.send(RtCmd::Tempo(Some(Box::new(tempo.frames(sr)))));
+        Some(tempo)
+    }
+
     /// Ableton style: stop, and stop again to go back to the start.
     pub fn stop(&mut self) {
         if self.shared().playing.load(Ordering::Relaxed) {
+            self.cancel_jump();
             self.send(RtCmd::Stop);
             self.shared().playing.store(false, Ordering::Relaxed);
         } else {

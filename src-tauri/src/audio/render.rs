@@ -2,7 +2,7 @@
 //! or allocates: commands arrive on a lock-free queue, replaced objects are
 //! handed back to a non real-time thread to be dropped.
 
-use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, AtomicU64, AtomicU8, Ordering};
 use std::sync::mpsc::SyncSender;
 use std::sync::Arc;
 
@@ -30,6 +30,8 @@ pub struct Shared {
     pub channels: AtomicU32,
     pub ended: AtomicBool,
     pub underruns: AtomicU32,
+    /// Id of the last jump that happened (0: none yet).
+    pub jump_fired: AtomicU64,
     pub master: AtomicF32,
     pub out_peaks: Vec<AtomicF32>,
 }
@@ -44,6 +46,7 @@ impl Shared {
             channels: AtomicU32::new(2),
             ended: AtomicBool::new(false),
             underruns: AtomicU32::new(0),
+            jump_fired: AtomicU64::new(0),
             master: AtomicF32::new(1.0),
             out_peaks: (0..MAX_OUTPUTS).map(|_| AtomicF32::new(0.0)).collect(),
         }
@@ -168,6 +171,10 @@ pub enum RtCmd {
     /// One click with the current sound, heard only while stopped (settings).
     PreviewClick(ClickKind),
     Duration(i64),
+    /// At frame `at` the playhead moves to `to`, the readers already ahead:
+    /// no wait and no gap. Replaces the jump armed before.
+    Jump { id: u64, at: i64, to: i64, streams: Box<Vec<Option<TrackStream>>> },
+    CancelJump,
     /// count_in: the count-in clicks sound even with the click off.
     Play { count_in: bool },
     Stop,
@@ -178,6 +185,13 @@ pub enum Garbage {
     Tracks(#[allow(dead_code)] Box<Vec<RtTrack>>),
     Streams(#[allow(dead_code)] Box<Vec<Option<TrackStream>>>),
     Tempo(#[allow(dead_code)] Box<TempoFrames>),
+}
+
+struct ArmedJump {
+    id: u64,
+    at: i64,
+    to: i64,
+    streams: Box<Vec<Option<TrackStream>>>,
 }
 
 struct ClickVoice {
@@ -341,6 +355,19 @@ impl ClickVoice {
     }
 }
 
+/// Length of the fade around a jump: 4 ms.
+fn jump_ramp(sr: usize) -> i64 {
+    (sr as i64 / 250).max(1)
+}
+
+/// Gain of frame `f` of a block: `until` frames from the block start to the
+/// jump, `fade_in` frames left of the fade after the last one.
+fn jump_envelope(f: i64, until: Option<i64>, fade_in: i64, ramp: i64) -> f32 {
+    let out = until.map_or(1.0, |u| ((u - f) as f32 / ramp as f32).clamp(0.0, 1.0));
+    let start = if fade_in > 0 { ((ramp - fade_in + f + 1) as f32 / ramp as f32).clamp(0.0, 1.0) } else { 1.0 };
+    out * start
+}
+
 pub struct Renderer {
     cmds: Consumer<RtCmd>,
     garbage: SyncSender<Garbage>,
@@ -353,6 +380,9 @@ pub struct Renderer {
     duration: i64,
     waited: usize,
     count_in: bool,
+    jump: Option<ArmedJump>,
+    /// Frames left of the fade after a jump.
+    fade_in: usize,
     scratch: Vec<f32>,
 }
 
@@ -370,6 +400,8 @@ impl Renderer {
             duration: 0,
             waited: 0,
             count_in: false,
+            jump: None,
+            fade_in: 0,
             scratch: vec![0.0; MAX_BLOCK * 2],
         }
     }
@@ -403,6 +435,16 @@ impl Renderer {
                 RtCmd::Click(c) => self.click = c,
                 RtCmd::PreviewClick(k) => self.preview = Some(k),
                 RtCmd::Duration(d) => self.duration = d,
+                RtCmd::Jump { id, at, to, streams } => {
+                    if let Some(old) = self.jump.replace(ArmedJump { id, at, to, streams }) {
+                        self.trash(Garbage::Streams(old.streams));
+                    }
+                }
+                RtCmd::CancelJump => {
+                    if let Some(old) = self.jump.take() {
+                        self.trash(Garbage::Streams(old.streams));
+                    }
+                }
                 RtCmd::Play { count_in } => {
                     self.preview = None;
                     self.voice.left = 0;
@@ -425,6 +467,18 @@ impl Renderer {
         self.shared.waiting.store(true, Ordering::Relaxed);
         self.waited = 0;
         self.voice.left = 0;
+    }
+
+    fn fire_jump(&mut self, sr: usize) {
+        let Some(mut jump) = self.jump.take() else { return };
+        for (t, s) in self.tracks.iter_mut().zip(jump.streams.iter_mut()) {
+            std::mem::swap(&mut t.stream, s);
+            t.deficit = 0;
+        }
+        self.trash(Garbage::Streams(jump.streams));
+        self.shared.position.store(jump.to, Ordering::Relaxed);
+        self.shared.jump_fired.store(jump.id, Ordering::Relaxed);
+        self.fade_in = jump_ramp(sr) as usize;
     }
 
     /// Every reader has a quarter of a second ready (or has finished).
@@ -460,7 +514,16 @@ impl Renderer {
         }
         let mut done = 0;
         while done < frames {
-            let n = (frames - done).min(MAX_BLOCK);
+            let mut n = (frames - done).min(MAX_BLOCK);
+            // Blocks end exactly on the jump, whatever the size of the buffer.
+            let pos = self.shared.position.load(Ordering::Relaxed);
+            if let Some(at) = self.jump.as_ref().map(|j| j.at) {
+                if at <= pos {
+                    self.fire_jump(sr);
+                } else if at < pos + n as i64 {
+                    n = (at - pos) as usize;
+                }
+            }
             self.render_block(&mut out[done * ch..(done + n) * ch], n, ch, sr);
             done += n;
         }
@@ -485,6 +548,11 @@ impl Renderer {
         // Tracks start at 0: the count-in (negative positions) is click only.
         let lead = if pos < 0 { ((-pos) as usize).min(frames) } else { 0 };
         let n = frames - lead;
+        // A few ms of fade around a jump, so that the cut doesn't click (the metronome is not faded).
+        let ramp = jump_ramp(sr);
+        let until = self.jump.as_ref().map(|j| j.at - pos);
+        let fade_in = self.fade_in as i64;
+        let shaped = fade_in > 0 || until.is_some_and(|u| u < frames as i64 + ramp);
 
         for t in self.tracks.iter_mut() {
             let Some(stream) = t.stream.as_mut() else { continue };
@@ -525,8 +593,9 @@ impl Renderer {
                 start = 0;
             }
             for i in 0..take {
-                let l = buf[i * 2] * gl;
-                let r = buf[i * 2 + 1] * gr;
+                let k = if shaped { jump_envelope((lead + i) as i64, until, fade_in, ramp) } else { 1.0 };
+                let l = buf[i * 2] * gl * k;
+                let r = buf[i * 2 + 1] * gr * k;
                 pl = pl.max(l.abs());
                 pr = pr.max(r.abs());
                 if !audible || mode == OUT_OFF {
@@ -561,6 +630,7 @@ impl Renderer {
             self.mix_click(out, frames, ch, sr, &triggers[..count]);
         }
 
+        self.fade_in = self.fade_in.saturating_sub(frames);
         self.shared.position.store(pos + frames as i64, Ordering::Relaxed);
     }
 

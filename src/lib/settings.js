@@ -29,7 +29,11 @@ export const DEFAULT_SETTINGS = {
   snapGrid: true, // Arrangement: moved clips land on the beats
   arrTool: 'select', // Arrangement tool: select, move, cut, mute, erase
   page: 'live', // bottom page tabs: live (player), setlist (editor) or songs (library)
-  view: 'session',
+  view: 'stage',
+  jumpQuant: 'bar', // Palco: section jumps on the next beat, bar or end of section
+  stageZoom: 1, // Palco: zoom of the waveform (1 = the whole song)
+  stageGrid: true, // Palco: grid on the waveform
+  stageGridRes: '1', // Palco: resolution of the grid (lib/sections.js)
   setlistId: null,
   pxPerSec: 40,
   // Zones around the main view: open or closed and size in px (see components/Zones.jsx).
@@ -38,6 +42,11 @@ export const DEFAULT_SETTINGS = {
     lower: { open: true, size: 230 },
     right: { open: true, size: 400 },
   },
+  sideTabs: true, // panels of the side zones in tabs (Cubase) or side by side
+  browserTab: 'songs',
+  detailTab: 'song',
+  toolbars: {}, // per bar: order, hidden and breaks of its groups (components/Toolbar.jsx)
+  toolbarLabels: false, // names of the categories over the groups
   prompterLead: 0,
   prompterNext: true,
   updateCheck: true, // look for a new release at startup (never installs on its own)
@@ -65,6 +74,8 @@ function merge(saved) {
   return {
     ...DEFAULT_SETTINGS,
     ...saved,
+    // The Session view is now the Palco view.
+    view: saved?.view === 'session' ? 'stage' : saved?.view ?? DEFAULT_SETTINGS.view,
     outputs: { ...DEFAULT_SETTINGS.outputs, ...(saved?.outputs || {}) },
     click: { ...DEFAULT_SETTINGS.click, ...(saved?.click || {}) },
     pedal: pedalOf(saved?.pedal),

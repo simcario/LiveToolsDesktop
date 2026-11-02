@@ -154,7 +154,12 @@ export function withSongMedia(items, songs, canEdit) {
       return rest;
     }
     if (!song) return { ...it, stems: [], video: null, score: null, cueTrack: null, regions: null, songEditable: false };
-    return { ...it, stems: song.stems || [], video: song.video || null, score: song.score || null, cueTrack: song.cueTrack || null, regions: song.regions || null, songEditable: canEdit(song) };
+    // Songs imported before the cues and the placement of the stems came along
+    // have never had these fields: they are still on the item, with the same stem
+    // ids. Once written on the song they win, a removal (null) included.
+    const cueTrack = song.cueTrack !== undefined ? song.cueTrack : it.cueTrack;
+    const regions = song.regions !== undefined ? song.regions : it.regions;
+    return { ...it, stems: song.stems || [], video: song.video || null, score: song.score || null, cueTrack: cueTrack || null, regions: regions || null, songEditable: canEdit(song) };
   });
 }
 
@@ -199,7 +204,8 @@ async function songsToImport(user, setlists, isAdmin) {
  * Brings the songs of my setlists into the library. Each song becomes (or
  * joins, by title and artist) a library song; its stems and video are copied
  * under the song and the copies on the setlist items are deleted, so the
- * files exist once. onProgress({ step, total, text }).
+ * files exist once. Cue sheet and placement of the stems go with them (a copy
+ * keeps the id of its stem). onProgress({ step, total, text }).
  */
 export async function importFromSetlists({ user, setlists, library, isAdmin, storage, onProgress }) {
   const email = (user.email || '').toLowerCase();
@@ -243,6 +249,10 @@ export async function importFromSetlists({ user, setlists, library, isAdmin, sto
         await updateDoc(doc(db, 'songs', songId), { stems, video, score, updatedAt: serverTimestamp() });
         result.files += files;
       }
+      const media = {};
+      if (source.cueTrack && !existing?.cueTrack) media.cueTrack = source.cueTrack;
+      if (source.regions && !existing?.regions) media.regions = source.regions;
+      if (Object.keys(media).length) await updateDoc(doc(db, 'songs', songId), { ...media, updatedAt: serverTimestamp() });
 
       for (const { setlistId, item } of list) {
         await updateDoc(doc(db, 'setlists', setlistId, 'items', item.id), {

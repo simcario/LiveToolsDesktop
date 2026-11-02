@@ -72,11 +72,15 @@ export const engine = {
   play: (countIn) => invoke('engine_play', { countIn: !!countIn }),
   stop: () => invoke('engine_stop'),
   locate: (seconds) => invoke('engine_locate', { seconds }),
+  // At `at` seconds the playhead moves to `to`, without gaps; repeat = loop.
+  scheduleJump: (jump) => invoke('engine_schedule_jump', { jump }),
+  cancelJump: () => invoke('engine_cancel_jump'),
   setTrack: (id, mix) => invoke('engine_set_track', { id, mix }),
   setClick: (click) => invoke('engine_set_click', { click }),
   previewClick: (kind) => invoke('engine_preview_click', { kind }),
   setMaster: (gainDb) => invoke('engine_set_master', { gainDb }),
   setSync: (sync) => invoke('engine_set_sync', { sync }),
+  setSections: (sections) => invoke('engine_set_sections', { sections }),
   setRegions: (regions) => invoke('engine_set_regions', { regions }),
   replaceTrack: (id, newId, path) => invoke('engine_replace_track', { id, newId, path }),
 };

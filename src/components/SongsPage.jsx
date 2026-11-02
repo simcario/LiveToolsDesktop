@@ -16,6 +16,7 @@ import {
 import { useAccess } from '../lib/data';
 import { db, storage } from '../lib/firebase';
 import Icon from './Icon';
+import Toolbar, { ToolGroup } from './Toolbar';
 import { SongInspector } from './SetlistEditor';
 import { ZoneResizer } from './Zones';
 
@@ -122,37 +123,42 @@ export default function SongsPage({ user, setlists, setlist, setlistItems, canEd
 
   return (
     <div className="setlist-editor">
-      <div className="arr-toolbar">
-        <Icon name="music" size={15} />
-        <strong>Brani</strong>
-        <span className="small muted">
-          {library.all ? `${library.all.length} in libreria` : 'Caricamento…'}
-          {importing && ` · importazione ${importing.total ? `${importing.step}/${importing.total} · ` : ''}${importing.text}`}
-        </span>
-        <span className="grow" />
-        <span className="se-tabs songs-filter" role="tablist">
-          {FILTERS.map(([k, label]) => (
-            <button key={k} type="button" role="tab" aria-selected={filter === k} className={filter === k ? 'is-on' : ''} onClick={() => setFilter(k)}>
-              {label}
-              {library[k]?.length > 0 && <span className="se-count">{library[k].length}</span>}
+      <Toolbar id="songs" title="Brani" className="arr-toolbar">
+        <ToolGroup id="library" label="Libreria" locked grow>
+          <Icon name="music" size={15} />
+          <strong>Brani</strong>
+          <span className="small muted">
+            {library.all ? `${library.all.length} in libreria` : 'Caricamento…'}
+            {importing && ` · importazione ${importing.total ? `${importing.step}/${importing.total} · ` : ''}${importing.text}`}
+          </span>
+        </ToolGroup>
+        <ToolGroup id="filter" label="Filtro">
+          <span className="se-tabs songs-filter" role="tablist">
+            {FILTERS.map(([k, label]) => (
+              <button key={k} type="button" role="tab" aria-selected={filter === k} className={filter === k ? 'is-on' : ''} onClick={() => setFilter(k)}>
+                {label}
+                {library[k]?.length > 0 && <span className="se-count">{library[k].length}</span>}
+              </button>
+            ))}
+          </span>
+        </ToolGroup>
+        <ToolGroup id="search" label="Cerca">
+          <span className="songs-search">
+            <Icon name="search" size={13} />
+            <input className="input" placeholder="Filtra…" value={search} onChange={(e) => setSearch(e.target.value)} />
+          </span>
+        </ToolGroup>
+        {creator && (
+          <ToolGroup id="actions" label="Azioni">
+            <button className="btn btn-sm btn-primary" onClick={() => titleRef.current?.focus()} title="Scrivi il titolo in fondo all’elenco e premi Invio">
+              <Icon name="plus" size={13} /> Nuovo brano
             </button>
-          ))}
-        </span>
-        <span className="songs-search">
-          <Icon name="search" size={13} />
-          <input className="input" placeholder="Filtra…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        </span>
-        {creator && (
-          <button className="btn btn-sm btn-primary" onClick={() => titleRef.current?.focus()} title="Scrivi il titolo in fondo all’elenco e premi Invio">
-            <Icon name="plus" size={13} /> Nuovo brano
-          </button>
+            <button className="btn btn-sm" onClick={runImport} disabled={!!importing || !setlists} title="Porta nella libreria i brani delle tue scalette">
+              <Icon name="download" size={13} /> {importing ? 'Importazione…' : 'Importa dalle scalette'}
+            </button>
+          </ToolGroup>
         )}
-        {creator && (
-          <button className="btn btn-sm" onClick={runImport} disabled={!!importing || !setlists} title="Porta nella libreria i brani delle tue scalette">
-            <Icon name="download" size={13} /> {importing ? 'Importazione…' : 'Importa dalle scalette'}
-          </button>
-        )}
-      </div>
+      </Toolbar>
 
       <div className="se-main">
         <div className="se-list-wrap">

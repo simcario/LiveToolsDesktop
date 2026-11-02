@@ -303,7 +303,7 @@ export function itemFromDraft(d, item) {
       })),
     sections: d.sections
       .filter((s) => s.bars && (s.bpm || s.timeSig))
-      .map((s) => ({ label: (s.label || '').trim(), bars: Number(s.bars) || 1, bpm: Number(s.bpm) || null, timeSig: s.timeSig || null })),
+      .map((s) => ({ label: (s.label || '').trim(), bars: Number(s.bars) || 1, bpm: Number(s.bpm) || null, timeSig: s.timeSig || null, ...(s.gap ? { gap: true } : {}) })),
     values: d.values,
   };
 }

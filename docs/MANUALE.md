@@ -32,18 +32,31 @@ chiude, si aggiorna e si riapre. Non aggiornare a ridosso di un concerto.
 | Area | Cosa contiene |
 |---|---|
 | **Control bar** (in alto) | ⏮ ▶ ■ ⏭, posizione battuta.movimento e tempo, BPM / metro / tonalità, count-in, click, auto-avanzamento, *Segui palco* / *Guida*, scheda audio, impostazioni |
-| **Browser** (sinistra) | le tue scalette, i brani con lo stato dei media offline, *Scarica tutta la scaletta* |
-| **Vista centrale** | **Session**, **Arrangement**, **Gobbo** o **Spartito** (Tab per cambiare) |
-| **Dettaglio** (sotto) | dati del brano, tracce, stato dei download, anteprima video, barra *Rehearsal* |
+| **Browser** (sinistra) | tab *Brani*, *Scalette* e, nella vista Arrangement, *Sezioni*; stato dei media offline, *Scarica tutta la scaletta* |
+| **Vista centrale** | **Palco**, **Arrangement**, **Gobbo** o **Spartito** (Tab per cambiare) |
+| **Dettaglio** (sotto) | tab *Brano*, *Tracce* e *Video*: dati del brano, stato dei download, barra *Rehearsal*, anteprima video |
 | **Barra di stato** | pagine **Live** (Ctrl+1), **Scaletta** (Ctrl+2), **Brani** (Ctrl+3); avviso aggiornamenti |
 
 I pannelli intorno alla vista centrale (Browser, Dettaglio e, nelle pagine Scaletta e Brani, l'ispettore) si
 chiudono e riaprono con i pulsanti nella Control bar o con **Ctrl+Alt+L / E / R**. Si ridimensionano trascinandone
-il bordo; doppio clic sul bordo per tornare alla misura iniziale. Misure e stato restano su questo computer.
+il bordo; doppio clic sul bordo per tornare alla misura iniziale. Misure e stato restano su questo computer. La
+vista **Palco** occupa tutta la finestra: non ha Browser né Dettaglio.
+
+Dalla prossima versione:
+
+- **Tab nei pannelli.** Browser e Dettaglio raggruppano i loro pannelli in tab, come in Cubase. Il pulsante accanto alle tab
+  (o nell'intestazione, se sono affiancati) passa dalle tab ai pannelli affiancati e viceversa.
+- **Barre di comandi.** La barra principale e quelle di Palco, Arrangement, Gobbo, Spartito, Scaletta e Brani sono divise in gruppi per categoria
+  (Trasporto, Tempo, Griglia, Vista…). Quando lo spazio finisce un gruppo va a capo intero, su una nuova riga: nessun
+  comando resta fuori schermo.
+- **Personalizzare una barra.** Con il pulsante a cursori in fondo alla barra, o con un clic destro su di essa, puoi nascondere
+  un gruppo, cambiarne l'ordine trascinando la maniglia e farlo partire da una *Nuova riga*. *Ripristina* torna alla
+  disposizione iniziale. Puoi anche mostrare i nomi delle categorie sopra i gruppi. I gruppi indispensabili, come il Trasporto,
+  non si possono nascondere. Le scelte restano su questo computer.
 
 ### Pagine
 
-- **Live** — il player: Session, Arrangement, Gobbo, Spartito.
+- **Live** — il player: Palco, Arrangement, Gobbo, Spartito.
 - **Scaletta** — modifica della scaletta (stessi dati del web).
 - **Brani** — la libreria dei brani riutilizzabili tra più scalette.
 
@@ -71,7 +84,7 @@ Nella pagina **Brani** ogni brano esiste una volta sola e può comparire in più
 gobbo appartengono al brano della libreria, quindi una correzione vale ovunque.
 
 - *Importa dalle scalette* porta nella libreria i brani già presenti nelle tue scalette (raggruppa i doppioni
-  per titolo, artista e file).
+  per titolo, artista e file), con tracce, video, spartito, cue e posizioni delle tracce.
 - Eliminare un brano dalla libreria cancella anche le sue tracce e il suo video. Togliere un brano da una
   scaletta, invece, non cancella i file.
 
@@ -102,7 +115,10 @@ Prima del concerto, nel Browser premi **Scarica tutta la scaletta**: i media fin
 del computer e l'app suona senza rete. Lo stato di ogni brano è visibile accanto al titolo.
 
 Se carichi un brano che non è ancora sul computer, l'app lo scarica in quel momento: nella barra in alto compare
-una barra di avanzamento con la percentuale, che sparisce appena il brano è pronto.
+una barra di avanzamento con la percentuale, che sparisce appena il brano è pronto. Dalla prossima versione, finché
+il brano non è pronto, al centro dello schermo compare anche un riquadro *Brano in caricamento*, con la percentuale
+durante il download e una barra animata durante la preparazione. Non blocca l'app: puoi fermare o scegliere un altro
+brano.
 
 La cartella media si cambia da **Impostazioni › Generale › Posizione**: l'app sposta i file esistenti e si
 ricarica.
@@ -119,7 +135,11 @@ ricarica.
 | **← →**, Pagina su / giù | brano precedente / successivo (pedaliere Bluetooth); nella vista Spartito girano le pagine |
 | **↑ ↓** | selezione nell'elenco |
 | **Invio** | avvia il brano selezionato |
-| **Tab** | Session → Arrangement → Gobbo → Spartito |
+| **Tab** | Palco → Arrangement → Gobbo → Spartito |
+| **1 … 9** | vista Palco: salta alla sezione con quel numero |
+| **L** | vista Palco: loop della sezione in corso, o esce dal loop |
+| **Esc** | vista Palco: annulla il salto in coda o esce dal loop |
+| **Ins** | Arrangement: nuova sezione alla battuta della testina |
 | **Home** | inizio del brano |
 | **C** | click acceso / spento |
 | **Ctrl+1 / 2 / 3** | pagina Live / Scaletta / Brani |
@@ -129,15 +149,90 @@ ricarica.
 
 *Auto-avanzamento*: a fine brano prepara il successivo.
 
-### 4.2 Session
+### 4.2 Palco
 
-Griglia stile Ableton: colonne = tracce (gli stem con lo stesso nome in tutta la scaletta), righe = brani.
-Il ▶ a destra avvia la scena. In basso il mixer: fader, meter, Mute/Solo, click e master.
+Dalla prossima versione la vista **Palco** sostituisce la griglia Session: è pensata per suonare, si legge da
+lontano e i comandi sono grandi anche per il touch. La disposizione è quella di Playback di MultiTracks, dall'alto in
+basso:
+
+- **Barra del trasporto**: metro e BPM, battuta con i movimenti, tempo trascorso e rimanente, ⏮ (torna all'inizio, a
+  brano fermo), ▶/■ grande, titolo, tonalità e artista. A destra *Video* (uscita video del brano), *Modifica* (crea e
+  sposta le sezioni) e il menu della scaletta.
+- **Scaletta**: i brani in fila come tessere, con numero, tonalità, BPM e durata; quello caricato è evidenziato. Tocca
+  una tessera per caricare il brano. Mentre la musica suona il tocco lo seleziona soltanto e il brano in corso continua.
+  Il cerchio tra due tessere mostra cosa succede a fine brano: ⏭ se l'*auto-avanzamento* carica il successivo, ■ se
+  resta quello in corso. Attenzione: ⏮ ⏭ nella Control bar e i tasti **← →** cambiano brano subito, anche durante
+  l'esecuzione.
+- **Forma d'onda**: tutto il brano, con le sezioni come etichette colorate in alto (numero, nome, battute). Quella in
+  corso è piena e ha a destra l'icona del loop. Tocca un punto della forma d'onda per andare alla linea della griglia più
+  vicina, o alla battuta più vicina se la griglia è nascosta. Sopra leggi quante battute mancano alla sezione successiva.
+  Un brano senza sezioni non ha salti né loop. Vedi *Zoom e griglia* più sotto.
+- **Mixer**, in basso. A sinistra la console con *Loop*, *Loop ∞* e *Annulla*, poi master e metronomo e un fader per
+  ogni gruppo di strumenti del brano caricato, gli stessi dei pulsanti *Rehearsal* (batteria, basso, tastiere, click,
+  guide…). Il volume del gruppo si somma a quello delle sue tracce e resta salvato su questo computer per tutti i brani.
+  Come in Playback, **tocca il nome** per togliere il gruppo dal mix (diventa rosso e barrato) o per spegnere il
+  metronomo; **S** mette in solo tutte le tracce del gruppo.
+
+**Zoom e griglia.** I comandi sono nella barra sopra la forma d'onda, anche mentre modifichi le sezioni, e le scelte
+restano salvate su questo computer.
+
+- **−** e **+** (o **Ctrl+rotella** sulla forma d'onda) cambiano lo zoom fino a ×32; il pulsante accanto riporta tutto il
+  brano nella finestra. Con lo zoom la forma d'onda scorre con la rotella o con la barra sotto. A brano in corso segue la
+  testina, e dopo uno scorrimento a mano riprende a seguirla dopo 3 secondi.
+- Il pulsante della griglia mostra o nasconde le linee con i numeri di battuta. Il menu accanto sceglie la risoluzione:
+  *8*, *4*, *2 battute*, *Battuta* o *Movimento*. Se le linee sono troppo fitte ne vedi meno: aumenta lo zoom per vederle tutte.
+- La griglia guida il tocco sulla forma d'onda. A brano in corso si arriva al massimo sulla battuta, anche con la risoluzione
+  *Movimento*, per non spostare gli accenti rispetto alla musica. Le sezioni partono sempre da una battuta: **+** e il
+  trascinamento dei marker non cambiano con la risoluzione.
+
+**Salti.** A brano in corso, tocca l'etichetta di una sezione: il salto va in coda, l'etichetta lampeggia e la musica
+arriva lì senza buchi e a tempo con il click. Scegli quando avviene con *Movimento*, *Battuta* o *Fine sezione*. Un
+altro tocco sulla stessa etichetta (o *Annulla*, o **Esc**) annulla. A brano fermo il tocco sposta subito la testina.
+
+**Loop.** Come in Playback ce ne sono due, nella console del mixer:
+
+- *Loop* ripete **una volta** la sezione in corso: alla fine torna al suo inizio, poi la musica prosegue.
+- *Loop ∞* (**L**, o l'icona del loop sull'etichetta della sezione in corso) la ripete finché non lo premi di nuovo:
+  la musica arriva alla fine della sezione e poi continua.
+
+Toccare un'altra sezione esce dal loop e salta lì. Stop e cambio brano annullano salti e loop.
+
+**Creare le sezioni sulla forma d'onda.** Premi **Modifica** nella barra del trasporto (serve poter modificare la scaletta): la forma d'onda si
+ingrandisce fino a quando non premi *Fine* nello stesso punto. Un tocco sulla forma d'onda sposta solo la testina e non crea sezioni.
+
+- Porta la testina dove serve e premi **+**: il marker si aggancia alla battuta più vicina. Il primo marker su un brano
+  vuoto crea anche *Intro*, perché la prima sezione parte sempre dalla battuta 1.
+- Trascina un marker per spostarlo da una battuta all'altra, senza superare quelli vicini.
+- Tocca un marker o l'etichetta di una sezione per scegliere la sezione: scrivi il nome o usa quelli pronti (*Intro*, *Strofa*,
+  *Ritornello*…). *Elimina* la toglie e le sue battute passano alla sezione prima.
+- **Ctrl+Z** annulla, **Ctrl+Shift+Z** ripete. Le modifiche restano su questo computer finché non premi **Salva**, come nell'Arrangement; poi
+  valgono per tutta la band.
+
+Le stesse sezioni si modificano anche nella pagina **Scaletta**, scheda **Brano**, *Cambi di tempo*: lì puoi dare a una
+sezione un tempo o un metro diversi. Se una sezione cambia il tempo, spostarne il marker sposta anche il cambio.
+
+I marker non toccano le **cue**: la griglia resta la stessa e le cue già create, live o renderizzate, restano dove sono.
+Se il brano ha delle cue, la vista Palco rifiuta solo le modifiche che cambierebbero davvero il tempo, come spostare o
+eliminare una sezione con un tempo proprio.
 
 ### 4.3 Arrangement
 
-Timeline del brano caricato: righello in battute, locator delle sezioni, forme d'onda, corsie video, click e
+Timeline del brano caricato: righello in battute, corsia delle sezioni, forme d'onda, corsie video, click e
 cue, testina che segue. Header delle tracce con M/S, volume, uscita, meter.
+
+Dalla prossima versione sotto il righello c'è la **corsia delle sezioni**, come la Marker Track di Cubase, con gli stessi
+colori della vista Palco:
+
+- **clic** su una sezione: ci vai. A brano in corso il salto avviene senza buchi, nel momento scelto nella vista Palco
+  (*Movimento*, *Battuta* o *Fine sezione*). Anche i pulsanti ⏮ ⏭ del gruppo *Sezioni* spostano da una all'altra;
+- **trascina l'inizio** di una sezione per spostarlo, a battute;
+- **doppio clic** per rinominarla;
+- **Ctrl+clic**, per aggiungerne una in quel punto. **Ins** o il **+** nell'intestazione *Sezioni* la aggiungono alla testina.
+
+La tab **Sezioni** del Browser, visibile solo in questa vista, mostra l'elenco, con numero, nome e battuta di partenza: il
+numero porta alla sezione, il nome si scrive direttamente nella riga, la × elimina, **Aggiungi** ne crea una alla battuta
+della testina. Le modifiche si salvano con **Salva**.
+
 **Ctrl+rotella** = zoom; pulsanti *Segui la testina* e *Adatta alla finestra*.
 
 **Precount**: battute di count-in prima della battuta 1, uguali per tutti i brani; si impostano in **Impostazioni › Trasporto** e si sentono con il count-in attivo.
@@ -225,11 +320,12 @@ Altre azioni: **Ctrl+E** taglia la traccia selezionata alla testina, **Canc** el
 **Aggiungi → Battute…** inserisce battute vuote alla battuta della testina: sposta in avanti stem, cue,
 ancoraggi della griglia, cambi del gobbo e sezioni.
 
-Dalla prossima versione un brano parte sempre dal suo primo audio: se tutte le tracce finiscono più avanti (per
-esempio trascinate sul "1" della griglia), il vuoto iniziale viene tolto e il brano si sposta indietro con griglia,
-gobbo e video. Battute vuote all'inizio restano solo se le inserisci con *Aggiungi → Battute…*. Vale anche per i
-brani già salvati con un vuoto: all'apertura nell'Arrangement la correzione è *Non salvata*, quindi la tieni con
-**Salva** o la annulli con **Ctrl+Z**.
+Dalla prossima versione un brano parte sempre dal suo primo audio o dalla battuta 1, se viene prima: il vuoto che
+li precede viene tolto e il brano si sposta indietro con griglia, cue, gobbo e video. Le battute tra il "1" e
+l'audio restano, così un conteggio parlato sulla traccia cue ha il suo spazio; altre battute vuote all'inizio
+restano solo se le inserisci con *Aggiungi → Battute…*. Vale anche per i brani già salvati con un vuoto:
+all'apertura nell'Arrangement la correzione è *Non salvata*, quindi la tieni con **Salva** o la annulli con
+**Ctrl+Z**.
 
 I file audio non vengono mai riscritti: l'app salva solo dove suonare ogni pezzo. Il video si sposta solo se
 il taglio è prima del suo inizio.
@@ -243,7 +339,8 @@ Utile quando un brano non ha una traccia guida.
 1. **Aggiungi → Traccia cue** nell'Arrangement.
 2. La corsia è divisa in quadratini (quarti o ottavi per battuta): clicca un quadratino e scegli la cue
    ("Strofa", "Ritornello", "Bridge", conteggi…).
-3. La **mano** sposta tutte le cue, la **gomma** ne cancella una.
+3. La **mano** sposta tutte le cue trascinando (dalla prossima versione non apre il menu: per inserire usa un altro
+   strumento), la **gomma** ne cancella una.
 
 Le cue si sentono subito come traccia *live*, generata su questo computer. Con **Renderizza in file audio**
 diventano uno stem "Cues" caricato online, che si ascolta anche dal Rehearsal del web. Se modifichi le cue

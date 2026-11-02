@@ -7,14 +7,15 @@ mod bluetooth;
 mod media;
 mod oauth;
 
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use audio::beats::{self, SyncAnalysis, SyncRequest};
 use audio::device::{DeviceEntry, DeviceInfo};
 use audio::tempo::{SyncSpec, TempoMap};
-use audio::engine::{SongLoad, TrackLoad};
+use audio::engine::{JumpSpec, SongLoad, TrackLoad};
 use audio::{ClickParams, Engine, SongSpec, TrackMix};
-use tauri::{Emitter, State};
+use tauri::{Emitter, Manager, State};
 
 #[tauri::command(async)]
 fn audio_devices(engine: State<'_, Engine>) -> Vec<DeviceEntry> {
@@ -49,6 +50,16 @@ fn engine_stop(engine: State<'_, Engine>) {
 #[tauri::command]
 fn engine_locate(engine: State<'_, Engine>, seconds: f64) {
     engine.0.lock().locate(seconds);
+}
+
+#[tauri::command]
+fn engine_schedule_jump(engine: State<'_, Engine>, jump: JumpSpec) {
+    engine.0.lock().schedule_jump(jump);
+}
+
+#[tauri::command]
+fn engine_cancel_jump(engine: State<'_, Engine>) {
+    engine.0.lock().cancel_jump();
 }
 
 #[tauri::command]
@@ -102,6 +113,11 @@ fn engine_set_sync(engine: State<'_, Engine>, sync: Option<SyncSpec>) -> Option<
     engine.0.lock().set_sync(sync)
 }
 
+#[tauri::command]
+fn engine_set_sections(engine: State<'_, Engine>, sections: Vec<audio::tempo::SectionSpec>) -> Option<TempoMap> {
+    engine.0.lock().set_sections(sections)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let (engine, monitor, garbage) = Engine::new();
@@ -115,12 +131,18 @@ pub fn run() {
             media::init(app.handle());
             // ~30 status updates per second to every window (transport, meters, video sync).
             let handle = app.handle().clone();
+            let mut jump_seen = 0;
             std::thread::Builder::new()
                 .name("livetools-status".into())
                 .spawn(move || loop {
                     std::thread::sleep(Duration::from_millis(33));
                     while let Ok(g) = garbage.try_recv() {
                         drop(g);
+                    }
+                    let fired = monitor.shared.jump_fired.load(Ordering::Relaxed);
+                    if fired != jump_seen {
+                        jump_seen = fired;
+                        handle.state::<Engine>().0.lock().jump_fired(fired);
                     }
                     let _ = handle.emit("engine-status", monitor.status());
                 })?;
@@ -134,11 +156,14 @@ pub fn run() {
             engine_play,
             engine_stop,
             engine_locate,
+            engine_schedule_jump,
+            engine_cancel_jump,
             engine_set_track,
             engine_set_click,
             engine_set_master,
             engine_preview_click,
             engine_set_sync,
+            engine_set_sections,
             engine_set_regions,
             engine_replace_track,
             analyze_sync,

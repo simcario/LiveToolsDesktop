@@ -4,6 +4,7 @@
 // every desktop. The clips are bundled with the app (public/cues).
 import { invoke } from '@tauri-apps/api/core';
 import { gridBeats } from './grid';
+import { sectionTiming } from './sections';
 import { cueTrackOf, deleteMediaFile, mediaTarget, saveStems, stemsOf, uploadMedia } from '../shared/media.js';
 import { db, storage } from './firebase';
 import { storeLocal } from './mediaCache';
@@ -53,7 +54,7 @@ export function cueBars(tempo, duration, resolution) {
       row = { bar: b.bar, label: b.inBar === 0 && b.seg.start >= b.t - 1e-6 ? b.seg.label || '' : '', cells: [] };
       bars.push(row);
     }
-    row.cells.push({ g: b.g, t: b.t, beat: b.inBar });
+    row.cells.push({ g: b.g, t: Math.max(0, b.t), beat: b.inBar });
     if (resolution === 8) {
       const next = beats[i + 1]?.t ?? b.t + b.seg.beat;
       row.cells.push({ g: b.g + 0.5, t: (b.t + next) / 2, beat: b.inBar, half: true });
@@ -179,7 +180,8 @@ export function liveCuePlan(item) {
   if (rendered && sheet.renderedKey === key) return null;
   // Everything the grid depends on: a change makes a new local file.
   const sig = hash(
-    JSON.stringify([key, item.bpm, item.timeSig, item.sections, item.grid, item.countInBars, stemsOf(item).map((s) => s.id).sort(), item.regions || null]),
+    // Of the sections only their timing: names and markers leave the cues as they are.
+    JSON.stringify([2, key, item.bpm, item.timeSig, sectionTiming(item), item.grid, item.countInBars, stemsOf(item).map((s) => s.id).sort(), item.regions || null]),
   );
   return {
     skip: rendered?.id ?? null,

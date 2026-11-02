@@ -94,3 +94,29 @@ export function ZoneToggles({ page }) {
     </div>
   );
 }
+
+/** Tabs of a side zone, as in Cubase; the button next to them puts the panels side by side. */
+export function ZoneTabs({ tabs, active, onChange, label }) {
+  return (
+    <div className="zone-tabs">
+      <div className="zone-tabs-list" role="tablist" aria-label={label}>
+        {tabs.map(([k, name, icon]) => (
+          <button key={k} role="tab" aria-selected={active === k} className={active === k ? 'is-on' : ''} onClick={() => onChange(k)}>
+            <Icon name={icon} size={13} /> {name}
+          </button>
+        ))}
+      </div>
+      <ZoneLayoutToggle />
+    </div>
+  );
+}
+
+export function ZoneLayoutToggle() {
+  const [settings, update] = useSettings();
+  const label = settings.sideTabs ? 'Mostra i pannelli affiancati, senza tab' : 'Raggruppa i pannelli in tab';
+  return (
+    <button className="zone-layout" onClick={() => update({ sideTabs: !settings.sideTabs })} title={label} aria-label={label}>
+      <Icon name={settings.sideTabs ? 'layers' : 'panel'} size={13} />
+    </button>
+  );
+}

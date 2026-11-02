@@ -24,12 +24,22 @@ pub struct TrackStream {
 
 /// Stops the reader thread when dropped.
 pub struct DecoderHandle {
-    stop: Arc<AtomicBool>,
+    stop: Option<Arc<AtomicBool>>,
+}
+
+impl DecoderHandle {
+    /// Lets the reader go on by itself: it ends when its stream is discarded.
+    /// For a jump being cancelled, which the callback may be firing right now.
+    pub fn detach(mut self) {
+        self.stop = None;
+    }
 }
 
 impl Drop for DecoderHandle {
     fn drop(&mut self) {
-        self.stop.store(true, Ordering::Relaxed);
+        if let Some(stop) = &self.stop {
+            stop.store(true, Ordering::Relaxed);
+        }
     }
 }
 
@@ -82,13 +92,13 @@ pub fn spawn(path: PathBuf, start_seconds: f64, dst_rate: u32, regions: Vec<Regi
             eof2.store(true, Ordering::Release);
         })
         .expect("thread di lettura");
-    (DecoderHandle { stop }, TrackStream { rx, eof })
+    (DecoderHandle { stop: Some(stop) }, TrackStream { rx, eof })
 }
 
 /// Writes interleaved stereo samples (whole frames); false when stopped.
 fn push(tx: &mut Producer<f32>, mut data: &[f32], stop: &AtomicBool) -> bool {
     while !data.is_empty() {
-        if stop.load(Ordering::Relaxed) {
+        if stop.load(Ordering::Relaxed) || tx.is_abandoned() {
             return false;
         }
         let n = tx.slots().min(data.len()) & !1;

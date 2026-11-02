@@ -157,6 +157,27 @@ const PATHS = {
     </>
   ),
   record: <circle cx="12" cy="12" r="7" fill="currentColor" />,
+  repeat: (
+    <>
+      <path d="m17 2 4 4-4 4" />
+      <path d="M3 11v-1a4 4 0 0 1 4-4h14" />
+      <path d="m7 22-4-4 4-4" />
+      <path d="M21 13v1a4 4 0 0 1-4 4H3" />
+    </>
+  ),
+  sliders: (
+    <>
+      <path d="M4 21v-7" />
+      <path d="M4 10V3" />
+      <path d="M12 21v-9" />
+      <path d="M12 8V3" />
+      <path d="M20 21v-5" />
+      <path d="M20 12V3" />
+      <path d="M2 14h4" />
+      <path d="M10 8h4" />
+      <path d="M18 16h4" />
+    </>
+  ),
   undo: (
     <>
       <path d="M3 7v6h6" />
@@ -255,6 +276,33 @@ const PATHS = {
     <>
       <circle cx="11" cy="11" r="8" />
       <path d="m21 21-4.3-4.3" />
+    </>
+  ),
+  marker: (
+    <>
+      <path d="M5 3h14l-7 8z" fill="currentColor" />
+      <path d="M12 14v2M12 19v2" />
+    </>
+  ),
+  'marker-add': (
+    <>
+      <path d="M2 3h12l-6 7z" fill="currentColor" />
+      <path d="M8 13v2M8 18v2" />
+      <path d="M14 16h8M18 12v8" />
+    </>
+  ),
+  'zoom-in': (
+    <>
+      <circle cx="11" cy="11" r="8" />
+      <path d="m21 21-4.3-4.3" />
+      <path d="M11 8v6M8 11h6" />
+    </>
+  ),
+  'zoom-out': (
+    <>
+      <circle cx="11" cy="11" r="8" />
+      <path d="m21 21-4.3-4.3" />
+      <path d="M8 11h6" />
     </>
   ),
   edit: (

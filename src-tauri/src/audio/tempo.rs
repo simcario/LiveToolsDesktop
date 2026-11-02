@@ -470,6 +470,29 @@ mod tests {
     }
 
     #[test]
+    fn markers_keep_the_grid() {
+        // Sections made on the waveform: the song's metre, no tempo of their own.
+        let marker = |label: &str, bars: f64| SectionSpec { label: Some(label.into()), bars: Some(bars), bpm: None, time_sig: Some("4/4".into()) };
+        let sections = vec![marker("Intro", 2.0), marker("Strofa", 4.0), marker("Rit", 4.0)];
+        let plain = TempoMap::build_at(Some(120.5), Some("4/4"), 1, &[], 1.0);
+        let map = TempoMap::build_at(Some(120.5), Some("4/4"), 1, &sections, 1.0);
+        assert_eq!(map.segments[2].label, "Strofa");
+        assert_eq!(map.segments[2].first_bar, 3);
+        // Same count-in, bars and beats: a cue on a beat stays where it is.
+        assert!((map.pre_roll - plain.pre_roll).abs() < 1e-9);
+        for k in -8..2000 {
+            let t = 1.0 + k as f64 * 0.25;
+            assert_eq!(map.position(t), plain.position(t), "t = {t}");
+        }
+        let (mut a, mut b) = (Vec::new(), Vec::new());
+        map.frames(48_000).clicks_in(-96_000, 48_000 * 500, |f, k, c| a.push((f, k, c)));
+        plain.frames(48_000).clicks_in(-96_000, 48_000 * 500, |f, k, c| b.push((f, k, c)));
+        assert_eq!(a.len(), b.len());
+        // Within a frame: the sums of the segments round, never by more.
+        assert!(a.iter().zip(&b).all(|(x, y)| (x.0 - y.0).abs() <= 1 && x.1 == y.1 && x.2 == y.2));
+    }
+
+    #[test]
     fn compound_meter_clicks_eighths() {
         let map = TempoMap::build(Some(60.0), Some("6/8"), 0, &[]);
         let frames = map.frames(300);

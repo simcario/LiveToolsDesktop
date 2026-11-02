@@ -1,5 +1,5 @@
-// Session grid: one column ("lane") per stem name across the whole setlist,
-// like the tracks of an Ableton Live set. Click and guides come first.
+// One "lane" per stem name across the whole setlist, with its colour, like the
+// tracks of an Ableton Live set. Click and guides come first.
 import { stemsOf } from '../shared/media.js';
 
 export const ROLE_COLORS = {

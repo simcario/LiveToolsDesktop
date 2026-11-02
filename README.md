@@ -18,12 +18,13 @@ Documentazione: [manuale d'uso](docs/MANUALE.md) · [come rilasciare una version
 
 | Area | Contenuto |
 |---|---|
-| Control bar | ⏮ ▶ ■ ⏭, posizione battuta.movimento + tempo, BPM/metro/tonalità, count-in, click, auto-avanzamento, *Segui palco* / *Guida*, Session ⇄ Arrangement, scheda audio |
-| Browser (sinistra) | scalette dell'utente, brani con stato dei media offline, "Scarica tutta la scaletta" |
-| **Session** (griglia) | colonne = tracce (stem con lo stesso nome in tutta la scaletta), righe = brani/scene; ▶ a destra avvia la scena; mixer in basso (fader, meter, M/S), click e master |
-| **Arrangement** (tracce) | timeline del brano nel player: righello battute dalla mappa tempo, locator delle sezioni, forme d'onda, corsia video e click, testina che segue; header tracce a destra con M/S, volume, uscita, meter. Ctrl+rotella = zoom |
-| Dettaglio (sotto) | dati del brano, tracce e stato download, anteprima video |
-| Pagine (barra di stato) | **Live** (player: Session, Arrangement, Gobbo) e **Scaletta** (modifica), come le pagine di un editor video; Ctrl+1 / Ctrl+2 |
+| Control bar | ⏮ ▶ ■ ⏭, posizione battuta.movimento + tempo, BPM/metro/tonalità, count-in, click, auto-avanzamento, *Segui palco* / *Guida*, Palco ⇄ Arrangement, scheda audio |
+| Browser (sinistra) | tab Brani, Scalette e Sezioni (o pannelli affiancati); stato dei media offline, "Scarica tutta la scaletta" |
+| **Palco** (live) | a tutta finestra: ▶/■ grande, brano, battuta, tempo rimanente, prossimo brano; panoramica con le sezioni; pulsanti delle sezioni con salti quantizzati e loop (`engine_schedule_jump`, sample-accurate e senza buchi); marker delle sezioni creati sulla forma d'onda (bozza del brano, `Salva`); mixer del brano caricato; scaletta a destra |
+| **Arrangement** (tracce) | timeline del brano nel player: righello battute dalla mappa tempo, corsia delle sezioni (clic per andarci, trascina, Ctrl+clic o Ins per aggiungere), forme d'onda, corsia video e click, testina che segue; header tracce a destra con M/S, volume, uscita, meter. Ctrl+rotella = zoom |
+| Dettaglio (sotto) | tab Brano, Tracce e Video (o pannelli affiancati) |
+| Barre di comandi | `components/Toolbar.jsx`: gruppi per categoria che vanno a capo; nascondi, riordina e nuova riga in `settings.toolbars` |
+| Pagine (barra di stato) | **Live** (player: Palco, Arrangement, Gobbo) e **Scaletta** (modifica), come le pagine di un editor video; Ctrl+1 / Ctrl+2 |
 
 ### Pagina Scaletta (modifica)
 
@@ -80,7 +81,7 @@ computer della band; con gli ancoraggi le correzioni ◀ 1 / ±5 ms del menu Gri
 
 ### Gobbo (testo sincronizzato)
 
-La vista **Gobbo** (terza vista, accanto a Session e Arrangement) mostra il testo del brano a slide,
+La vista **Gobbo** (terza vista, accanto a Palco e Arrangement) mostra il testo del brano a slide,
 sincronizzate a mano con la sequenza:
 
 1. **Suddividi il testo**: “Genera dal testo” divide il campo *Testo gobbo* del brano (si scrive con la matita nel pannello *Testo del brano*, nella pagina Scaletta o sul web;
@@ -106,7 +107,8 @@ rete si svuota.
 
 Scorciatoie: **Spazio** play/stop (stop due volte = torna all'inizio), **← →** / Pagina su-giù brano
 precedente/successivo (pedaliere Bluetooth), **↑ ↓** selezione, **Invio** avvia il selezionato,
-**Tab** cambia vista (Session → Arrangement → Gobbo), **Home** inizio, **C** click.
+**Tab** cambia vista (Palco → Arrangement → Gobbo), **Home** inizio, **C** click. Nella vista Palco: **1-9**
+salto alla sezione, **L** loop, **Esc** annulla.
 
 ## Da dove arrivano i dati
 

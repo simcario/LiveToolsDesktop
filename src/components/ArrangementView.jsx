@@ -4,6 +4,8 @@ import { gridBeats, moveAnchor, nearestOnset, removeAnchor, shiftAnchors, tapBpm
 import { laneColor, ROLE_COLORS } from '../lib/lanes';
 import { usePeaks } from '../lib/mediaCache';
 import { useOnsets } from '../lib/onsets';
+import { nearestBarIndex, sectionIndexAt } from '../lib/sections';
+import { useSections } from '../lib/useSections';
 import { gridOf } from '../lib/sync';
 import { getMix, outputOptions, parseRoute, routeValue, useMix } from '../lib/settings';
 import Icon from './Icon';
@@ -16,8 +18,12 @@ import { closeLeadingGap, cutAt, keepGrid, moveSegment, removeSegment, segmentEn
 import { clearHistory, recordStep, travel, useHistory } from '../lib/arrangeHistory';
 import { discardDraft, editDraft, saveDraft, useDrafts } from '../lib/drafts';
 import { regionsOf, stemsOf } from '../shared/media.js';
+import Toolbar, { ToolGroup } from './Toolbar';
 
-const RULER_H = 30;
+// Bar numbers on top, then the lane of the sections (Cubase's marker track).
+const MARK_Y = 30;
+const RULER_H = 56;
+const MARK_EDGE = 6; // px around the start of a section where a drag moves it
 const LANE_H = 64;
 const MIN_PPS = 4;
 const MAX_PPS = 400;
@@ -32,8 +38,9 @@ const TOOLS = [
 ];
 
 const fmtTime = (t) => `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, '0')}`;
+const gapText = ({ gap }) => (gap > 0 ? `tolti ${gap.toFixed(1)} s vuoti all’inizio` : 'battuta 1 riportata all’inizio, con le sue cue');
 
-function draw(canvas, { width, height, scroll, pps, t0, tempo, rows, peaks, duration, warp, cue }) {
+function draw(canvas, { width, height, scroll, pps, t0, tempo, rows, peaks, duration, warp, cue, sections }) {
   const dpr = window.devicePixelRatio || 1;
   if (canvas.width !== Math.round(width * dpr) || canvas.height !== Math.round(height * dpr)) {
     canvas.width = Math.round(width * dpr);
@@ -90,25 +97,35 @@ function draw(canvas, { width, height, scroll, pps, t0, tempo, rows, peaks, dura
     }
   });
 
-  // Section locators (from the song's sections in the web app)
-  (tempo?.segments || []).forEach((s) => {
-    if (!s.label || s.countIn) return;
+  // Section lane: a colour each, as in the Palco view.
+  sections.forEach((s) => {
     const sx = x(s.start);
-    if (sx < -200 || sx > width) return;
-    ctx.fillStyle = '#f59e0b';
+    const ex = x(s.end);
+    if (ex < 0 || sx > width) return;
+    ctx.fillStyle = `${s.color}40`;
+    ctx.fillRect(sx, MARK_Y + 1, ex - sx, RULER_H - MARK_Y - 2);
+    ctx.fillStyle = s.color;
+    ctx.fillRect(sx, MARK_Y + 1, 1, RULER_H - MARK_Y - 2);
     ctx.beginPath();
-    ctx.moveTo(sx, 16);
-    ctx.lineTo(sx + 8, 22);
-    ctx.lineTo(sx, 28);
+    ctx.moveTo(sx - 5, MARK_Y + 1);
+    ctx.lineTo(sx + 6, MARK_Y + 1);
+    ctx.lineTo(sx + 0.5, MARK_Y + 9);
     ctx.fill();
-    ctx.font = '700 10px Inter, sans-serif';
-    ctx.fillStyle = '#fbbf24';
-    ctx.fillText(s.label, sx + 11, 22);
-    ctx.strokeStyle = 'rgba(245,158,11,0.35)';
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(sx, MARK_Y, ex - sx, RULER_H - MARK_Y);
+    ctx.clip();
+    ctx.font = '700 11px Inter, sans-serif';
+    ctx.fillStyle = '#f8fafc';
+    ctx.fillText(s.label, Math.max(sx, 0) + 8, MARK_Y + (RULER_H - MARK_Y) / 2);
+    ctx.restore();
+    ctx.strokeStyle = `${s.color}80`;
+    ctx.setLineDash([4, 3]);
     ctx.beginPath();
     ctx.moveTo(Math.round(sx) + 0.5, RULER_H);
     ctx.lineTo(Math.round(sx) + 0.5, height);
     ctx.stroke();
+    ctx.setLineDash([]);
   });
   ctx.strokeStyle = 'rgba(255,255,255,0.12)';
   ctx.beginPath();
@@ -493,6 +510,24 @@ export default function ArrangementView({ player, item, lanes, settings, update,
   }
   const height = RULER_H + rows.length * LANE_H;
 
+  const sec = useSections({ player, setlistId, canEdit, notify, quant: settings.jumpQuant });
+  const { sections } = sec;
+  const [secDrag, setSecDrag] = useState(null); // { index, bar } of the section being moved
+  const [secName, setSecName] = useState(null); // index of the section being renamed
+  // As they are drawn: the one being moved already in its new place.
+  const drawnSections = secDrag
+    ? sections.map((s, i) => {
+        const t = sec.bars[secDrag.bar]?.t ?? s.start;
+        if (s.index === secDrag.index) return { ...s, start: Math.min(t, s.end) };
+        return sections[i + 1]?.index === secDrag.index ? { ...s, end: Math.max(t, s.start) } : s;
+      })
+    : sections;
+  const sectionNow = useEngineStatus((s) => sectionIndexAt(sections, Math.max(0, s.position)));
+  const goSection = (s) => s && sec.go(s);
+  // Before bar 1 the next section is the first one.
+  const prevSection = sectionNow > 0 ? sections[sectionNow - 1] : null;
+  const nextSection = sections[sectionNow + 1] || null;
+
   useLayoutEffect(() => {
     const el = scroller.current;
     if (!el) return undefined;
@@ -512,7 +547,7 @@ export default function ArrangementView({ player, item, lanes, settings, update,
       const warp = warpOn ? { grid, onsets, refStemId: refTrack?.stem.id, drag } : null;
       const byG = cueDrag ? new Map(cue.shifted(cueDrag).map((c) => [c.g, c.label])) : cue.byG;
       const cueDraw = { bars: cue.bars, byG, status: cue.busy || cue.status, hover: cueDrag ? null : cueHover, nowG: nowCue };
-      draw(canvas.current, { width: view.width, height, scroll: view.scroll, pps, t0, tempo, rows, peaks, duration, warp, cue: cueDraw });
+      draw(canvas.current, { width: view.width, height, scroll: view.scroll, pps, t0, tempo, rows, peaks, duration, warp, cue: cueDraw, sections: drawnSections });
     }
   });
 
@@ -520,6 +555,17 @@ export default function ArrangementView({ player, item, lanes, settings, update,
   const storedGrid = JSON.stringify(player.loadedItem?.grid ?? null);
   useEffect(() => setDraft(null), [storedGrid, loaded?.itemId]);
   useEffect(() => setSelection(null), [loaded?.itemId]);
+
+  // Ins: a new section at the playhead, as a marker in Cubase.
+  const addSectionKey = useRef();
+  addSectionKey.current = sec.addAtPlayhead;
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === 'Insert' && !e.target.closest?.('input, select, textarea')) addSectionKey.current();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   // W: grid editor on/off. Ctrl+Z / Ctrl+Shift+Z (Ctrl+Y): undo / redo. Ctrl+E: cut the selected track.
   useEffect(() => {
@@ -642,10 +688,10 @@ export default function ArrangementView({ player, item, lanes, settings, update,
   const commitRegions = (stem, regions, label) => {
     let all = { ...regionsOf(song), [stem.id]: regions };
     if (stem.id === loaded?.sync?.source?.id) all = keepGrid(all, stemRegions(song, stem.id), stem.id);
-    const closed = closeLeadingGap(song, all);
+    const closed = closeLeadingGap(song, all, tempo?.origin);
     if (closed) {
       writeClosedGap(closed, label);
-      notify(`${label}: tolti ${closed.gap.toFixed(1)} s vuoti all’inizio`);
+      notify(`${label}: ${gapText(closed)}`);
       return;
     }
     editDraft(song.id, { media: { regions: all } });
@@ -667,10 +713,10 @@ export default function ArrangementView({ player, item, lanes, settings, update,
   useEffect(() => {
     if (!song || !canEditSong || loaded?.itemId !== song.id || gapChecked.current.has(song.id)) return;
     gapChecked.current.add(song.id);
-    const closed = closeLeadingGap(song);
+    const closed = closeLeadingGap(song, regionsOf(song), tempo?.origin);
     if (!closed) return;
-    writeClosedGap(closed, 'Tolto il vuoto all’inizio');
-    notify(`Tolti ${closed.gap.toFixed(1)} s vuoti all’inizio di “${song.title}”: “Salva” per tenerlo, Ctrl+Z per annullare`);
+    writeClosedGap(closed, 'Corretto l’inizio del brano');
+    notify(`“${song.title}”: ${gapText(closed)}. “Salva” per tenerlo, Ctrl+Z per annullare`);
   });
 
   const selectedStem = selection && stemsOf(song).find((s) => s.id === selection.stemId);
@@ -744,7 +790,59 @@ export default function ArrangementView({ player, item, lanes, settings, update,
     return cueCellAt(cue.bars, (e.clientX - rect.left) / pps + t0);
   };
 
+  // Lane of the sections: click goes there, Ctrl+click adds one, the start of a section drags.
+  const onLane = (e) => {
+    const y = e.clientY - e.currentTarget.getBoundingClientRect().top;
+    return y >= MARK_Y && y < RULER_H;
+  };
+  const laneSection = (t) => sections.findLast((s) => t >= s.start - MARK_EDGE / pps && t < s.end);
+  const laneEdge = (s, t) => !!s && sec.editable && Math.abs(t - s.start) <= MARK_EDGE / pps;
+  const laneDown = (e, t) => {
+    if (e.ctrlKey) {
+      sec.add(nearestBarIndex(sec.bars, t));
+      return;
+    }
+    const s = laneSection(t);
+    if (!s) return;
+    if (!laneEdge(s, t)) {
+      sec.go(s);
+      return;
+    }
+    e.preventDefault();
+    const el = e.currentTarget;
+    const box = el.getBoundingClientRect();
+    el.setPointerCapture(e.pointerId);
+    const from = e.clientX;
+    let bar = null;
+    const move = (ev) => {
+      if (bar == null && Math.abs(ev.clientX - from) < 4) return;
+      const prev = sections[sections.indexOf(s) - 1];
+      const lo = prev ? prev.barIndex + 1 : 0;
+      const hi = s.barIndex + Math.max(1, s.bars) - 1;
+      bar = Math.max(lo, Math.min(hi, nearestBarIndex(sec.bars, (ev.clientX - box.left) / pps + t0)));
+      setSecDrag({ index: s.index, bar });
+    };
+    const up = () => {
+      el.removeEventListener('pointermove', move);
+      el.removeEventListener('pointerup', up);
+      el.removeEventListener('pointercancel', up);
+      setSecDrag(null);
+      if (bar == null) sec.go(s);
+      else sec.move(s.index, bar);
+    };
+    el.addEventListener('pointermove', move);
+    el.addEventListener('pointerup', up);
+    el.addEventListener('pointercancel', up);
+  };
+
   const onMouseMove = (e) => {
+    if (onLane(e)) {
+      const pt = (e.clientX - e.currentTarget.getBoundingClientRect().left) / pps + t0;
+      const s = laneSection(pt);
+      e.currentTarget.style.cursor = laneEdge(s, pt) ? 'ew-resize' : s ? 'pointer' : sec.editable ? 'copy' : '';
+      if (cueHover != null) setCueHover(null);
+      return;
+    }
     const hit = cue.canEdit ? cueHit(e) : null;
     const box = e.currentTarget.getBoundingClientRect();
     const row = !hit && !warpOn ? rows[Math.floor((e.clientY - box.top - RULER_H) / LANE_H)] : null;
@@ -754,7 +852,7 @@ export default function ArrangementView({ player, item, lanes, settings, update,
     const toolCursor = TOOLS.find(([k]) => k === tool)[4];
     const cueCursor = tool === 'move' ? 'grab' : tool === 'erase' ? 'not-allowed' : 'pointer';
     e.currentTarget.style.cursor = hit ? cueCursor : onEdge ? 'ew-resize' : onSegment && (canEditSong || tool === 'select') ? toolCursor : '';
-    const g = hit?.cell.g ?? null;
+    const g = tool === 'move' ? null : hit?.cell.g ?? null;
     if (g !== cueHover) setCueHover(g);
   };
 
@@ -762,6 +860,10 @@ export default function ArrangementView({ player, item, lanes, settings, update,
     if (e.button !== 0) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const t = (e.clientX - rect.left) / pps + t0;
+    if (onLane(e)) {
+      laneDown(e, t);
+      return;
+    }
     const hit = cue.canEdit ? cueHit(e) : null;
     if (hit) {
       const open = () => setPicking({ ...hit, rect: { left: e.clientX - 20, bottom: e.clientY + 8 } });
@@ -770,11 +872,12 @@ export default function ArrangementView({ player, item, lanes, settings, update,
         if (cue.byG.has(hit.cell.g)) cue.setCue(hit.cell.g, null);
         return;
       }
-      if (tool !== 'move' || !cue.cues.length) {
+      if (tool !== 'move') {
         open();
         return;
       }
-      // Hand: the whole cue track moves square by square (a click without dragging opens the menu).
+      // Hand: the whole cue track moves square by square; it never opens the menu.
+      if (!cue.cues.length) return;
       e.preventDefault();
       const el = e.currentTarget;
       el.setPointerCapture(e.pointerId);
@@ -791,8 +894,7 @@ export default function ArrangementView({ player, item, lanes, settings, update,
         el.removeEventListener('pointermove', move);
         el.removeEventListener('pointerup', up);
         setCueDrag(null);
-        if (delta == null) open();
-        else cue.shift(delta);
+        cue.shift(delta);
       };
       el.addEventListener('pointermove', move);
       el.addEventListener('pointerup', up);
@@ -933,6 +1035,11 @@ export default function ArrangementView({ player, item, lanes, settings, update,
 
   // Double click on a grid line: pin it where it is.
   const onDoubleClick = (e) => {
+    if (onLane(e)) {
+      const s = sec.editable ? laneSection((e.clientX - e.currentTarget.getBoundingClientRect().left) / pps + t0) : null;
+      if (s) setSecName(s.index);
+      return;
+    }
     if (!warpOn) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const line = lineAt((e.clientX - rect.left) / pps + t0);
@@ -1008,133 +1115,157 @@ export default function ArrangementView({ player, item, lanes, settings, update,
 
   return (
     <div className="arr">
-      <div className="arr-toolbar">
-        <strong className="ellipsis">{player.loadedItem?.title}</strong>
-        <span className="small muted">
-          {loaded.tracks.length} tracce{loaded.video ? ' · video' : ''}
-        </span>
-        <span className="t-sep" style={{ height: 18 }} />
-        <SyncControl player={player} />
-        <span className="arr-add">
-          <button
-            className={`btn btn-sm ${addOpen ? 'is-on' : ''}`}
-            onClick={() => setAddOpen((v) => !v)}
-            disabled={!cue.canEdit}
-            title={cue.canEdit ? 'Aggiungi una traccia al brano' : 'Solo chi può modificare il brano'}
-          >
-            <Icon name="plus" size={13} /> Aggiungi
-          </button>
-          {addOpen && (
-            <div className="arr-add-menu" role="menu" onMouseLeave={() => setAddOpen(false)}>
-              <button
-                role="menuitem"
-                disabled={cue.exists}
-                onClick={() => {
-                  cue.add();
-                  setAddOpen(false);
-                }}
-              >
-                <span className="cue-badge">CUE</span>
-                <span>
-                  Traccia cue
-                  <span className="small faint">{cue.exists ? 'Già presente nel brano' : 'Guide vocali sulle battute (Chorus, Bridge, 1-2-3-4…)'}</span>
-                </span>
-              </button>
-              <button
-                role="menuitem"
-                onClick={() => {
-                  setAddOpen(false);
-                  setBarsOpen(true);
-                }}
-              >
-                <Icon name="plus" size={13} />
-                <span>
-                  Battute…
-                  <span className="small faint">Inserisce battute vuote dalla posizione attuale: le tracce dopo si spostano</span>
-                </span>
-              </button>
-            </div>
-          )}
-        </span>
-        <button
-          className={`btn btn-sm ${snap ? 'is-on' : ''}`}
-          onClick={() => update({ snapGrid: !snap })}
-          title={snap ? 'Griglia attiva: le tracce trascinate si agganciano ai movimenti (Shift = libero)' : 'Griglia spenta: le tracce si spostano liberamente (Shift = aggancia)'}
-        >
-          <Icon name="grid" size={13} /> Griglia
-        </button>
-        <span className="t-sep" style={{ height: 18 }} />
-        <button
-          className="btn btn-sm btn-icon"
-          onClick={() => goHistory(-1)}
-          disabled={!canEditSong || !history.past.length}
-          title={history.past.length ? `Annulla: ${history.past.at(-1).label} (Ctrl+Z)` : 'Niente da annullare'}
-        >
-          <Icon name="undo" size={14} />
-        </button>
-        <button
-          className="btn btn-sm btn-icon"
-          onClick={() => goHistory(1)}
-          disabled={!canEditSong || !history.future.length}
-          title={history.future.length ? `Ripeti: ${history.future.at(-1).label} (Ctrl+Shift+Z)` : 'Niente da ripetere'}
-        >
-          <Icon name="undo" size={14} className="icon-flip" />
-        </button>
-        <span className="view-switch arr-tools" role="toolbar" aria-label="Strumenti">
-          {TOOLS.map(([k, icon, label, key]) => (
-            <button
-              key={k}
-              className={tool === k ? 'is-on' : ''}
-              onClick={() => update({ arrTool: k })}
-              disabled={k !== 'select' && !canEditSong}
-              title={`${label} (${key})`}
-            >
-              <Icon name={icon} size={14} />
-            </button>
-          ))}
-        </span>
-        <button
-          className={`btn btn-sm ${warpOn ? 'is-on' : ''}`}
-          onClick={() => setEditing((v) => !v)}
-          disabled={!canEdit}
-          title={canEdit ? 'Allinea a mano griglia e click all’audio: ancoraggi, tempo, intervallo di analisi (W)' : 'Solo chi può modificare la scaletta'}
-        >
-          <Icon name="edit" size={13} /> Griglia a mano
-        </button>
-        <span className="grow" />
-        {dirty && (
-          <span className="arr-save">
-            <span className="small arr-unsaved">Non salvato</span>
-            <button className="btn btn-sm btn-ghost" onClick={discardSong} disabled={saving} title="Torna all’ultimo salvataggio">
-              Scarta
-            </button>
-            <button className="btn btn-sm btn-primary" onClick={saveSong} disabled={saving} title="Salva le modifiche del brano per tutta la band (Ctrl+S)">
-              <Icon name="check" size={13} /> {saving ? 'Salvataggio…' : 'Salva'}
-            </button>
+      <Toolbar id="arrangement" title="Arrangement" className="arr-toolbar">
+        <ToolGroup id="song" label="Brano" grow>
+          <strong className="ellipsis">{player.loadedItem?.title}</strong>
+          <span className="small muted">
+            {loaded.tracks.length} tracce{loaded.video ? ' · video' : ''}
           </span>
-        )}
-        <button
-          className={`btn btn-sm ${settings.followPlayhead ? 'is-on' : ''}`}
-          onClick={() => update({ followPlayhead: !settings.followPlayhead })}
-          title="Segui la testina"
-        >
-          <Icon name="follow" size={14} /> Segui
-        </button>
-        <button className="btn btn-sm btn-icon" onClick={() => zoom(1 / 1.5)} title="Riduci (Ctrl + rotella)">
-          <Icon name="minus" size={14} />
-        </button>
-        <button className="btn btn-sm btn-icon" onClick={() => zoom(1.5)} title="Ingrandisci (Ctrl + rotella)">
-          <Icon name="plus" size={14} />
-        </button>
-        <button className="btn btn-sm" onClick={fit} title="Adatta il brano alla finestra">
-          <Icon name="maximize" size={14} /> Adatta
-        </button>
-        {loaded.video && (
-          <button className="btn btn-sm" onClick={onVideoOutput}>
-            <Icon name="monitor" size={14} /> Uscita video
+        </ToolGroup>
+        <ToolGroup id="edit" label="Modifica">
+          <span className="arr-add">
+            <button
+              className={`btn btn-sm ${addOpen ? 'is-on' : ''}`}
+              onClick={() => setAddOpen((v) => !v)}
+              disabled={!cue.canEdit}
+              title={cue.canEdit ? 'Aggiungi una traccia al brano' : 'Solo chi può modificare il brano'}
+            >
+              <Icon name="plus" size={13} /> Aggiungi
+            </button>
+            {addOpen && (
+              <div className="arr-add-menu" role="menu" onMouseLeave={() => setAddOpen(false)}>
+                <button
+                  role="menuitem"
+                  disabled={cue.exists}
+                  onClick={() => {
+                    cue.add();
+                    setAddOpen(false);
+                  }}
+                >
+                  <span className="cue-badge">CUE</span>
+                  <span>
+                    Traccia cue
+                    <span className="small faint">{cue.exists ? 'Già presente nel brano' : 'Guide vocali sulle battute (Chorus, Bridge, 1-2-3-4…)'}</span>
+                  </span>
+                </button>
+                <button
+                  role="menuitem"
+                  onClick={() => {
+                    setAddOpen(false);
+                    setBarsOpen(true);
+                  }}
+                >
+                  <Icon name="plus" size={13} />
+                  <span>
+                    Battute…
+                    <span className="small faint">Inserisce battute vuote dalla posizione attuale: le tracce dopo si spostano</span>
+                  </span>
+                </button>
+              </div>
+            )}
+          </span>
+          <button
+            className="btn btn-sm btn-icon"
+            onClick={() => goHistory(-1)}
+            disabled={!canEditSong || !history.past.length}
+            title={history.past.length ? `Annulla: ${history.past.at(-1).label} (Ctrl+Z)` : 'Niente da annullare'}
+          >
+            <Icon name="undo" size={14} />
           </button>
+          <button
+            className="btn btn-sm btn-icon"
+            onClick={() => goHistory(1)}
+            disabled={!canEditSong || !history.future.length}
+            title={history.future.length ? `Ripeti: ${history.future.at(-1).label} (Ctrl+Shift+Z)` : 'Niente da ripetere'}
+          >
+            <Icon name="undo" size={14} className="icon-flip" />
+          </button>
+          <span className="view-switch arr-tools" role="toolbar" aria-label="Strumenti">
+            {TOOLS.map(([k, icon, label, key]) => (
+              <button
+                key={k}
+                className={tool === k ? 'is-on' : ''}
+                onClick={() => update({ arrTool: k })}
+                disabled={k !== 'select' && !canEditSong}
+                title={`${label} (${key})`}
+              >
+                <Icon name={icon} size={14} />
+              </button>
+            ))}
+          </span>
+        </ToolGroup>
+        <ToolGroup id="grid" label="Griglia">
+          <SyncControl player={player} />
+          <button
+            className={`btn btn-sm ${snap ? 'is-on' : ''}`}
+            onClick={() => update({ snapGrid: !snap })}
+            title={snap ? 'Griglia attiva: le tracce trascinate si agganciano ai movimenti (Shift = libero)' : 'Griglia spenta: le tracce si spostano liberamente (Shift = aggancia)'}
+          >
+            <Icon name="grid" size={13} /> Griglia
+          </button>
+          <button
+            className={`btn btn-sm ${warpOn ? 'is-on' : ''}`}
+            onClick={() => setEditing((v) => !v)}
+            disabled={!canEdit}
+            title={canEdit ? 'Allinea a mano griglia e click all’audio: ancoraggi, tempo, intervallo di analisi (W)' : 'Solo chi può modificare la scaletta'}
+          >
+            <Icon name="edit" size={13} /> Griglia a mano
+          </button>
+        </ToolGroup>
+        {sections.length > 0 && (
+          <ToolGroup id="sections" label="Sezioni">
+            <span className="arr-sections" role="group" aria-label="Sezioni">
+              <button className="btn btn-sm btn-icon" onClick={() => goSection(prevSection)} disabled={!prevSection} title={prevSection ? `Vai a ${prevSection.label}` : 'Sei alla prima sezione'} aria-label="Sezione precedente">
+                <Icon name="skip-back" size={13} />
+              </button>
+              <span className="arr-section-now ellipsis" style={{ color: sections[sectionNow]?.color }}>
+                {sections[sectionNow]?.label || 'Sezioni'}
+              </span>
+              <button className="btn btn-sm btn-icon" onClick={() => goSection(nextSection)} disabled={!nextSection} title={nextSection ? `Vai a ${nextSection.label}` : 'Sei all’ultima sezione'} aria-label="Sezione successiva">
+                <Icon name="skip-forward" size={13} />
+              </button>
+            </span>
+          </ToolGroup>
         )}
-      </div>
+        {dirty && (
+          <ToolGroup id="save" label="Salvataggio" locked>
+            <span className="arr-save">
+              <span className="small arr-unsaved">Non salvato</span>
+              <button className="btn btn-sm btn-ghost" onClick={discardSong} disabled={saving} title="Torna all’ultimo salvataggio">
+                Scarta
+              </button>
+              <button className="btn btn-sm btn-primary" onClick={saveSong} disabled={saving} title="Salva le modifiche del brano per tutta la band (Ctrl+S)">
+                <Icon name="check" size={13} /> {saving ? 'Salvataggio…' : 'Salva'}
+              </button>
+            </span>
+          </ToolGroup>
+        )}
+        <ToolGroup id="view" label="Vista">
+          <button
+            className={`btn btn-sm ${settings.followPlayhead ? 'is-on' : ''}`}
+            onClick={() => update({ followPlayhead: !settings.followPlayhead })}
+            title="Segui la testina"
+          >
+            <Icon name="follow" size={14} /> Segui
+          </button>
+          <button className="btn btn-sm btn-icon" onClick={() => zoom(1 / 1.5)} title="Riduci (Ctrl + rotella)">
+            <Icon name="zoom-out" size={14} />
+          </button>
+          <button className="btn btn-sm btn-icon" onClick={() => zoom(1.5)} title="Ingrandisci (Ctrl + rotella)">
+            <Icon name="zoom-in" size={14} />
+          </button>
+          <button className="btn btn-sm" onClick={fit} title="Adatta il brano alla finestra">
+            <Icon name="maximize" size={14} /> Adatta
+          </button>
+        </ToolGroup>
+        {loaded.video && (
+          <ToolGroup id="output" label="Uscite">
+            <button className="btn btn-sm" onClick={onVideoOutput}>
+              <Icon name="monitor" size={14} /> Uscita video
+            </button>
+          </ToolGroup>
+        )}
+      </Toolbar>
       {warpOn && <GridBar grid={grid} tempo={tempo} onChange={commitGrid} />}
       <div className="arr-body">
         <div className="arr-timeline" ref={scroller} onWheel={onWheel}>
@@ -1147,11 +1278,46 @@ export default function ArrangementView({ player, item, lanes, settings, update,
             onMouseLeave={() => setCueHover(null)}
           >
             <canvas className="arr-canvas" ref={canvas} />
+            {sections.filter((s) => s.index === secName).map((s) => (
+              <input
+                key={s.index}
+                className="arr-sec-name"
+                style={{ left: (s.start - t0) * pps + 5, top: MARK_Y + 2 }}
+                defaultValue={s.name}
+                placeholder={s.label}
+                aria-label="Nome della sezione"
+                autoFocus
+                onFocus={(e) => e.target.select()}
+                onPointerDown={(e) => e.stopPropagation()}
+                onDoubleClick={(e) => e.stopPropagation()}
+                onBlur={(e) => {
+                  const label = e.target.value.trim();
+                  if (label !== s.name) sec.rename(s.index, label);
+                  setSecName(null);
+                }}
+                onKeyDown={(e) => {
+                  e.stopPropagation();
+                  if (e.key === 'Enter') e.target.blur();
+                  if (e.key === 'Escape') {
+                    e.target.value = s.name;
+                    e.target.blur();
+                  }
+                }}
+              />
+            ))}
             <div className="arr-playhead" ref={playhead} style={{ height }} />
           </div>
         </div>
         <div className="arr-headers">
-          <div className="arr-ruler-head">Tracce</div>
+          <div className="arr-ruler-head">
+            <span>Tracce</span>
+            <span className="arr-lane-head">
+              Sezioni
+              <button className="toggle" onClick={sec.addAtPlayhead} disabled={!sec.editable} title="Aggiungi una sezione alla battuta della testina (Ins). Ctrl+clic sulla corsia: nel punto scelto" aria-label="Aggiungi una sezione alla testina">
+                <Icon name="marker-add" size={13} />
+              </button>
+            </span>
+          </div>
           {rows.map((r, i) =>
             r.kind === 'cue' ? (
               <CueHeader key="cue" cue={cue} solos={player.solos} onTrack={player.setTrack} loadedTracks={loaded.tracks} />

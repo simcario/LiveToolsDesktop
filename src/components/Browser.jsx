@@ -3,7 +3,16 @@ import { formatEventDate, formatLong, isSeparator } from '../shared/setlists.js'
 import { stemsOf, videoOf } from '../shared/media.js';
 import { useDrafts } from '../lib/drafts';
 import { ensureItems, itemCacheState, mediaOf, useMediaCache } from '../lib/mediaCache';
+import { useSettings } from '../lib/settings';
 import Icon from './Icon';
+import SectionsPanel from './SectionsPanel';
+import { ZoneLayoutToggle, ZoneTabs } from './Zones';
+
+const TABS = [
+  ['songs', 'Brani', 'layers'],
+  ['setlists', 'Scalette', 'list-music'],
+  ['sections', 'Sezioni', 'timeline'],
+];
 
 const CACHE_HINT = {
   ready: ['ok', 'Media scaricati'],
@@ -12,7 +21,13 @@ const CACHE_HINT = {
   error: ['err', 'Download non riuscito'],
 };
 
-export default function Browser({ setlists, setlistId, onSetlist, items, numbers, selectedId, loadedId, liveItemId, onSelect, onLoad }) {
+export default function Browser({ setlists, setlistId, onSetlist, items, numbers, selectedId, loadedId, liveItemId, onSelect, onLoad, player, canEdit, notify, showSections }) {
+  const [settings, update] = useSettings();
+  const tabbed = settings.sideTabs;
+  // The saved tab stays: back in the Arrangement, the sections are there again.
+  const tabs = showSections ? TABS : TABS.filter(([k]) => k !== 'sections');
+  const tab = tabs.some(([k]) => k === settings.browserTab) ? settings.browserTab : 'songs';
+  const shows = (k) => !tabbed || tab === k;
   const drafts = useDrafts();
   const cache = useMediaCache();
   const [syncing, setSyncing] = useState(false);
@@ -32,11 +47,15 @@ export default function Browser({ setlists, setlistId, onSetlist, items, numbers
   };
 
   return (
-    <aside className="browser">
-      <div className="panel-head">
-        <Icon name="list-music" size={13} /> Scalette
-      </div>
-      <div className="browser-setlists">
+    <aside className={`browser ${tabbed ? 'is-tabbed' : ''}`}>
+      {tabbed && <ZoneTabs label="Pannelli del Browser" tabs={tabs} active={tab} onChange={(browserTab) => update({ browserTab })} />}
+      {!tabbed && (
+        <div className="panel-head">
+          <Icon name="list-music" size={13} /> Scalette
+          <ZoneLayoutToggle />
+        </div>
+      )}
+      <div className="browser-setlists" hidden={!shows('setlists')}>
         {setlists === null && <p className="small muted" style={{ padding: 10 }}>Caricamento…</p>}
         {setlists?.length === 0 && (
           <p className="small muted" style={{ padding: 10 }}>
@@ -60,10 +79,12 @@ export default function Browser({ setlists, setlistId, onSetlist, items, numbers
         ))}
       </div>
 
-      <div className="panel-head">
-        <Icon name="layers" size={13} /> Brani
-      </div>
-      <div className="browser-songs">
+      {!tabbed && (
+        <div className="panel-head">
+          <Icon name="layers" size={13} /> Brani
+        </div>
+      )}
+      <div className="browser-songs" hidden={!shows('songs')}>
         {items.map((it) => {
           if (isSeparator(it)) {
             return (
@@ -98,6 +119,17 @@ export default function Browser({ setlists, setlistId, onSetlist, items, numbers
           );
         })}
       </div>
+
+      {showSections && !tabbed && (
+        <div className="panel-head">
+          <Icon name="timeline" size={13} /> Sezioni
+        </div>
+      )}
+      {showSections && shows('sections') && (
+        <div className="browser-sections">
+          <SectionsPanel player={player} setlistId={setlistId} canEdit={canEdit} notify={notify} />
+        </div>
+      )}
 
       {files.length > 0 && (
         <div className="browser-foot">

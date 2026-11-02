@@ -18,8 +18,9 @@ import ArrangementView from './components/ArrangementView';
 import Browser from './components/Browser';
 import Icon from './components/Icon';
 import DetailView from './components/DetailView';
+import LoadingModal from './components/LoadingModal';
 import Login from './components/Login';
-import SessionView from './components/SessionView';
+import StageView from './components/StageView';
 import PrompterView from './components/PrompterView';
 import ScoreView from './components/ScoreView';
 import SetlistEditor from './components/SetlistEditor';
@@ -30,7 +31,7 @@ import HelpPanel from './components/HelpPanel';
 import Transport from './components/Transport';
 import { ZoneResizer, zoneFrame } from './components/Zones';
 
-const VIEWS = ['session', 'arrangement', 'prompter', 'score'];
+const VIEWS = ['stage', 'arrangement', 'prompter', 'score'];
 const ZONE_KEYS = { KeyL: 'left', KeyE: 'lower', KeyR: 'right' };
 // Pages (tabs at the bottom, as the pages of a video editor): playing and editing the setlist.
 const PAGES = [
@@ -63,7 +64,7 @@ function UpdateChip({ onOpen }) {
   );
 }
 
-function StatusBar({ message, device, page, onPage, onUpdates }) {
+function StatusBar({ message, device, page, stage, onPage, onUpdates }) {
   const underruns = useEngineStatus((s) => s.underruns);
   const deviceError = useEngineStatus((s) => s.deviceError);
   return (
@@ -93,6 +94,10 @@ function StatusBar({ message, device, page, onPage, onUpdates }) {
         <span>
           <span className="kbd">↑</span>
           <span className="kbd">↓</span> selezione · <span className="kbd">Ctrl+S</span> salva il brano · <span className="kbd">Spazio</span> play/stop
+        </span>
+      ) : stage ? (
+        <span>
+          <span className="kbd">Spazio</span> play/stop · <span className="kbd">1</span>–<span className="kbd">9</span> sezione · <span className="kbd">L</span> loop · <span className="kbd">Esc</span> annulla il salto · <span className="kbd">Tab</span> vista
         </span>
       ) : (
         <span>
@@ -176,6 +181,8 @@ function Workspace({ user }) {
   const selected = items.find((i) => i.id === selectedId && !isSeparator(i)) || player.loadedItem || songs[0] || null;
   const canEdit = ['owner', 'admin', 'editor'].includes(role);
   const page = ['setlist', 'songs'].includes(settings.page) ? settings.page : 'live';
+  // Palco takes the whole window: the setlist is inside it, no Browser and no Dettaglio.
+  const stage = page === 'live' && settings.view === 'stage' && !!setlistId;
   const openInPrompter = useCallback(
     (itemId) => {
       setSelectedId(itemId);
@@ -245,7 +252,7 @@ function Workspace({ user }) {
       const zone = (e.ctrlKey || e.metaKey) && e.altKey && ZONE_KEYS[e.code];
       if (zone) {
         e.preventDefault();
-        if (zone === 'left' || (zone === 'lower') === (page === 'live')) update((s) => toggleZone(s, zone));
+        if (!stage && (zone === 'left' || (zone === 'lower') === (page === 'live'))) update((s) => toggleZone(s, zone));
         return;
       }
       // Editing page: only play/stop, the arrows move the selection in the list.
@@ -294,12 +301,12 @@ function Workspace({ user }) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [player, songs, selected, settings.view, settings.click, settingsOpen, prefsOpen, helpOpen, update, page]);
+  }, [player, songs, selected, settings.view, settings.click, settingsOpen, prefsOpen, helpOpen, update, page, stage]);
 
   const frame = zoneFrame(settings.zones);
 
   return (
-    <div className={`app ${frame.className}`} style={frame.style}>
+    <div className={`app ${frame.className} ${stage ? 'is-stage' : ''}`} style={frame.style}>
       <Transport
         user={user}
         item={player.loadedItem || selected}
@@ -313,6 +320,7 @@ function Workspace({ user }) {
         liveOn={!!setlist?.live?.startedAt}
         page={page}
         showViews={page === 'live'}
+        stage={stage}
         onSettings={() => setSettingsOpen(true)}
         onPrefs={() => setPrefsOpen(true)}
         onHelp={() => setHelpOpen(true)}
@@ -323,6 +331,7 @@ function Workspace({ user }) {
           }
         }}
       />
+      <LoadingModal busy={player.busy} files={player.downloading} />
       <Browser
         setlists={setlists}
         setlistId={setlistId}
@@ -334,6 +343,10 @@ function Workspace({ user }) {
         liveItemId={setlist?.live?.itemId}
         onSelect={setSelectedId}
         onLoad={(it) => player.load(it)}
+        player={player}
+        canEdit={canEdit}
+        notify={notify}
+        showSections={page === 'live' && settings.view === 'arrangement'}
       />
       <main className="main">
         {page === 'songs' ? (
@@ -367,17 +380,24 @@ function Workspace({ user }) {
               notify={notify}
             />
           )
-        ) : settings.view === 'session' ? (
-          <SessionView
+        ) : settings.view === 'stage' ? (
+          <StageView
             items={items}
             numbers={numbers}
             lanes={lanes}
             player={player}
-            selectedId={selected?.id}
+            selected={selected}
             liveItemId={setlist?.live?.itemId}
             onSelect={setSelectedId}
+            setlists={setlists}
+            setlistId={setlistId}
+            onSetlist={(id) => update({ setlistId: id })}
             settings={settings}
             update={update}
+            active={!settingsOpen && !prefsOpen && !helpOpen}
+            onVideoOutput={openVideoOutput}
+            canEdit={canEdit}
+            notify={notify}
           />
         ) : settings.view === 'score' ? (
           <ScoreView
@@ -412,14 +432,14 @@ function Workspace({ user }) {
           />
         )}
       </main>
-      <ZoneResizer zone="left" />
-      {page === 'live' && settings.zones.lower.open && (
+      {!stage && <ZoneResizer zone="left" />}
+      {page === 'live' && !stage && settings.zones.lower.open && (
         <>
           <DetailView item={selected} number={selected ? numbers[selected.id] : null} lanes={lanes} player={player} onVideoOutput={openVideoOutput} />
           <ZoneResizer zone="lower" />
         </>
       )}
-      <StatusBar message={message} device={device} page={page} onPage={(p) => update({ page: p })} onUpdates={() => setPrefsOpen('updates')} />
+      <StatusBar message={message} device={device} page={page} stage={stage} onPage={(p) => update({ page: p })} onUpdates={() => setPrefsOpen('updates')} />
       {prefsOpen && (
         <PreferencesPanel
           settings={settings}

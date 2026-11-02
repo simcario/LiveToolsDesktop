@@ -20,7 +20,8 @@ export function gridBeats(tempo, t0, t1) {
     const n = clicksOf(s, segs[i + 1]);
     const end = n != null ? s.start + n * s.beat : Infinity;
     const first = s.firstBeat || 0;
-    for (let k = Math.max(0, Math.ceil((t0 - s.start) / s.beat - 1e-9)); ; k += 1) {
+    // A hair of tolerance: a beat rounded just before t0 (bar 1 at -0.00002 s) is still in.
+    for (let k = Math.max(0, Math.ceil((t0 - s.start) / s.beat - 1e-3)); ; k += 1) {
       const t = s.start + k * s.beat;
       if (t >= Math.min(end, t1) - 1e-9 || (n != null && k >= n)) break;
       const b = first + k;

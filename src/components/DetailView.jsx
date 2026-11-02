@@ -2,10 +2,18 @@ import { formatDuration, PLAYBACK_TYPES } from '../shared/setlists.js';
 import { formatBytes, groupLabel, rehearsalGroup, rehearsalGroups, STEM_ROLES, stemsOf, videoOf } from '../shared/media.js';
 import { keyLabel } from '../shared/music.js';
 import { ensureItems, useMediaCache } from '../lib/mediaCache';
+import { useSettings } from '../lib/settings';
 import { laneColor, ROLE_COLORS } from '../lib/lanes';
 import Icon from './Icon';
 import SyncControl from './SyncControl';
 import SyncedVideo from './SyncedVideo';
+import { ZoneLayoutToggle, ZoneTabs } from './Zones';
+
+const TABS = [
+  ['song', 'Brano', 'music'],
+  ['tracks', 'Tracce', 'layers'],
+  ['video', 'Video', 'video'],
+];
 
 export function CacheState({ c }) {
   if (!c) return <span className="small faint">—</span>;
@@ -24,6 +32,10 @@ export function CacheState({ c }) {
 export default function DetailView({ item, number, lanes, player, onVideoOutput }) {
   const cache = useMediaCache();
   const loaded = player.loaded;
+  const [settings, update] = useSettings();
+  const tabbed = settings.sideTabs;
+  const tab = TABS.some(([k]) => k === settings.detailTab) ? settings.detailTab : 'song';
+  const col = (k) => `d-col ${tabbed && tab !== k ? 'is-off' : ''}`;
 
   if (!item) {
     return (
@@ -37,18 +49,20 @@ export default function DetailView({ item, number, lanes, player, onVideoOutput 
   const stems = stemsOf(item);
   const video = videoOf(item);
   const isLoaded = loaded?.itemId === item.id;
-  const sections = (item.sections || []).filter((s) => s.label || s.bars);
+  const sections = (item.sections || []).filter((s) => !s.gap && (s.label || s.bars));
   // The click group exists even without a click stem: the engine's metronome.
   const groups = rehearsalGroups(item);
   if (stems.length && !groups.includes('click')) groups.splice(groups.length - (groups.includes('guide') ? 1 : 0), 0, 'click');
   const missing = [...stems, ...(video ? [video] : [])].some((m) => !cache[m.path]?.ready);
 
   return (
-    <section className="detail">
-      <div className="d-col">
+    <section className={`detail ${tabbed ? 'is-tabbed' : ''}`}>
+      {tabbed && <ZoneTabs label="Pannelli del Dettaglio" tabs={TABS} active={tab} onChange={(detailTab) => update({ detailTab })} />}
+      <div className={col('song')}>
         <div className="panel-head">
           Brano {number ? `#${String(number).padStart(2, '0')}` : ''}
           {isLoaded && <span className="tag tag-play-backing">Nel player</span>}
+          {!tabbed && <ZoneLayoutToggle />}
         </div>
         <div className="d-body">
           <h2 className="d-title">{item.title}</h2>
@@ -105,7 +119,7 @@ export default function DetailView({ item, number, lanes, player, onVideoOutput 
         </div>
       </div>
 
-      <div className="d-col">
+      <div className={col('tracks')}>
         <div className="panel-head">
           <Icon name="layers" size={13} /> Sequenza · {stems.length} tracce
         </div>
@@ -159,7 +173,7 @@ export default function DetailView({ item, number, lanes, player, onVideoOutput 
         </div>
       </div>
 
-      <div className="d-col" style={{ borderRight: 'none' }}>
+      <div className={col('video')} style={{ borderRight: 'none' }}>
         <div className="panel-head">
           <Icon name="video" size={13} /> Video
           <span className="grow" />

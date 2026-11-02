@@ -18,6 +18,7 @@ import {
   usePrompterData,
 } from '../lib/prompter';
 import Icon from './Icon';
+import Toolbar, { ToolGroup } from './Toolbar';
 import SlideText from './SlideText';
 
 const LEADS = [0, 0.1, 0.2, 0.3, 0.5, 0.75, 1];
@@ -459,71 +460,79 @@ export default function PrompterView({ item, setlistId, player, canEdit, setting
 
   return (
     <div className="prompter">
-      <div className="arr-toolbar">
-        <strong className="ellipsis">{item.title}</strong>
-        <span className="small muted">
-          {slides.length} slide · {data.cues.length} cambi
-        </span>
-        {!canEdit && <span className="tag">Sola lettura</span>}
-        <span className="t-sep" style={{ height: 18 }} />
-        {canEdit && lyrics && (
-          <>
-            <select className="select" value={split} onChange={(e) => setSplit(Number(e.target.value))} title="Righe per slide">
-              {SPLITS.map(([v, l]) => (
-                <option key={v} value={v}>
-                  {l}
-                </option>
-              ))}
-            </select>
-            <button className="btn btn-sm" onClick={generate} title="Divide il testo del brano in slide; i blocchi ripetuti diventano una slide sola">
-              <Icon name="wand" size={14} /> Genera dal testo
+      <Toolbar id="prompter" title="Gobbo" className="arr-toolbar">
+        <ToolGroup id="song" label="Brano" grow>
+          <strong className="ellipsis">{item.title}</strong>
+          <span className="small muted">
+            {slides.length} slide · {data.cues.length} cambi
+          </span>
+          {!canEdit && <span className="tag">Sola lettura</span>}
+        </ToolGroup>
+        {canEdit && (
+          <ToolGroup id="edit" label="Slide">
+            {lyrics && (
+              <>
+                <select className="select" value={split} onChange={(e) => setSplit(Number(e.target.value))} title="Righe per slide">
+                  {SPLITS.map(([v, l]) => (
+                    <option key={v} value={v}>
+                      {l}
+                    </option>
+                  ))}
+                </select>
+                <button className="btn btn-sm" onClick={generate} title="Divide il testo del brano in slide; i blocchi ripetuti diventano una slide sola">
+                  <Icon name="wand" size={14} /> Genera dal testo
+                </button>
+              </>
+            )}
+            <button className="btn btn-sm btn-icon" onClick={undo} title="Annulla (Ctrl+Z)">
+              <Icon name="undo" size={14} />
             </button>
-          </>
+          </ToolGroup>
         )}
-        {canEdit && (
-          <button className="btn btn-sm btn-icon" onClick={undo} title="Annulla (Ctrl+Z)">
-            <Icon name="undo" size={14} />
-          </button>
-        )}
-        <span className="grow" />
         {!isLoaded && (
-          <button className="btn btn-sm btn-primary" onClick={() => player.load(item)}>
-            Carica nel player
-          </button>
+          <ToolGroup id="player" label="Player" locked>
+            <button className="btn btn-sm btn-primary" onClick={() => player.load(item)}>
+              Carica nel player
+            </button>
+          </ToolGroup>
         )}
         {canEdit && (
-          <button
-            className={`btn btn-sm pr-rec ${armed ? 'is-armed' : ''} ${recording ? 'is-recording' : ''}`}
-            disabled={!isLoaded || !slides.length}
-            onClick={() => setArmed((a) => !a)}
-            title="Registra i cambi di slide durante la riproduzione (R). Sostituisce i cambi nel tratto registrato."
-          >
-            <Icon name="record" size={12} /> {recording ? 'Registrazione…' : armed ? 'Pronto: premi play' : 'Registra'}
-          </button>
+          <ToolGroup id="record" label="Registrazione">
+            <button
+              className={`btn btn-sm pr-rec ${armed ? 'is-armed' : ''} ${recording ? 'is-recording' : ''}`}
+              disabled={!isLoaded || !slides.length}
+              onClick={() => setArmed((a) => !a)}
+              title="Registra i cambi di slide durante la riproduzione (R). Sostituisce i cambi nel tratto registrato."
+            >
+              <Icon name="record" size={12} /> {recording ? 'Registrazione…' : armed ? 'Pronto: premi play' : 'Registra'}
+            </button>
+          </ToolGroup>
         )}
-        <select
-          className="select"
-          value={lead}
-          onChange={(e) => update({ prompterLead: Number(e.target.value) })}
-          title="Anticipo: le slide compaiono prima del cambio registrato"
-        >
-          {LEADS.map((v) => (
-            <option key={v} value={v}>
-              Anticipo {v ? `${v * 1000} ms` : 'nessuno'}
-            </option>
-          ))}
-        </select>
-        <button
-          className={`btn btn-sm ${settings.prompterNext ? 'is-on' : ''}`}
-          onClick={() => update({ prompterNext: !settings.prompterNext })}
-          title="Mostra anche la slide successiva sull’uscita"
-        >
-          Successiva
-        </button>
-        <button className="btn btn-sm" onClick={onOutput} title="Apri il gobbo su un secondo schermo">
-          <Icon name="monitor" size={14} /> Uscita gobbo
-        </button>
-      </div>
+        <ToolGroup id="output" label="Uscita">
+          <select
+            className="select"
+            value={lead}
+            onChange={(e) => update({ prompterLead: Number(e.target.value) })}
+            title="Anticipo: le slide compaiono prima del cambio registrato"
+          >
+            {LEADS.map((v) => (
+              <option key={v} value={v}>
+                Anticipo {v ? `${v * 1000} ms` : 'nessuno'}
+              </option>
+            ))}
+          </select>
+          <button
+            className={`btn btn-sm ${settings.prompterNext ? 'is-on' : ''}`}
+            onClick={() => update({ prompterNext: !settings.prompterNext })}
+            title="Mostra anche la slide successiva sull’uscita"
+          >
+            Successiva
+          </button>
+          <button className="btn btn-sm" onClick={onOutput} title="Apri il gobbo su un secondo schermo">
+            <Icon name="monitor" size={14} /> Uscita gobbo
+          </button>
+        </ToolGroup>
+      </Toolbar>
 
       <div className={`pr-body ${lyrics || canEdit ? '' : 'no-source'}`}>
         {(lyrics || canEdit) && (

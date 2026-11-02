@@ -45,15 +45,25 @@ function firstStart(item, all) {
 const MIN_GAP = 0.5;
 
 /**
- * The song must start with its first segment, unless empty bars were asked for
- * (LEAD_KEY). With silence left before it (every track moved or trimmed later),
- * the whole song moves back: tracks, grid, gobbo changes and video, so they
- * stay aligned to each other. Cues follow the grid (they are in beats).
+ * The song must start with its first segment or with bar 1, whichever comes
+ * first, unless empty bars were asked for (LEAD_KEY). With silence left before
+ * them (every track moved or trimmed later), the whole song moves back:
+ * tracks, grid, gobbo changes and video, so they stay aligned to each other.
+ * Cues follow the grid (they are in beats).
+ *
+ * Bar 1 (`origin`, seconds) never goes below 0: the bars before the audio can
+ * hold a spoken count-off, and a negative bar 1 would lose those cues (their
+ * squares start at 0) and open a pre-roll of silence. A song already there,
+ * after the pinned reference was moved below 0, comes forward (negative gap).
+ *
  * Resolves to the fields to write, { gap, media, fields }, or null without a gap.
  */
-export function closeLeadingGap(item, all = regionsOf(item)) {
-  const gap = firstStart(item, all) - (Number(all[LEAD_KEY]) || 0);
-  if (gap < MIN_GAP) return null;
+export function closeLeadingGap(item, all = regionsOf(item), origin = null) {
+  if (!Number.isFinite(origin)) return null;
+  const pinnedBelowZero = all[GRID_KEY]?.regions?.some((g) => g.at < 0);
+  const lost = pinnedBelowZero && origin <= -MIN_GAP;
+  const gap = lost ? origin : Math.min(firstStart(item, all) - (Number(all[LEAD_KEY]) || 0), origin);
+  if (!lost && gap < MIN_GAP) return null;
   const earlier = (g) => {
     const at = r4(g.at - gap);
     return at >= 0 ? { ...g, at } : { ...g, at: 0, from: r4((g.from || 0) - at), len: g.len == null ? null : r4(Math.max(0, g.len + at)) };
@@ -63,7 +73,8 @@ export function closeLeadingGap(item, all = regionsOf(item)) {
     regions[s.id] = stemRegions({ regions: all }, s.id).map(earlier);
   });
   // The pinned reference may go below 0: it only tells where the grid falls.
-  if (all[GRID_KEY]) regions[GRID_KEY] = { ...all[GRID_KEY], regions: all[GRID_KEY].regions.map((g) => ({ ...g, at: r4(g.at - gap) })) };
+  // Not rounded: bar 1 has to land exactly on 0.
+  if (all[GRID_KEY]) regions[GRID_KEY] = { ...all[GRID_KEY], regions: all[GRID_KEY].regions.map((g) => ({ ...g, at: g.at - gap })) };
   const media = { regions };
   const video = videoOf(item);
   if (video) media.video = { ...video, offset: r4((video.offset || 0) - gap) };

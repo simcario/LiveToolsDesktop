@@ -23,11 +23,16 @@ function routeOf(stem, settings) {
 // session, on top of the mute of each track.
 const isMuted = (stem, leftOut) => (getMix(stem.id).mute ?? !!stem.muted) || !!leftOut?.[rehearsalGroup(stem)];
 
+// Volume of a rehearsal group (Palco mixer), on this computer: added to that of each of its tracks.
+export const groupMixKey = (group) => `group:${group}`;
+const groupGain = (stem) => getMix(groupMixKey(rehearsalGroup(stem))).gainDb || 0;
+const ownGain = (stem) => getMix(stem.id).gainDb ?? stem.gain ?? 0;
+
 function trackMix(stem, settings, solo, leftOut) {
   const m = getMix(stem.id);
   const route = routeOf(stem, settings);
   return {
-    gainDb: m.gainDb ?? stem.gain ?? 0,
+    gainDb: ownGain(stem) + groupGain(stem),
     pan: m.pan ?? stem.pan ?? 0,
     mute: isMuted(stem, leftOut),
     solo: !!solo,
@@ -48,8 +53,17 @@ function wantedCueStem(item) {
   return rendered ? { stem: rendered } : null;
 }
 
+const num = (v) => (Number(v) > 0 ? Number(v) : null);
+
+const sectionSpecs = (item) =>
+  (item.sections || []).map((s) => ({
+    label: s.label || null,
+    bars: num(s.bars),
+    bpm: num(s.bpm),
+    timeSig: s.timeSig || null,
+  }));
+
 function songSpec(item, tracks, settings) {
-  const num = (v) => (Number(v) > 0 ? Number(v) : null);
   return {
     id: item.id,
     tracks,
@@ -57,12 +71,7 @@ function songSpec(item, tracks, settings) {
     bpm: num(item.grid?.bpm) || num(item.bpm),
     timeSig: item.timeSig || null,
     countInBars: countInOf(settings),
-    sections: (item.sections || []).map((s) => ({
-      label: s.label || null,
-      bars: num(s.bars),
-      bpm: num(s.bpm),
-      timeSig: s.timeSig || null,
-    })),
+    sections: sectionSpecs(item),
   };
 }
 
@@ -75,7 +84,7 @@ async function analyzeSource(item, available, choice, setBusy) {
   const range = rangeKey(item);
   if (!src) return { choice, source: null, analysis: null, error: null, range };
   const source = { id: src.stem.id, name: src.stem.name, mode: src.mode };
-  setBusy(`Allineo la griglia a “${src.stem.name}”…`);
+  setBusy(`Allineo “${item.title}” a “${src.stem.name}”…`);
   try {
     const local = available.find((a) => a.stem.id === src.stem.id).local;
     return { choice, source, analysis: await analyze(item, src, local), error: null, range };
@@ -265,6 +274,18 @@ export function usePlayer({ user, setlist, items, settings, canDrive, notify }) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gridJson]);
 
+  // Sections changed (markers of the Palco view, undo, another computer): new
+  // tempo map at once, the tracks go on playing.
+  const loadedSections = loaded && items.find((i) => i.id === loaded.itemId);
+  const sectionsJson = loadedSections ? JSON.stringify(sectionSpecs(loadedSections)) : null;
+  useEffect(() => {
+    const id = ctx.current.loaded?.itemId;
+    if (!sectionsJson || !id) return;
+    engine.setSections(JSON.parse(sectionsJson)).then((tempo) => {
+      if (tempo) setLoaded((cur) => (cur?.itemId === id ? { ...cur, tempo } : cur));
+    });
+  }, [sectionsJson]);
+
   // Cues edited in the Arrangement: the cue track is remade (or the rendered
   // "Cues" file taken) and swapped in the engine, heard at once without
   // reloading the song. Adding the first cue or removing them all reloads.
@@ -345,7 +366,7 @@ export function usePlayer({ user, setlist, items, settings, canDrive, notify }) 
     if (Object.keys(persist).length) setMix(stem.id, persist);
     if (solo !== undefined) setSolos((s) => ({ ...s, [stem.id]: solo }));
     const mix = {};
-    if (patch.gainDb !== undefined) mix.gainDb = patch.gainDb;
+    if (patch.gainDb !== undefined) mix.gainDb = patch.gainDb + groupGain(stem);
     if (patch.pan !== undefined) mix.pan = patch.pan;
     if (patch.mute !== undefined) mix.mute = patch.mute || !!ctx.current.leftOut[rehearsalGroup(stem)];
     if (solo !== undefined) mix.solo = solo;
@@ -368,6 +389,19 @@ export function usePlayer({ user, setlist, items, settings, canDrive, notify }) 
 
   // Rehearsal: a group in or out of the mix, for every song of the session.
   const toggleGroup = useCallback((group) => setLeftOut((o) => ({ ...o, [group]: !o[group] })), []);
+
+  // Palco mixer: volume of a group (kept, for every song) or solo of all its tracks.
+  const setGroup = useCallback((group, patch) => {
+    const tracks = (ctx.current.loaded?.tracks || []).filter(({ stem }) => rehearsalGroup(stem) === group);
+    if (patch.gainDb !== undefined) {
+      setMix(groupMixKey(group), { gainDb: patch.gainDb });
+      tracks.forEach(({ stem }) => engine.setTrack(stem.id, { gainDb: ownGain(stem) + patch.gainDb }));
+    }
+    if (patch.solo !== undefined) {
+      setSolos((s) => ({ ...s, ...Object.fromEntries(tracks.map(({ stem }) => [stem.id, patch.solo])) }));
+      tracks.forEach(({ stem }) => engine.setTrack(stem.id, { solo: patch.solo }));
+    }
+  }, []);
   useEffect(() => {
     loaded?.tracks.forEach(({ stem }) => engine.setTrack(stem.id, { mute: isMuted(stem, leftOut) }));
   }, [leftOut, loaded]);
@@ -461,6 +495,7 @@ export function usePlayer({ user, setlist, items, settings, canDrive, notify }) 
     solos,
     leftOut,
     toggleGroup,
+    setGroup,
     songs,
     load,
     reload,

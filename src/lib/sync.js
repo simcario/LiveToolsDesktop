@@ -71,10 +71,12 @@ function tempoChanges(item) {
 }
 
 function firstSection(item) {
-  const s = (item.sections || [])[0];
+  const [s, after] = item.sections || [];
   const bpm = Number(s?.bpm) || Number(item.bpm);
   if (!s?.bars || !bpm) return null;
-  return (Number(s.bars) * sigInfo(s.timeSig || item.timeSig).beats * 60) / bpm;
+  // The bars before the first marker are one tempo with it (lib/sections.js).
+  const bars = Number(s.bars) + (s.gap ? Number(after?.bars) || 0 : 0);
+  return (bars * sigInfo(s.timeSig || item.timeSig).beats * 60) / bpm;
 }
 
 export function gridOf(item) {

@@ -5,6 +5,7 @@ import { downloadProgress, useMediaCache } from '../lib/mediaCache';
 import { keyLabel } from '../shared/music.js';
 import { TIME_SIGNATURES } from '../shared/setlists.js';
 import Icon from './Icon';
+import Toolbar, { ToolGroup } from './Toolbar';
 import { ZoneToggles } from './Zones';
 
 function Lcd() {
@@ -80,7 +81,7 @@ function DownloadBar({ label, files }) {
   );
 }
 
-export default function Transport({ user, item, player, settings, update, canDrive, canEdit, notify, device, onSettings, onPrefs, onHelp, onSignOut, liveOn, page, showViews = true }) {
+export default function Transport({ user, item, player, settings, update, canDrive, canEdit, notify, device, onSettings, onPrefs, onHelp, onSignOut, liveOn, page, showViews = true, stage = false }) {
   const playing = useEngineStatus((s) => s.playing);
   const waiting = useEngineStatus((s) => s.waiting);
   const loaded = player.loaded;
@@ -92,152 +93,167 @@ export default function Transport({ user, item, player, settings, update, canDri
   const sig = tempo?.timeSig || song?.timeSig || '4/4';
 
   return (
-    <header className="transport">
-      <div className="brand">
-        <img src="/brand/logo-mark.png" alt="" />
-        <strong>
-          Live<span>Tools</span>
-        </strong>
-      </div>
-      <span className="t-sep" />
-
-      <div className="t-group">
-        <button className="t-btn" onClick={() => player.step(-1)} title="Brano precedente (←)">
-          <Icon name="skip-back" size={16} />
-        </button>
-        <button
-          className={`t-btn play ${playing ? (waiting ? 'is-wait' : 'is-on') : ''}`}
-          onClick={() => player.toggle(item)}
-          title="Play / Stop (Spazio)"
-        >
-          <Icon name="play" size={16} />
-        </button>
-        <button className="t-btn" onClick={() => player.stop()} title="Stop (doppio stop: torna all’inizio)">
-          <Icon name="stop" size={14} />
-        </button>
-        <button className="t-btn" onClick={() => player.step(1)} title="Brano successivo (→)">
-          <Icon name="skip-forward" size={16} />
-        </button>
-      </div>
-
-      <Lcd />
-
-      <div className="lcd" title={editable ? 'Tempo e metro del brano caricato: modificali qui (si salvano con “Salva” nell’Arrangement)' : 'Tempo e metrica del brano caricato'}>
-        <span className="lcd-field">
-          <BpmField bpm={tempo?.bpm} disabled={!editable} onChange={(bpm) => setTempo({ bpm })} />
-          <span>BPM</span>
-        </span>
-        <span className="lcd-field">
-          {editable ? (
-            <select className="lcd-input" value={sig} onChange={(e) => setTempo({ timeSig: e.target.value })} aria-label="Metro">
-              {[...new Set([sig, ...TIME_SIGNATURES])].map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <b>{tempo?.timeSig || '—'}</b>
-          )}
-          <span>Metro</span>
-        </span>
-        <span className="lcd-field">
-          <b>{item?.key ? keyLabel(item.key) : '—'}</b>
-          <span>Tonalità</span>
-        </span>
-      </div>
-
-      <div className="t-group">
-        <button
-          className={`t-btn ${settings.countIn ? 'is-on' : ''}`}
-          onClick={() => update({ countIn: !settings.countIn })}
-          title="Count-in prima del brano"
-        >
-          <span className="mono small">1·2</span>
-        </button>
-        <button
-          className={`t-btn ${settings.click.enabled ? 'is-on' : ''}`}
-          onClick={() => update({ click: { ...settings.click, enabled: !settings.click.enabled } })}
-          title="Click (metronomo) sull’uscita click (C)"
-        >
-          <Icon name="metronome" size={16} />
-        </button>
-        <button
-          className={`t-btn ${settings.autoAdvance ? 'is-on' : ''}`}
-          onClick={() => update({ autoAdvance: !settings.autoAdvance })}
-          title="A fine brano prepara il successivo"
-        >
-          <Icon name="follow" size={16} />
-        </button>
-      </div>
-
-      <div className="now-playing">
-        <strong>{loaded ? item?.title || '—' : 'Nessun brano caricato'}</strong>
-        {player.downloading ? (
-          <DownloadBar label={player.busy} files={player.downloading} />
-        ) : (
-          <span className="small muted ellipsis">{player.busy || item?.artist || ' '}</span>
-        )}
-      </div>
-
-      <div className="t-group">
-        <button
-          className={`btn btn-sm ${settings.followStage ? 'is-on' : ''}`}
-          onClick={() => update({ followStage: !settings.followStage })}
-          title="Carica il brano attivato dal master della band (Palco Sync)"
-        >
-          {liveOn && <span className="dot live" />} Segui palco
-        </button>
-        {canDrive && (
-          <button
-            className={`btn btn-sm ${settings.driveStage ? 'is-on' : ''}`}
-            onClick={() => update({ driveStage: !settings.driveStage })}
-            title="Il brano caricato qui diventa quello attivo per tutta la band"
-          >
-            <Icon name="radio" size={14} /> Guida
-          </button>
-        )}
-      </div>
-
-      {/* The views (Session, Arrangement, Gobbo, Spartito) belong to the Live page only. */}
-      {showViews && (
-        <div className="view-switch" role="tablist" aria-label="Vista (Tab)">
-          <button className={settings.view === 'session' ? 'is-on' : ''} onClick={() => update({ view: 'session' })}>
-            <Icon name="grid" size={14} /> Session
+    <Toolbar as="header" id="transport" title="principale" className="transport">
+      <ToolGroup id="brand" label="Logo">
+        <div className="brand">
+          <img src="/brand/logo-mark.png" alt="" />
+          <strong>
+            Live<span>Tools</span>
+          </strong>
+        </div>
+      </ToolGroup>
+      <ToolGroup id="transport" label="Trasporto" locked>
+        <div className="t-group">
+          <button className="t-btn" onClick={() => player.step(-1)} title="Brano precedente (←)">
+            <Icon name="skip-back" size={16} />
           </button>
           <button
-            className={settings.view === 'arrangement' ? 'is-on' : ''}
-            onClick={() => update({ view: 'arrangement' })}
+            className={`t-btn play ${playing ? (waiting ? 'is-wait' : 'is-on') : ''}`}
+            onClick={() => player.toggle(item)}
+            title="Play / Stop (Spazio)"
           >
-            <Icon name="timeline" size={14} /> Arrangement
+            <Icon name="play" size={16} />
           </button>
-          <button className={settings.view === 'prompter' ? 'is-on' : ''} onClick={() => update({ view: 'prompter' })}>
-            <Icon name="lyrics" size={14} /> Gobbo
+          <button className="t-btn" onClick={() => player.stop()} title="Stop (doppio stop: torna all’inizio)">
+            <Icon name="stop" size={14} />
           </button>
-          <button className={settings.view === 'score' ? 'is-on' : ''} onClick={() => update({ view: 'score' })}>
-            <Icon name="file-text" size={14} /> Spartito
+          <button className="t-btn" onClick={() => player.step(1)} title="Brano successivo (→)">
+            <Icon name="skip-forward" size={16} />
           </button>
         </div>
+      </ToolGroup>
+      <ToolGroup id="position" label="Posizione" locked>
+        <Lcd />
+      </ToolGroup>
+      <ToolGroup id="tempo" label="Tempo">
+        <div className="lcd" title={editable ? 'Tempo e metro del brano caricato: modificali qui (si salvano con “Salva” nell’Arrangement)' : 'Tempo e metrica del brano caricato'}>
+          <span className="lcd-field">
+            <BpmField bpm={tempo?.bpm} disabled={!editable} onChange={(bpm) => setTempo({ bpm })} />
+            <span>BPM</span>
+          </span>
+          <span className="lcd-field">
+            {editable ? (
+              <select className="lcd-input" value={sig} onChange={(e) => setTempo({ timeSig: e.target.value })} aria-label="Metro">
+                {[...new Set([sig, ...TIME_SIGNATURES])].map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <b>{tempo?.timeSig || '—'}</b>
+            )}
+            <span>Metro</span>
+          </span>
+          <span className="lcd-field">
+            <b>{item?.key ? keyLabel(item.key) : '—'}</b>
+            <span>Tonalità</span>
+          </span>
+        </div>
+      </ToolGroup>
+      <ToolGroup id="playback" label="Esecuzione">
+        <div className="t-group">
+          <button
+            className={`t-btn ${settings.countIn ? 'is-on' : ''}`}
+            onClick={() => update({ countIn: !settings.countIn })}
+            title="Count-in prima del brano"
+          >
+            <span className="mono small">1·2</span>
+          </button>
+          <button
+            className={`t-btn ${settings.click.enabled ? 'is-on' : ''}`}
+            onClick={() => update({ click: { ...settings.click, enabled: !settings.click.enabled } })}
+            title="Click (metronomo) sull’uscita click (C)"
+          >
+            <Icon name="metronome" size={16} />
+          </button>
+          <button
+            className={`t-btn ${settings.autoAdvance ? 'is-on' : ''}`}
+            onClick={() => update({ autoAdvance: !settings.autoAdvance })}
+            title="A fine brano prepara il successivo"
+          >
+            <Icon name="follow" size={16} />
+          </button>
+        </div>
+      </ToolGroup>
+      <ToolGroup id="song" label="Brano" grow>
+        <div className="now-playing">
+          <strong>{loaded ? item?.title || '—' : 'Nessun brano caricato'}</strong>
+          {player.downloading ? (
+            <DownloadBar label={player.busy} files={player.downloading} />
+          ) : (
+            <span className="small muted ellipsis">{player.busy || item?.artist || ' '}</span>
+          )}
+        </div>
+      </ToolGroup>
+      <ToolGroup id="band" label="Band">
+        <div className="t-group">
+          <button
+            className={`btn btn-sm ${settings.followStage ? 'is-on' : ''}`}
+            onClick={() => update({ followStage: !settings.followStage })}
+            title="Carica il brano attivato dal master della band (Palco Sync)"
+          >
+            {liveOn && <span className="dot live" />} Segui palco
+          </button>
+          {canDrive && (
+            <button
+              className={`btn btn-sm ${settings.driveStage ? 'is-on' : ''}`}
+              onClick={() => update({ driveStage: !settings.driveStage })}
+              title="Il brano caricato qui diventa quello attivo per tutta la band"
+            >
+              <Icon name="radio" size={14} /> Guida
+            </button>
+          )}
+        </div>
+      </ToolGroup>
+      {/* The views (Palco, Arrangement, Gobbo, Spartito) belong to the Live page only. */}
+      {showViews && (
+        <ToolGroup id="views" label="Viste" locked>
+          <div className="view-switch" role="tablist" aria-label="Vista (Tab)">
+            <button className={settings.view === 'stage' ? 'is-on' : ''} onClick={() => update({ view: 'stage' })}>
+              <Icon name="grid" size={14} /> Palco
+            </button>
+            <button
+              className={settings.view === 'arrangement' ? 'is-on' : ''}
+              onClick={() => update({ view: 'arrangement' })}
+            >
+              <Icon name="timeline" size={14} /> Arrangement
+            </button>
+            <button className={settings.view === 'prompter' ? 'is-on' : ''} onClick={() => update({ view: 'prompter' })}>
+              <Icon name="lyrics" size={14} /> Gobbo
+            </button>
+            <button className={settings.view === 'score' ? 'is-on' : ''} onClick={() => update({ view: 'score' })}>
+              <Icon name="file-text" size={14} /> Spartito
+            </button>
+          </div>
+        </ToolGroup>
       )}
-
-      <ZoneToggles page={page} />
-
-      <button className="device-chip" onClick={onSettings} title="Scheda audio e matrice uscite">
-        <span className={`dot ${device?.error ? 'err' : device ? 'ok' : 'warn'}`} />
-        <span className="ellipsis">
-          {device?.info ? `${device.info.name} · ${device.info.sampleRate / 1000} kHz · ${device.info.channels} out` : 'Audio…'}
-        </span>
-        <Icon name="settings" size={14} />
-      </button>
-      <button className="btn btn-ghost btn-icon" onClick={onHelp} title="Manuale (F1)" aria-label="Manuale">
-        <Icon name="help" size={16} />
-      </button>
-      <button className="btn btn-ghost btn-icon" onClick={onPrefs} title="Impostazioni (Ctrl+,)" aria-label="Impostazioni">
-        <Icon name="settings" size={16} />
-      </button>
-      <button className="avatar" onClick={onSignOut} title={`${user.email} — esci`}>
-        {user.photoURL ? <img src={user.photoURL} alt="" referrerPolicy="no-referrer" /> : (user.displayName || user.email || '?')[0]}
-      </button>
-    </header>
+      {/* Palco has no panels around it. */}
+      {!stage && (
+        <ToolGroup id="panels" label="Pannelli">
+          <ZoneToggles page={page} />
+        </ToolGroup>
+      )}
+      <ToolGroup id="audio" label="Audio">
+        <button className="device-chip" onClick={onSettings} title="Scheda audio e matrice uscite">
+          <span className={`dot ${device?.error ? 'err' : device ? 'ok' : 'warn'}`} />
+          <span className="ellipsis">
+            {device?.info ? `${device.info.name} · ${device.info.sampleRate / 1000} kHz · ${device.info.channels} out` : 'Audio…'}
+          </span>
+          <Icon name="settings" size={14} />
+        </button>
+      </ToolGroup>
+      <ToolGroup id="app" label="App" locked>
+        <button className="btn btn-ghost btn-icon" onClick={onHelp} title="Manuale (F1)" aria-label="Manuale">
+          <Icon name="help" size={16} />
+        </button>
+        <button className="btn btn-ghost btn-icon" onClick={onPrefs} title="Impostazioni (Ctrl+,)" aria-label="Impostazioni">
+          <Icon name="settings" size={16} />
+        </button>
+        <button className="avatar" onClick={onSignOut} title={`${user.email} — esci`}>
+          {user.photoURL ? <img src={user.photoURL} alt="" referrerPolicy="no-referrer" /> : (user.displayName || user.email || '?')[0]}
+        </button>
+      </ToolGroup>
+    </Toolbar>
   );
 }
