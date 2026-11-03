@@ -7,8 +7,13 @@
 // other media of the song (see media.js).
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { safeUrl } from './setlists';
 
 export const scoreOf = (song) =>(song?.score?.path ? song.score : null);
+
+/** The forms the score of a song is in: PDF, link (chartUrl), chord chart. */
+export const scoreForms = (song) =>
+  [scoreOf(song) && 'PDF', safeUrl(song?.chartUrl) && 'link', (song?.chart || '').trim() && 'accordi'].filter(Boolean);
 
 export const isPdfFile = (file) => file?.type === 'application/pdf' || /\.pdf$/i.test(file?.name || '');
 

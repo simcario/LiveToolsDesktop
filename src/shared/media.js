@@ -125,12 +125,21 @@ export function partInstrument(part) {
 // each switched on and off as a whole.
 export const rehearsalGroup = (stem) => (stem.role === 'click' || stem.role === 'guide' ? stem.role : instrumentOf(stem));
 
-export const groupLabel = (group) => (group === 'click' ? 'Click' : group === 'guide' ? 'Guide' : INSTRUMENTS[group] || group);
+// 'metro': the system click of the web rehearsal, synthesised on the grid of the song.
+const GROUP_LABELS = { click: 'Click', metro: 'Click di sistema', guide: 'Guide' };
+export const groupLabel = (group) => GROUP_LABELS[group] || INSTRUMENTS[group] || group;
 
 /** Groups of the audible stems of a song: instruments first, then click and guides. */
 export function rehearsalGroups(item) {
   const present = new Set(stemsOf(item).filter((s) => !s.muted).map(rehearsalGroup));
   return [...Object.keys(INSTRUMENTS), 'click', 'guide'].filter((k) => present.has(k));
+}
+
+/** Groups of the web rehearsal: those of the stems plus the system click, next to the audio one. */
+export function rehearsalMixGroups(item) {
+  const groups = rehearsalGroups(item);
+  if (groups.length) groups.splice(groups.length - (groups.includes('guide') ? 1 : 0), 0, 'metro');
+  return groups;
 }
 
 export const stemsOf = (item) => (Array.isArray(item?.stems) ? item.stems : []);

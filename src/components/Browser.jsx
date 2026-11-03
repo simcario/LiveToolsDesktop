@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { formatEventDate, formatLong, isSeparator } from '../shared/setlists.js';
 import { stemsOf, videoOf } from '../shared/media.js';
+import { scoreForms } from '../shared/score.js';
 import { useDrafts } from '../lib/drafts';
 import { ensureItems, itemCacheState, mediaOf, useMediaCache } from '../lib/mediaCache';
 import { useSettings } from '../lib/settings';
@@ -113,6 +114,11 @@ export default function Browser({ setlists, setlistId, onSetlist, items, numbers
               <span className="small faint" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                 {n > 0 && `${n}`}
                 {videoOf(it) && <Icon name="video" size={12} />}
+                {scoreForms(it).length > 0 && (
+                  <span title={`Spartito: ${scoreForms(it).join(', ')}`} style={{ display: 'inline-flex' }}>
+                    <Icon name="file-text" size={12} />
+                  </span>
+                )}
                 {st !== 'none' && <span className={`dot ${CACHE_HINT[st][0]}`} title={CACHE_HINT[st][1]} />}
               </span>
             </button>

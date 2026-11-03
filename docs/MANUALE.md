@@ -35,7 +35,7 @@ chiude, si aggiorna e si riapre. Non aggiornare a ridosso di un concerto.
 | Area | Cosa contiene |
 |---|---|
 | **Control bar** (in alto) | ⏮ ▶ ■ ⏭, posizione battuta.movimento e tempo, BPM / metro / tonalità, count-in, click, auto-avanzamento, *Segui palco* / *Guida*, scheda audio, impostazioni |
-| **Browser** (sinistra) | tab *Brani*, *Scalette* e, nella vista Arrangement, *Sezioni*; stato dei media offline, *Scarica tutta la scaletta* |
+| **Browser** (sinistra) | tab *Brani*, *Scalette* e, nella vista Arrangement, *Sezioni*; stato dei media offline, icona dello spartito (PDF, link o accordi), *Scarica tutta la scaletta* |
 | **Vista centrale** | **Palco**, **Arrangement**, **Gobbo** o **Spartito** (Tab per cambiare) |
 | **Dettaglio** (sotto) | tab *Brano*, *Tracce* e *Video*: dati del brano, stato dei download, barra *Rehearsal*, anteprima video |
 | **Barra di stato** | pagine **Live** (Ctrl+1), **Scaletta** (Ctrl+2), **Brani** (Ctrl+3); avviso aggiornamenti |
@@ -76,7 +76,7 @@ Nella pagina **Scaletta**:
 - riordina trascinando la maniglia; elimina con la ×;
 - a destra l'**ispettore** del brano selezionato: schede *Brano*, *Palco*, *Spartito*, *Testo gobbo*,
   *Sequenze & Video*, *MIDI*, *Colonne*. Salva con **Ctrl+S** (salva anche da solo quando cambi brano o
-  pagina).
+  pagina). Sotto il titolo di ogni brano un tag indica se ha lo spartito e in che forma (*Spartito · PDF + link + accordi*), oltre a *Testo* e *Gobbo*.
 
 Ogni modifica finisce nello storico della scaletta. Colonne personalizzate e condivisione si gestiscono
 dall'app web.

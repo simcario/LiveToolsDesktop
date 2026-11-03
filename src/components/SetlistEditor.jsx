@@ -21,6 +21,7 @@ import {
 } from '../shared/setlists.js';
 import { chartLyricBlocks, KEYS, lyricBlocksText, plainLyricBlocks } from '../shared/music.js';
 import { deleteItemMedia, deletionNote, mediaPaths, mediaTarget, stemsOf, videoOf } from '../shared/media.js';
+import { scoreForms } from '../shared/score.js';
 import { autoSnapshot, logChange } from '../shared/history.js';
 import { createSong, itemFromSong, updateSong, useLibrary } from '../shared/songs.js';
 import { useAccess } from '../lib/data';
@@ -858,7 +859,11 @@ export default function SetlistEditor({ user, setlist, items, itemDocs, numbers,
                     <span className="se-sub">
                       {it.playback && <span className={`tag tag-play-${it.playback}`}>{PLAYBACK_TYPES[it.playback]?.label}</span>}
                       {it.artist && <span className="ellipsis">{it.artist}</span>}
-                      {it.chart && <span className="tag">Accordi</span>}
+                      {scoreForms(it).length > 0 && (
+                        <span className="tag" title={`Spartito: ${scoreForms(it).join(', ')}`}>
+                          Spartito · {scoreForms(it).join(' + ')}
+                        </span>
+                      )}
                       {(it.lyrics || '').trim() && <span className="tag">Testo</span>}
                       {it.prompter?.slides?.length > 0 && <span className="tag">Gobbo</span>}
                     </span>
