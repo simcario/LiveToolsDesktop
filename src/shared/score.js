@@ -1,21 +1,37 @@
-// PDF score of a song (spartito) and the page turner: a Bluetooth pedal pairs
+// Score of a song (spartito: a PDF or an image) and the page turner: a Bluetooth pedal pairs
 // as a keyboard and sends a key per press (PageDown/PageUp, arrows, Space…),
 // mapped here to "next page" / "previous page". Shared by the web app and the
 // desktop app (desktop/src/shared/score.js, see sync-shared).
 //
 // song.score = { id, name, file, path, size, type } | null, stored with the
-// other media of the song (see media.js).
+// other media of the song (see media.js). An uploaded score is shown inside
+// the app; without one, the link (song.chartUrl) opens in the browser.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { safeUrl } from './setlists';
 
-export const scoreOf = (song) =>(song?.score?.path ? song.score : null);
+export const scoreOf = (song) => (song?.score?.path ? song.score : null);
 
-/** The forms the score of a song is in: PDF, link (chartUrl), chord chart. */
+const IMAGE_TYPES = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp' };
+const extOf = (name) => (/\.([a-z0-9]+)$/i.exec(name || '')?.[1] || '').toLowerCase();
+
+export const isPdfFile = (file) => file?.type === 'application/pdf' || extOf(file?.name) === 'pdf';
+
+/** Type of an image score (photo or scan of one page), null for anything else. */
+export const imageTypeOf = (file) =>
+  (Object.values(IMAGE_TYPES).includes(file?.type) && file.type) || IMAGE_TYPES[extOf(file?.name || file?.file || file?.path)] || null;
+
+/** The files that can be uploaded as a score: PDF or an image (jpg, png, webp). */
+export const isScoreFile = (file) => isPdfFile(file) || !!imageTypeOf(file);
+export const SCORE_ACCEPT = 'application/pdf,.pdf,image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp';
+export const SCORE_ONLY = 'Solo PDF o immagini (jpg, png, webp)';
+
+/** "PDF" or "immagine", for the labels. */
+export const scoreKind = (score) => (imageTypeOf(score) ? 'immagine' : 'PDF');
+
+/** The forms the score of a song is in: file (PDF/image), link (chartUrl), chord chart. */
 export const scoreForms = (song) =>
-  [scoreOf(song) && 'PDF', safeUrl(song?.chartUrl) && 'link', (song?.chart || '').trim() && 'accordi'].filter(Boolean);
-
-export const isPdfFile = (file) => file?.type === 'application/pdf' || /\.pdf$/i.test(file?.name || '');
+  [scoreOf(song) && scoreKind(song.score), safeUrl(song?.chartUrl) && 'link', (song?.chart || '').trim() && 'accordi'].filter(Boolean);
 
 // ---------- Pedal ----------
 
@@ -114,6 +130,44 @@ export async function openPdf(data, workerSrc) {
   return getDocument({ data: data instanceof Uint8Array ? data : new Uint8Array(data) }).promise;
 }
 
+/** A canvas fitting `width` × `height` CSS pixels, sharp on high-density screens. */
+function fitCanvas(srcWidth, srcHeight, width, height) {
+  const fit = Math.min(width / srcWidth, height / srcHeight);
+  const dpr = Math.min(3, globalThis.devicePixelRatio || 1);
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.floor(srcWidth * fit * dpr));
+  canvas.height = Math.max(1, Math.floor(srcHeight * fit * dpr));
+  canvas.style.width = `${Math.floor(srcWidth * fit)}px`;
+  canvas.style.height = `${Math.floor(srcHeight * fit)}px`;
+  return canvas;
+}
+
+/**
+ * Opens a score from its bytes: a PDF, or an image shown as its only page.
+ * Returns { numPages, render(n, width, height) → canvas, destroy() }.
+ */
+export async function openScore(data, workerSrc, type) {
+  const image = imageTypeOf({ type });
+  if (image) {
+    const bitmap = await createImageBitmap(new Blob([data], { type: image }));
+    return {
+      numPages: 1,
+      render: async (n, width, height) => {
+        const canvas = fitCanvas(bitmap.width, bitmap.height, width, height);
+        const ctx = canvas.getContext('2d');
+        ctx.imageSmoothingQuality = 'high';
+        ctx.fillStyle = '#fff'; // transparent PNGs on white, as on paper
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+        return canvas;
+      },
+      destroy: () => bitmap.close?.(),
+    };
+  }
+  const pdf = await openPdf(data, workerSrc);
+  return { numPages: pdf.numPages, render: (n, width, height) => renderPage(pdf, n, width, height), destroy: () => pdf.destroy() };
+}
+
 /**
  * Renders page `n` into a new canvas fitting width × height (CSS pixels),
  * sharp on high-density screens.
@@ -121,14 +175,8 @@ export async function openPdf(data, workerSrc) {
 export async function renderPage(pdf, n, width, height) {
   const page = await pdf.getPage(n);
   const base = page.getViewport({ scale: 1 });
-  const fit = Math.min(width / base.width, height / base.height);
-  const dpr = Math.min(3, globalThis.devicePixelRatio || 1);
-  const viewport = page.getViewport({ scale: fit * dpr });
-  const canvas = document.createElement('canvas');
-  canvas.width = Math.floor(viewport.width);
-  canvas.height = Math.floor(viewport.height);
-  canvas.style.width = `${Math.floor(viewport.width / dpr)}px`;
-  canvas.style.height = `${Math.floor(viewport.height / dpr)}px`;
+  const canvas = fitCanvas(base.width, base.height, width, height);
+  const viewport = page.getViewport({ scale: canvas.width / base.width });
   await page.render({ canvasContext: canvas.getContext('2d'), viewport, canvas }).promise;
   page.cleanup();
   return canvas;
@@ -140,15 +188,15 @@ const GAP = 12; // px between the two pages of a spread
 const CACHE = 8; // rendered pages kept (current spread and the ones around it)
 
 /**
- * State of a score viewer. `load()` resolves with the PDF bytes (it changes
- * with the song); `boxRef` is the element the pages fit into. While `active`,
+ * State of a score viewer. `load()` resolves with the bytes of the score (it
+ * changes with the song), `type` is its content type (PDF or image); `boxRef` is the element the pages fit into. While `active`,
  * the pedal keys turn the pages and no one else receives them (on the desktop
  * the same arrows change song).
  *
  * Returns { status: 'loading' | 'ready' | 'error', error, page, count,
  * double, spread: [canvas…], go(dir), goto(n), lastPedal: { key, action, at } }.
  */
-export function useScoreViewer({ load, loadKey, workerSrc, pedal, active = true, boxRef }) {
+export function useScoreViewer({ load, loadKey, type, workerSrc, pedal, active = true, boxRef }) {
   const [doc, setDoc] = useState(null);
   const [status, setStatus] = useState('loading');
   const [error, setError] = useState(null);
@@ -172,7 +220,7 @@ export function useScoreViewer({ load, loadKey, workerSrc, pedal, active = true,
       try {
         const bytes = await load();
         if (cancelled) return;
-        opened = await openPdf(bytes, workerSrc);
+        opened = await openScore(bytes, workerSrc, type);
         if (cancelled) return opened.destroy();
         setDoc(opened);
         setStatus('ready');
@@ -213,7 +261,7 @@ export function useScoreViewer({ load, loadKey, workerSrc, pedal, active = true,
     const keyOfPage = (n) => `${n}@${Math.round(w)}x${Math.round(size.h)}`;
     const get = (n) => {
       const k = keyOfPage(n);
-      if (!cache.current.has(k)) cache.current.set(k, renderPage(doc, n, w, size.h));
+      if (!cache.current.has(k)) cache.current.set(k, doc.render(n, w, size.h));
       return cache.current.get(k);
     };
     const pages = spreadOf(Math.min(page, count), count, double);

@@ -37,6 +37,10 @@ const MIME = {
   m4a: 'audio/mp4',
   aac: 'audio/aac',
   pdf: 'application/pdf',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
   mp4: 'video/mp4',
   m4v: 'video/mp4',
   mov: 'video/quicktime',
@@ -209,7 +213,7 @@ export function saveStems(db, target, stems) {
   return updateDoc(mediaDoc(db, target), { stems, updatedAt: serverTimestamp() });
 }
 
-// PDF score of the song (see score.js).
+// Score of the song, a PDF or an image (see score.js).
 export function saveScore(db, target, score) {
   return updateDoc(mediaDoc(db, target), { score, updatedAt: serverTimestamp() });
 }

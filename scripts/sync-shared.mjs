@@ -13,6 +13,7 @@ const files = [
   ['src/lib/prompter.js', 'prompter.js'],
   ['src/lib/songs.js', 'songs.js'],
   ['src/lib/score.js', 'score.js'],
+  ['src/lib/chartSheet.js', 'chartSheet.js'],
 ];
 // Imports of web modules that live elsewhere here.
 const REWRITES = [["from './firebase'", "from '../lib/firebase'"]];

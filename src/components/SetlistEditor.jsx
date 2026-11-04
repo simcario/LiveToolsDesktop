@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { addDoc, collection, deleteDoc, doc, serverTimestamp, updateDoc, writeBatch } from 'firebase/firestore';
 import {
   BREAK_KINDS,
@@ -19,7 +20,7 @@ import {
   toggleOptions,
   totalDuration,
 } from '../shared/setlists.js';
-import { chartLyricBlocks, KEYS, lyricBlocksText, plainLyricBlocks } from '../shared/music.js';
+import { chartLyricBlocks, KEYS, lyricBlocksText, plainLyricBlocks, transposeKey } from '../shared/music.js';
 import { deleteItemMedia, deletionNote, mediaPaths, mediaTarget, stemsOf, videoOf } from '../shared/media.js';
 import { scoreForms } from '../shared/score.js';
 import { autoSnapshot, logChange } from '../shared/history.js';
@@ -29,7 +30,10 @@ import { db, storage } from '../lib/firebase';
 import Icon from './Icon';
 import Toolbar, { ToolGroup } from './Toolbar';
 import { ZoneResizer } from './Zones';
-import MediaFields from './MediaFields';
+import MediaFields, { ScoreFile } from './MediaFields';
+import ChartTags from './ChartTags';
+import { ChartLines } from './ChordChart';
+import { printChords } from '../shared/chartSheet.js';
 
 // Setlist page: the same editing as the web app (songs and blocks, order,
 // built-in fields, custom column values, lyrics for the prompter), saved on
@@ -294,24 +298,126 @@ function StageFields({ d, set, setDraft }) {
   );
 }
 
-function ChartFields({ d, set }) {
+// The score file is saved at once like the other media; the link goes with the draft.
+function ChartFields({ d, set, setDraft, setlistId, item, canEdit, onTrack, notify }) {
   return (
     <div className="se-form se-fill">
+      <ScoreFile setlistId={setlistId} item={item} canEdit={canEdit} onTrack={onTrack} notify={notify} />
       <label className="field">
         <span>Link spartito (PDF, Drive…)</span>
         <input className="input" type="url" value={d.chartUrl} onChange={set('chartUrl')} placeholder="https://…" />
+        <p className="small faint" style={{ margin: 0 }}>
+          {item.score?.path
+            ? 'C’è uno spartito caricato: l’app mostra quello, il link resta come riserva.'
+            : 'Senza uno spartito caricato, la vista Spartito apre questo link nel browser.'}
+        </p>
       </label>
-      <label className="field se-fill">
-        <span>Testo e accordi (ChordPro o accordi sopra il testo)</span>
+      <ChartEditor d={d} set={set} setDraft={setDraft} item={item} canEdit={canEdit} />
+    </div>
+  );
+}
+
+// Chord chart field with two tabs (Scrivi / Anteprima) and an "Allarga" button
+// that opens the same editor over the whole window, to work more comfortably.
+function ChartEditor({ d, set, setDraft, item, canEdit }) {
+  const chartBox = useRef(null);
+  const [view, setView] = useState('edit');
+  const [wide, setWide] = useState(false);
+  const [shift, setShift] = useState(0);
+
+  useEffect(() => {
+    if (!wide) return undefined;
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return;
+      e.stopImmediatePropagation();
+      setWide(false);
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [wide]);
+
+  const preview = view === 'preview';
+  const body = (
+    <div className={`field se-fill chart-editor ${wide ? 'is-wide' : ''}`}>
+      <span className="chart-label">
+        <span className="chart-label-text">Testo e accordi (ChordPro o accordi sopra il testo)</span>
+        <span className="chart-label-tools">
+          <span className="view-switch">
+            <button type="button" className={!preview ? 'is-on' : ''} onClick={() => setView('edit')}>
+              <Icon name="edit" size={12} /> Scrivi
+            </button>
+            <button type="button" className={preview ? 'is-on' : ''} onClick={() => setView('preview')}>
+              <Icon name="eye" size={12} /> Anteprima
+            </button>
+          </span>
+          {preview && (
+            <span className="chart-shift">
+              <button type="button" className="btn btn-sm" onClick={() => setShift((s) => s - 1)} title="Giù di un semitono">
+                −
+              </button>
+              <span className="mono small">
+                {shift > 0 ? `+${shift}` : shift}
+                {d.key && ` · ${transposeKey(d.key, shift)}`}
+              </span>
+              <button type="button" className="btn btn-sm" onClick={() => setShift((s) => s + 1)} title="Su di un semitono">
+                +
+              </button>
+            </span>
+          )}
+          {d.chart.trim() && (
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={(e) => {
+                e.preventDefault();
+                printChords({ ...item, ...d, ...(preview ? { semitones: shift } : {}) });
+              }}
+              title={
+                preview
+                  ? 'Stampa gli accordi (o salvali in PDF) nella tonalità dell’anteprima'
+                  : 'Stampa gli accordi (o salvali in PDF) nella tonalità in cui si suona il brano'
+              }
+            >
+              <Icon name="printer" size={13} /> Stampa
+            </button>
+          )}
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={() => setWide((w) => !w)}
+            title={wide ? 'Torna alla scheda (Esc)' : 'Allarga il campo a tutta la finestra'}
+          >
+            <Icon name={wide ? 'minimize' : 'maximize'} size={13} /> {wide ? 'Riduci' : 'Allarga'}
+          </button>
+        </span>
+      </span>
+      {!preview && canEdit && <ChartTags value={d.chart} onChange={(chart) => setDraft((x) => ({ ...x, chart }))} textareaRef={chartBox} compact={!wide} />}
+      {preview ? (
+        <div className="chart-preview se-fill">
+          {d.chart.trim() ? (
+            <ChartLines source={d.chart} semitones={shift} songKey={d.key} />
+          ) : (
+            <p className="small faint">Scrivi testo e accordi nella scheda “Scrivi” per vederne l’anteprima.</p>
+          )}
+        </div>
+      ) : (
         <textarea
+          ref={chartBox}
           className="input mono se-fill"
           value={d.chart}
           onChange={set('chart')}
           spellCheck={false}
           placeholder={'{soc}\n[G]Vedo il Re della [Em]gloria\n{eoc}'}
         />
-      </label>
+      )}
     </div>
+  );
+  if (!wide) return body;
+  return createPortal(
+    <div className="chart-wide-backdrop" onMouseDown={(e) => e.target === e.currentTarget && setWide(false)}>
+      {body}
+    </div>,
+    document.body,
   );
 }
 
@@ -487,7 +593,7 @@ export function SongInspector({ setlistId, item, number, columns, canEdit, canDe
       <fieldset className="se-body-scroll" disabled={!canEdit}>
         {tab === 'song' && <SongFields d={draft} set={set} setDraft={setDraft} />}
         {tab === 'stage' && <StageFields d={draft} set={set} setDraft={setDraft} />}
-        {tab === 'chart' && <ChartFields d={draft} set={set} />}
+        {tab === 'chart' && <ChartFields d={draft} set={set} setDraft={setDraft} setlistId={setlistId} item={item} canEdit={canEdit} onTrack={onTrack} notify={notify} />}
         {tab === 'lyrics' && <LyricsFields d={draft} set={set} setDraft={setDraft} onOpenPrompter={onOpenPrompter} />}
         {tab === 'midi' && <MidiFields d={draft} setDraft={setDraft} />}
         {tab === 'columns' && <ColumnFields d={draft} setDraft={setDraft} columns={columns} />}
@@ -797,6 +903,17 @@ export default function SetlistEditor({ user, setlist, items, itemDocs, numbers,
             {endTime && ` · fine prevista ${formatClock(endTime)}`}
           </span>
         </ToolGroup>
+        {items.some((i) => (i.chart || '').trim()) && (
+          <ToolGroup id="print" label="Stampa">
+            <button
+              className="btn btn-sm"
+              onClick={() => printChords(items, { title: setlist.title })}
+              title="Gli accordi di tutti i brani, uno per pagina, nella tonalità in cui si suonano"
+            >
+              <Icon name="printer" size={13} /> Stampa accordi
+            </button>
+          </ToolGroup>
+        )}
         <ToolGroup id="hint" label="Note">
           <span className="small faint">Colonne e condivisione: app web</span>
         </ToolGroup>

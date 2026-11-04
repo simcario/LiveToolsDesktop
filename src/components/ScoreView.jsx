@@ -4,16 +4,16 @@ import { openUrl } from '@tauri-apps/plugin-opener';
 import { getBytes, ref } from 'firebase/storage';
 import workerSrc from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { safeUrl } from '../shared/setlists.js';
-import { keyLabel, PEDAL_LAYOUTS, scoreOf, useScoreViewer } from '../shared/score.js';
+import { imageTypeOf, keyLabel, PEDAL_LAYOUTS, scoreOf, useScoreViewer } from '../shared/score.js';
 import { storage } from '../lib/firebase';
 import { ensureFile } from '../lib/mediaCache';
 import { pedalDevice, useBluetoothDevices } from '../lib/pedal';
 import Icon from './Icon';
 import Toolbar, { ToolGroup } from './Toolbar';
 
-// "Spartito" view of the Live page: the PDF score of the selected song, one
+// "Spartito" view of the Live page: the uploaded score (PDF or image) of the selected song, one
 // or two pages at a time, turned with a Bluetooth pedal (it sends keys, see
-// shared/score.js), the keyboard or a click on the page. The PDF is played
+// shared/score.js), the keyboard or a click on the page. The file is read
 // from the local cache like the stems, so it works offline on stage.
 
 /** Bytes of the score: from the cache (downloaded once), else straight from Storage. */
@@ -77,13 +77,13 @@ export default function ScoreView({ item, settings, update, onPedalPrefs, active
       <div className="empty">
         <div>
           <Icon name="file-text" size={28} />
-          <h2>Nessuno spartito PDF</h2>
+          <h2>Nessuno spartito caricato</h2>
           <p>
-            Caricalo nella pagina <b>Scaletta</b> o <b>Brani</b>, scheda <b>Sequenze, Video &amp; PDF</b>: qui lo sfogli con il
-            pedale.
+            Caricalo (PDF o immagine) nella pagina <b>Scaletta</b> o <b>Brani</b>, scheda <b>Spartito</b>: qui lo vedi
+            direttamente e lo sfogli con il pedale.{chartUrl && ' Intanto il link dello spartito si apre nel browser.'}
           </p>
           {chartUrl && (
-            <button className="btn btn-sm" onClick={() => openUrl(chartUrl)}>
+            <button className="btn btn-sm btn-primary" onClick={() => openUrl(chartUrl)}>
               <Icon name="file-text" size={14} /> Apri il link dello spartito
             </button>
           )}
@@ -99,7 +99,7 @@ function Viewer({ item, score, settings, update, onPedalPrefs, active }) {
   const [full, setFull] = useState(false);
   const pedal = settings.pedal;
   const load = useCallback(() => scoreBytes(score), [score]);
-  const v = useScoreViewer({ load, loadKey: score.path, workerSrc, pedal, active, boxRef: box });
+  const v = useScoreViewer({ load, loadKey: score.path, type: imageTypeOf(score) || score.type, workerSrc, pedal, active, boxRef: box });
 
   // Esc leaves full screen; Home / End jump to the first / last page.
   useEffect(() => {

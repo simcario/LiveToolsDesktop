@@ -18,7 +18,7 @@ import {
   VIDEO_EXTENSIONS,
   videoOf,
 } from '../shared/media.js';
-import { isPdfFile, scoreOf } from '../shared/score.js';
+import { isScoreFile, SCORE_ACCEPT, SCORE_ONLY, scoreOf } from '../shared/score.js';
 import { db, storage } from '../lib/firebase';
 import { useMediaCache } from '../lib/mediaCache';
 import { startUploads, useUploads } from '../lib/uploads';
@@ -184,11 +184,10 @@ export default function MediaFields({ setlistId, item, canEdit: canEditSetlist, 
   const target = mediaTarget(setlistId, item);
   const fail = (e) => notify(`Media non aggiornati: ${e.message || e}`, true);
 
-  const score = scoreOf(item);
   const upload = (kind, files) => {
-    const ok = files.filter(kind === 'stems' ? isAudioFile : kind === 'score' ? isPdfFile : isVideoFile);
+    const ok = files.filter(kind === 'stems' ? isAudioFile : isVideoFile);
     if (ok.length < files.length) {
-      notify(kind === 'stems' ? 'Solo file audio (wav, aiff, flac, mp3…)' : kind === 'score' ? 'Solo file PDF' : 'Solo file video (mp4, mov, webm)', true);
+      notify(kind === 'stems' ? 'Solo file audio (wav, aiff, flac, mp3…)' : 'Solo file video (mp4, mov, webm)', true);
     }
     if (!ok.length) return;
     startUploads({ setlistId, item, kind, files: kind === 'stems' ? ok : [ok[0]], onDone: onTrack, onError: (t) => notify(t, true) });
@@ -264,20 +263,8 @@ export default function MediaFields({ setlistId, item, canEdit: canEditSetlist, 
     }
   };
 
-  const removeScore = async () => {
-    if (!confirm(`Eliminare lo spartito PDF di “${item.title}”? ${deletionNote(target, [score.path])}`)) return;
-    try {
-      await deleteMediaFile(storage, score.path, target);
-      await saveScore(db, target, null);
-      onTrack(`Eliminato lo spartito di “${item.title}”`);
-    } catch (e) {
-      fail(e);
-    }
-  };
-
   const stemUploads = uploads.filter((u) => u.kind === 'stems');
   const videoUploads = uploads.filter((u) => u.kind === 'video');
-  const scoreUploads = uploads.filter((u) => u.kind === 'score');
 
   return (
     <div className="se-form">
@@ -374,17 +361,52 @@ export default function MediaFields({ setlistId, item, canEdit: canEditSetlist, 
         ))}
       </Section>
 
+      <ScoreFile setlistId={setlistId} item={item} canEdit={canEditSetlist} onTrack={onTrack} notify={notify} />
+    </div>
+  );
+}
+
+/**
+ * The uploaded score of a song (PDF or image), shown in the app; without one
+ * the song's link opens in the browser. Also in the "Spartito" tab.
+ */
+export function ScoreFile({ setlistId, item, canEdit: canEditSetlist, onTrack, notify }) {
+  const cache = useMediaCache();
+  const uploads = useUploads().filter((u) => u.itemId === item.id && u.kind === 'score');
+  const canEdit = canEditSetlist && item.songEditable !== false;
+  const target = mediaTarget(setlistId, item);
+  const score = scoreOf(item);
+
+  const upload = (files) => {
+    const ok = files.filter(isScoreFile);
+    if (ok.length < files.length) notify(SCORE_ONLY, true);
+    if (ok.length) startUploads({ setlistId, item, kind: 'score', files: [ok[0]], onDone: onTrack, onError: (t) => notify(t, true) });
+  };
+  const removeScore = async () => {
+    if (!confirm(`Eliminare lo spartito di “${item.title}”? ${deletionNote(target, [score.path])}`)) return;
+    try {
+      await deleteMediaFile(storage, score.path, target);
+      await saveScore(db, target, null);
+      onTrack(`Eliminato lo spartito di “${item.title}”`);
+    } catch (e) {
+      notify(`Media non aggiornati: ${e.message || e}`, true);
+    }
+  };
+
+  return (
       <Section
-        title="Spartito PDF"
+        title="Spartito (PDF o immagine)"
         icon="file-text"
         canEdit={canEdit}
-        accept="application/pdf,.pdf"
-        onFiles={(f) => upload('score', f)}
-        button={score ? 'Sostituisci' : 'Carica PDF'}
+        accept={SCORE_ACCEPT}
+        onFiles={upload}
+        button={score ? 'Sostituisci' : 'Carica spartito'}
         empty={
           !score &&
-          !scoreUploads.length &&
-          (canEdit ? 'Trascina qui lo spartito: in Live, vista Spartito, lo sfogli con il pedale Bluetooth.' : 'Nessuno spartito.')
+          !uploads.length &&
+          (canEdit
+            ? 'Trascina qui lo spartito (PDF o foto jpg/png): lo vedi direttamente in Live, vista Spartito, e lo sfogli con il pedale Bluetooth.'
+            : 'Nessuno spartito caricato.')
         }
       >
         {score && (
@@ -406,10 +428,12 @@ export default function MediaFields({ setlistId, item, canEdit: canEditSetlist, 
             )}
           </div>
         )}
-        {scoreUploads.map((u) => (
+        {uploads.map((u) => (
           <UploadRow key={u.key} upload={u} />
         ))}
+        {canEditSetlist && !canEdit && item.songId && (
+          <p className="md-hint">Lo spartito è del brano in libreria: lo cambia chi può modificare il brano.</p>
+        )}
       </Section>
-    </div>
   );
 }

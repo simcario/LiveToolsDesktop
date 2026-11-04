@@ -76,7 +76,7 @@ Nella pagina **Scaletta**:
 - riordina trascinando la maniglia; elimina con la ×;
 - a destra l'**ispettore** del brano selezionato: schede *Brano*, *Palco*, *Spartito*, *Testo gobbo*,
   *Sequenze & Video*, *MIDI*, *Colonne*. Salva con **Ctrl+S** (salva anche da solo quando cambi brano o
-  pagina). Sotto il titolo di ogni brano un tag indica se ha lo spartito e in che forma (*Spartito · PDF + link + accordi*), oltre a *Testo* e *Gobbo*.
+  pagina). Sotto il titolo di ogni brano un tag indica se ha lo spartito e in che forma (*Spartito · PDF + link + accordi*, o *immagine* per una foto), oltre a *Testo* e *Gobbo*.
 
 Ogni modifica finisce nello storico della scaletta. Colonne personalizzate e condivisione si gestiscono
 dall'app web.
@@ -424,10 +424,16 @@ scaletta.
 
 ---
 
-## 9. Spartito PDF e pedale
+## 9. Spartito e pedale
 
-Carica lo spartito del brano nella scheda **Sequenze, Video & PDF** (pagina Scaletta o Brani; anche dall'app
-web). Come stem e video viene scaricato su questo computer e funziona offline.
+Carica lo spartito del brano nella scheda **Spartito** dell'ispettore (pagina Scaletta o Brani): **Carica
+spartito** o trascina il file. Va bene un **PDF** o una **foto/scansione** della pagina (jpg, png, webp; da
+LiveTools 0.1.11 — fino alla 0.1.10 solo PDF, e solo dalla scheda *Sequenze, Video & PDF*, dove lo trovi ancora). Si può
+caricare anche dall'app web e dall'app tablet. Il file si salva subito per tutta la band e, come stem e video,
+viene scaricato su questo computer e funziona offline.
+
+Il campo **Link spartito** resta: se il brano ha uno spartito caricato l'app mostra quello, altrimenti la
+vista Spartito offre **Apri il link dello spartito**, che lo apre nel browser.
 
 Vista **Spartito** (Tab): una pagina, o due affiancate quando la vista è larga (*Automatico*). Le pagine si
 girano con:
@@ -442,6 +448,53 @@ Il pedale collegato compare nella barra della vista (pallino verde e nome; a ogn
 mostra il tasto ricevuto). **Impostazioni › Pedale & spartito** elenca i dispositivi Bluetooth collegati,
 permette di provare il pedale e, con **Impara**, di assegnare i tasti di un pedale che ne invia altri
 (Spazio, Invio, tasti multimediali…).
+
+### Accordi: sezioni, espressioni e stampa
+
+*Da LiveTools 0.1.11; le stesse funzioni ci sono nell'app web.*
+
+Gli accordi del brano (scheda **Spartito**, campo *Testo e accordi*: ChordPro o accordi sopra il testo) si
+dividono in **sezioni** con un'intestazione su una riga sua: `[Strofa 1]`, `[Ritornello]`, `Bridge x2`,
+`{start_of_verse: Strofa 2}`. Nel campo allargato (**Allarga**) i pulsanti **Sezioni** sopra il testo la inseriscono dove sta il cursore, già
+numerata dopo quelle scritte. Ogni sezione ha una sigla colorata:
+
+| Sigla | Sezione | Sigla | Sezione | Sigla | Sezione |
+| --- | --- | --- | --- | --- | --- |
+| I | Intro | B | Bridge | Tg | Tag |
+| V | Strofa (Verse) | It | Interludio | Bd | Breakdown |
+| Pc | Pre-ritornello | Is | Strumentale / Solo | E | Finale (Ending) |
+| C | Ritornello (Chorus) | Vp | Vamp | O | Outro |
+| Po | Post-ritornello | Ta | Turnaround | | |
+
+Valgono anche i nomi inglesi (*Verse 1*, *Chorus*, *Pre-chorus*…). Se un tipo ha più sezioni, le sigle si
+numerano (V1, V2, C1, C2).
+
+I pulsanti di sezioni ed espressioni compaiono solo nel campo allargato; nel campo normale resta il
+pulsante **(i)**. Il pulsante **(i)** apre la **legenda**: le sigle con i loro colori e i nomi
+accettati, il significato di ogni espressione e come si scrivono intestazioni, espressioni, ripetizioni e
+accordi. Si chiude con lo stesso pulsante o con la **×**. Passando col mouse su un'espressione se ne legge il
+significato.
+
+- **Espressioni**: i pulsanti **Espressione** (Soft, Build, Full band, Stop, Rallentando…) inseriscono
+  `{expr: Soft}`; subito sotto un'intestazione diventa l'indicazione della sezione, altrove una nota a destra.
+  In alternativa: `[Strofa 3 | Softly]`.
+- **Ripetizioni**: per far tornare una sezione già scritta, riscrivi solo la sua intestazione (es.
+  `[Ritornello 1]` senza righe sotto, o `{chorus}`): compare nella **mappa** del brano senza essere ristampata.
+  `x2` in fondo all'intestazione la segna come ripetuta.
+- Con gli accordi sopra il testo, la riga di accordi si unisce al testo sotto: ogni accordo va sulla sua sillaba.
+
+**Scrivi / Anteprima**: le due schede sopra il campo passano dal testo da scrivere all'anteprima degli accordi
+come si leggono (sigle delle sezioni, espressioni, accordi sopra le sillabe). Nell'anteprima i pulsanti **−** e
+**+** trasportano di un semitono alla volta, e **Stampa** stampa nella tonalità dell'anteprima.
+
+**Allarga** apre il campo su tutta la finestra, per scrivere più comodamente brani lunghi (con le stesse schede
+e gli stessi pulsanti); **Riduci**, **Esc** o un clic fuori dal riquadro lo riportano nella scheda.
+
+**Stampa** (accanto al titolo del campo) stampa gli accordi del brano, o li salva in PDF dalla finestra di
+stampa (*Salva come PDF*). Il foglio ha in alto titolo, artista, tonalità, tempo e metro, poi la **mappa** delle
+sezioni nell'ordine in cui si suonano (V1 V2 Vp C1… con le ripetizioni), poi le sezioni in riquadri su due
+colonne, con la sigla, il nome e l'espressione. In fondo a destra c'è il logo di LiveTools (*Stampato con*). **Stampa accordi** nella barra della pagina Scaletta stampa
+tutti i brani della scaletta, uno per pagina, nella tonalità in cui si suonano.
 
 ---
 
