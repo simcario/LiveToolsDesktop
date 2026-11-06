@@ -165,8 +165,11 @@ basso:
 - **Barra del trasporto**: metro e BPM, battuta con i movimenti, tempo trascorso e rimanente, ⏮ (torna all'inizio, a
   brano fermo), ▶/■ grande, **FADE**, **PAD**, titolo, tonalità e artista. A destra *Video* (uscita video del brano),
   *Modifica* (crea e sposta le sezioni) e il menu della scaletta.
-- **Scaletta**: i brani in fila come tessere, con numero, tonalità, BPM e durata; quello caricato è evidenziato. Tocca
-  una tessera per caricare il brano. Mentre la musica suona il tocco lo seleziona soltanto e il brano in corso continua.
+- **Scaletta**: i brani in fila come tessere, con numero, tonalità, BPM e durata; quello caricato è evidenziato. Un clic
+  seleziona una tessera, un **doppio clic** carica il brano (dalla prossima versione; prima bastava un clic). Mentre la
+  musica suona il brano in corso continua: il doppio clic sugli altri non fa nulla. Dalla prossima versione una tessera con
+  l'icona di download ha file non ancora su questo computer: al caricamento vengono scaricati e la tessera mostra la
+  percentuale e una barra di avanzamento.
   Il cerchio tra due tessere è la **transizione** (vedi sotto). Il pulsante con i cursori in alto a destra di una
   tessera cambia **tonalità e tempo**. Attenzione: ⏮ ⏭ nella Control bar e i tasti **← →** cambiano brano subito,
   anche durante l'esecuzione.
@@ -179,6 +182,8 @@ basso:
   guide…). Il volume del gruppo si somma a quello delle sue tracce e resta salvato su questo computer per tutti i brani.
   Come in Playback, **tocca il nome** per togliere il gruppo dal mix (diventa rosso e barrato) o per spegnere il
   metronomo; **S** mette in solo tutte le tracce del gruppo. Accanto al metronomo c'è la striscia del **Pad**.
+  I fader sono come quelli di un mixer: cappuccio rigato con la linea nel colore della striscia (bianco per il master)
+  e scala in dB accanto alla guida, da +6 a ∞ (silenzio). Doppio clic su un fader per tornare al valore di partenza.
 
 **Fade delle tracce.** *FADE* (**F**) sfuma le tracce del brano in corso; click e pad restano. L'anello del pulsante
 si svuota mentre sfuma. Premilo di nuovo (*IN*) per riportarle dentro. La durata si sceglie in **Impostazioni →
@@ -250,8 +255,10 @@ ingrandisce fino a quando non premi *Fine* nello stesso punto. Un tocco sulla fo
 - Porta la testina dove serve e premi **+**: il marker si aggancia alla battuta più vicina. Il primo marker su un brano
   vuoto crea anche *Intro*, perché la prima sezione parte sempre dalla battuta 1.
 - Trascina un marker per spostarlo da una battuta all'altra, senza superare quelli vicini.
-- Tocca un marker o l'etichetta di una sezione per scegliere la sezione: scrivi il nome o usa quelli pronti (*Intro*, *Strofa*,
-  *Ritornello*…). *Elimina* la toglie e le sue battute passano alla sezione prima.
+- Tocca un marker o l'etichetta di una sezione per scegliere la sezione e usa i nomi pronti (*Intro*, *Verse*, *Pre-Chorus*,
+  *Chorus*, *Bridge*, *Solo*, *Interlude*, *Outro*). Per scrivere un nome tuo fai **doppio clic** sul campo del nome
+  (appena aggiunto un marker il campo è già pronto): **Invio**, **Esc** o un clic altrove lo chiudono, così i tasti della
+  vista non lo sovrascrivono. *Elimina* la toglie e le sue battute passano alla sezione prima.
 - **Ctrl+Z** annulla, **Ctrl+Shift+Z** ripete. Le modifiche restano su questo computer finché non premi **Salva**, come nell'Arrangement; poi
   valgono per tutta la band.
 

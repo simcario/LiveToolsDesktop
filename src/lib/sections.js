@@ -16,7 +16,7 @@ const MIN_LEAD = 0.12;
 // Every section has its colour, in the order of the song.
 const COLORS = ['#38bdf8', '#f59e0b', '#a78bfa', '#34d399', '#f472b6', '#fb923c', '#84cc16', '#e879f9', '#2dd4bf', '#f43f5e', '#facc15', '#818cf8'];
 
-export const SECTION_NAMES = ['Intro', 'Strofa', 'Pre-ritornello', 'Ritornello', 'Bridge', 'Solo', 'Interludio', 'Outro'];
+export const SECTION_NAMES = ['Intro', 'Verse', 'Pre-Chorus', 'Chorus', 'Bridge', 'Solo', 'Interlude', 'Outro'];
 
 // Sections that take up room on the song: the ones the markers work on.
 const placed = (item) => (item?.sections || []).filter((s) => Number(s.bars) >= 1);

@@ -5,6 +5,9 @@ versioni [SemVer](https://semver.org/lang/it/). Procedura di rilascio: [docs/REL
 
 ## [Non rilasciato]
 
+### Fader da mixer
+- I fader della vista Palco hanno un cappuccio rigato con la linea nel colore della striscia (bianco per il master) e una scala in dB da +6 a ∞ accanto alla guida.
+
 ### Uscite NDI
 - **Video e gobbo in rete come sorgenti NDI®** (Impostazioni › Uscite NDI), anche con le finestre di uscita chiuse:
   il video a tempo con l'audio, il gobbo a 1920×1080 come nella finestra Gobbo.

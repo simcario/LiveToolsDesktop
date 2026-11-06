@@ -5,6 +5,8 @@ import '@fontsource/inter/700.css';
 import '@fontsource/jetbrains-mono/500.css';
 import '@fontsource/jetbrains-mono/700.css';
 import './styles.css';
+import './styles/toolbar.css';
+import './styles/stage.css';
 
 // The same bundle serves the main window and the output windows
 // (index.html?view=video / ?view=prompter), which never load Firebase.
