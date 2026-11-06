@@ -1,0 +1,1202 @@
+/* Shared with LiveTools Mobile (mobile/scripts/sync-desktop.mjs copies this file): edit it here. */
+
+/* Channel strips of the Palco view */
+.m-name {
+  width: 100%;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-2);
+}
+/* Console faders: striped cap with the section colour as index line, dB scale
+   beside the slot (ticks behind the input, labels on the left). --p is the tick
+   position (0 = -inf, 1 = +6 dB); the thumb centre travels cap-h/2 .. 100% - cap-h/2. */
+.fader-wrap {
+  --cap-w: 28px;
+  --cap-h: 34px;
+  position: relative;
+  flex: none;
+  display: flex;
+  justify-content: flex-end;
+  width: var(--cap-w);
+  min-height: 60px;
+}
+.fader-wrap.has-scale {
+  width: calc(var(--cap-w) + 17px);
+}
+.fader-scale {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: var(--cap-w);
+  pointer-events: none;
+}
+.fader-scale i {
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  height: 1px;
+  top: calc(var(--cap-h) / 2 + (1 - var(--p)) * (100% - var(--cap-h)));
+  background: rgba(255, 255, 255, 0.16);
+}
+.fader-scale i.is-zero {
+  left: 0;
+  right: 0;
+  background: rgba(255, 255, 255, 0.5);
+}
+.fader-scale i[data-l]::before {
+  content: attr(data-l);
+  position: absolute;
+  right: calc(100% + 3px);
+  top: -5px;
+  font-size: 9px;
+  font-style: normal;
+  line-height: 10px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.fader-scale i.is-zero::before {
+  right: calc(100% + 3px);
+}
+input.fader {
+  --fader-cap: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 34' preserveAspectRatio='none'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%23555b66'/%3E%3Cstop offset='0.1' stop-color='%232b3038'/%3E%3Cstop offset='0.5' stop-color='%2315181d'/%3E%3Cstop offset='0.9' stop-color='%232b3038'/%3E%3Cstop offset='1' stop-color='%2307080a'/%3E%3C/linearGradient%3E%3ClinearGradient id='s' x1='0' y1='0' x2='1' y2='0'%3E%3Cstop offset='0' stop-color='%23fff' stop-opacity='.12'/%3E%3Cstop offset='.45' stop-color='%23fff' stop-opacity='0'/%3E%3Cstop offset='1' stop-color='%23000' stop-opacity='.28'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M1 2Q1 1 2 1H26Q27 1 27 2Q24.5 17 27 32Q27 33 26 33H2Q1 33 1 32Q3.5 17 1 2Z' fill='url(%23g)' stroke='%23000' stroke-width='.7'/%3E%3Cpath d='M1 2Q1 1 2 1H26Q27 1 27 2Q24.5 17 27 32Q27 33 26 33H2Q1 33 1 32Q3.5 17 1 2Z' fill='url(%23s)'/%3E%3Cpath d='M3 4.5H25M3 7.5H25M3 10.5H25M3.5 13.5H24.5M3.5 20.5H24.5M3 23.5H25M3 26.5H25M3 29.5H25' stroke='rgba(0,0,0,.8)' stroke-width='.9'/%3E%3Cpath d='M3 5.3H25M3 8.3H25M3 11.3H25M3.5 14.3H24.5M3.5 21.3H24.5M3 24.3H25M3 27.3H25M3 30.3H25' stroke='rgba(255,255,255,.16)' stroke-width='.6'/%3E%3C/svg%3E");
+  --fader-line: var(--sec, #e4e4e7);
+  position: relative;
+  writing-mode: vertical-lr;
+  direction: rtl;
+  width: var(--cap-w);
+  height: auto;
+  align-self: stretch;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  margin: 0;
+  cursor: grab;
+  touch-action: none;
+}
+input.fader.is-light {
+  --fader-cap: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 34' preserveAspectRatio='none'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%23ffffff'/%3E%3Cstop offset='0.1' stop-color='%23eeeff1'/%3E%3Cstop offset='0.5' stop-color='%23d9dbdf'/%3E%3Cstop offset='0.9' stop-color='%23c4c7cc'/%3E%3Cstop offset='1' stop-color='%238e9298'/%3E%3C/linearGradient%3E%3ClinearGradient id='s' x1='0' y1='0' x2='1' y2='0'%3E%3Cstop offset='0' stop-color='%23fff' stop-opacity='.12'/%3E%3Cstop offset='.45' stop-color='%23fff' stop-opacity='0'/%3E%3Cstop offset='1' stop-color='%23000' stop-opacity='.28'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M1 2Q1 1 2 1H26Q27 1 27 2Q24.5 17 27 32Q27 33 26 33H2Q1 33 1 32Q3.5 17 1 2Z' fill='url(%23g)' stroke='%233f3f46' stroke-width='.7'/%3E%3Cpath d='M1 2Q1 1 2 1H26Q27 1 27 2Q24.5 17 27 32Q27 33 26 33H2Q1 33 1 32Q3.5 17 1 2Z' fill='url(%23s)'/%3E%3Cpath d='M3 4.5H25M3 7.5H25M3 10.5H25M3.5 13.5H24.5M3.5 20.5H24.5M3 23.5H25M3 26.5H25M3 29.5H25' stroke='rgba(0,0,0,.28)' stroke-width='.9'/%3E%3Cpath d='M3 5.3H25M3 8.3H25M3 11.3H25M3.5 14.3H24.5M3.5 21.3H24.5M3 24.3H25M3 27.3H25M3 30.3H25' stroke='rgba(255,255,255,.9)' stroke-width='.6'/%3E%3C/svg%3E");
+  --fader-line: #18181b;
+}
+input.fader:active {
+  cursor: grabbing;
+}
+input.fader:focus-visible {
+  outline: none;
+}
+input.fader::-webkit-slider-runnable-track {
+  width: 6px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #000, #222936 55%, #000);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+input.fader::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: var(--cap-w);
+  height: var(--cap-h);
+  margin-left: calc(3px - var(--cap-w) / 2);
+  border: 0;
+  border-radius: 0;
+  background:
+    linear-gradient(var(--fader-line), var(--fader-line)) center / 64% 2px no-repeat,
+    var(--fader-cap) center / 100% 100% no-repeat;
+  filter: drop-shadow(0 3px 3px rgba(0, 0, 0, 0.6));
+}
+input.fader:hover::-webkit-slider-thumb,
+input.fader:active::-webkit-slider-thumb {
+  filter: drop-shadow(0 3px 3px rgba(0, 0, 0, 0.6)) brightness(1.18);
+}
+input.fader:focus-visible::-webkit-slider-thumb {
+  filter: drop-shadow(0 0 2px var(--fader-line)) brightness(1.18);
+}
+input.fader::-moz-range-track {
+  width: 6px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #000, #222936 55%, #000);
+}
+input.fader::-moz-range-thumb {
+  width: var(--cap-w);
+  height: var(--cap-h);
+  border: 0;
+  border-radius: 0;
+  background:
+    linear-gradient(var(--fader-line), var(--fader-line)) center / 64% 2px no-repeat,
+    var(--fader-cap) center / 100% 100% no-repeat;
+}
+.meter {
+  display: flex;
+  gap: 2px;
+  height: 100%;
+}
+.meter i {
+  position: relative;
+  width: 4px;
+  height: 100%;
+  border-radius: 2px;
+  background: #070a10;
+  overflow: hidden;
+}
+.meter i span {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(0deg, var(--yes) 0%, var(--yes) 70%, var(--warn) 86%, var(--danger) 100%);
+}
+.meter.h {
+  flex-direction: column;
+  width: 100%;
+  height: auto;
+}
+.meter.h i {
+  width: 100%;
+  height: 3px;
+}
+.meter.h i span {
+  top: 0;
+  right: auto;
+  background: linear-gradient(90deg, var(--yes) 0%, var(--yes) 70%, var(--warn) 86%, var(--danger) 100%);
+}
+.m-db {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+}
+/* ---------- Palco view: laid out as Playback, read from a distance, big targets ---------- */
+.stage {
+  --bubble-h: 34px;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: grid;
+  /* Without minmax the column grows with the strips of a song with many tracks. */
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto clamp(150px, 30vh, 320px) minmax(170px, 1fr);
+  background: var(--bg);
+}
+.stage.is-editing {
+  grid-template-rows: auto auto clamp(220px, 40vh, 420px) minmax(130px, 1fr);
+}
+/* Lyrics or score in place of waveform and mixer (StageView children, on a tablet). */
+.stage.is-reading {
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+.st-reading {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Top bar: the transport of Playback. */
+.st-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 8px 10px;
+  background: var(--bg-elev);
+  border-bottom: 1px solid var(--border-strong);
+}
+.st-lcd {
+  flex: none;
+  display: flex;
+  align-items: stretch;
+  height: 58px;
+  border-radius: var(--radius-sm);
+  background: #070a10;
+  border: 1px solid var(--border-strong);
+  font-family: var(--font-mono);
+}
+.st-tempo {
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  min-width: 92px;
+  padding: 0 12px;
+}
+.st-lcd-big {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--text);
+}
+.st-lcd-small {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-light);
+}
+.st-lcd-cell {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  padding: 0 14px;
+}
+.st-lcd-cell + .st-lcd-cell {
+  border-left: 1px solid var(--border-strong);
+}
+.st-bars {
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--accent-light);
+  min-width: 84px;
+}
+.st-bars.is-count {
+  color: var(--cyan);
+}
+.st-time {
+  align-items: flex-end;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.st-left {
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text);
+}
+.st-leds {
+  display: flex;
+  gap: 5px;
+  height: 10px;
+}
+.st-leds i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--surface-3);
+}
+.st-leds i.on {
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+}
+.st-leds i.on.first {
+  background: var(--cyan);
+  box-shadow: 0 0 8px var(--cyan);
+}
+.st-round {
+  flex: none;
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  color: var(--text);
+  cursor: pointer;
+}
+.st-round:hover:not(:disabled) {
+  background: var(--surface-3);
+}
+.st-round:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.st-fade,
+.st-pad-btn {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: var(--text-2);
+}
+.st-fade {
+  /* The ring empties as the tracks fade out. */
+  background: conic-gradient(var(--surface-3) calc(var(--fade, 1) * 360deg), var(--surface) 0);
+}
+.st-fade.is-on {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+.st-pad-btn.is-on {
+  background: var(--violet-soft);
+  border-color: var(--violet);
+  color: var(--violet);
+}
+.st-change {
+  color: var(--violet);
+  border-color: var(--violet);
+}
+.st-play {
+  width: 64px;
+  height: 64px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  color: var(--yes);
+  cursor: pointer;
+}
+.st-play svg {
+  fill: currentColor;
+}
+.st-play:hover:not(:disabled) {
+  background: var(--surface-3);
+}
+.st-play:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.st-play.is-on {
+  background: var(--yes);
+  border-color: var(--yes);
+  color: #03170a;
+}
+.st-play.is-wait {
+  background: var(--warn);
+  border-color: var(--warn);
+  color: #1c1405;
+}
+.st-song {
+  flex: 1;
+  min-width: 0;
+  padding-left: 4px;
+}
+.st-song h1 {
+  margin: 0;
+  font-size: clamp(20px, 2.6vw, 44px);
+  line-height: 1.12;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+.st-facts {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 3px;
+  font-size: 14px;
+  color: var(--text-2);
+  white-space: nowrap;
+  min-width: 0;
+}
+.st-key {
+  padding: 1px 9px;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 15px;
+  font-weight: 800;
+}
+.st-top-tools {
+  flex: none;
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+.st-tool {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-width: 64px;
+  height: 58px;
+  padding: 0 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.st-tool:hover {
+  background: var(--surface-2);
+}
+.st-tool.is-on {
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+  color: var(--accent-light);
+}
+.st-setlist {
+  max-width: 200px;
+}
+.st-setlist select {
+  max-width: 180px;
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+  cursor: pointer;
+}
+
+/* The setlist as a row of tiles, with the transitions between them. */
+.st-tiles {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  min-width: 0;
+  padding: 8px 10px;
+  overflow-x: auto;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border-strong);
+}
+.st-tile-wrap {
+  flex: none;
+  display: flex;
+  align-items: center;
+}
+.st-tile {
+  position: relative;
+  display: flex;
+  width: 168px;
+  height: 66px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  overflow: hidden;
+}
+.st-tile-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  padding: 6px 10px;
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.st-tile-more {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: var(--faint);
+  cursor: pointer;
+}
+.st-tile-more:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+/* Not downloaded yet / downloading (Palco tiles). */
+.st-tile-dl {
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  background: var(--surface-3);
+  color: var(--warn, #f59e0b);
+  pointer-events: none;
+}
+.st-tile-dl.is-error {
+  color: var(--danger, #ef4444);
+}
+.st-tile-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 4px;
+  background: var(--surface-3);
+  pointer-events: none;
+}
+.st-tile-progress > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.2s linear;
+}
+.st-tile.is-downloading .st-tile-sub {
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+.st-tile-key.is-changed {
+  box-shadow: inset 0 0 0 1px var(--violet);
+}
+.st-tile:hover {
+  background: var(--surface-2);
+}
+.st-tile.is-selected {
+  border-color: var(--text-2);
+}
+.st-tile.is-loaded {
+  background: var(--accent-soft);
+  border: 2px solid var(--accent);
+  box-shadow: var(--glow-accent);
+}
+.st-tile strong {
+  font-size: 14px;
+  line-height: 1.2;
+}
+.st-tile-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 16px;
+}
+.st-tile-num {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--faint);
+}
+.st-tile-key {
+  padding: 0 5px;
+  border-radius: 3px;
+  background: var(--surface-3);
+  font-size: 11px;
+}
+.st-tile.is-loaded .st-tile-key {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.st-tile-sub {
+  font-size: 11px;
+  color: var(--muted);
+}
+.st-link {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin: 0 3px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  color: var(--faint);
+}
+.st-link {
+  cursor: pointer;
+}
+.st-link:disabled {
+  cursor: default;
+}
+.st-link:hover:not(:disabled) {
+  background: var(--surface-3);
+  color: var(--text);
+}
+.st-link-cue {
+  color: var(--accent-light);
+}
+.st-link-autolink,
+.st-link-overlap,
+.st-link-crossfade {
+  color: var(--cyan);
+  border-color: color-mix(in srgb, var(--cyan) 50%, transparent);
+}
+.st-link.is-own {
+  border-width: 2px;
+}
+.st-link.is-armed {
+  background: var(--cyan-strong);
+  border-color: var(--cyan-strong);
+  color: #031417;
+}
+
+/* Menus of the tiles (transition, key and tempo). */
+.st-pop-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+}
+.st-pop {
+  position: fixed;
+  width: 280px;
+  padding: 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elev);
+  box-shadow: var(--shadow-lg);
+}
+.st-pop-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.st-pop-title {
+  margin-bottom: 4px;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.st-pop-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-2);
+  text-align: left;
+  cursor: pointer;
+}
+.st-pop-item svg {
+  flex: none;
+  margin-top: 2px;
+}
+.st-pop-item span {
+  display: flex;
+  flex-direction: column;
+}
+.st-pop-item b {
+  font-size: 13px;
+  color: var(--text);
+}
+.st-pop-item small {
+  font-size: 11px;
+  color: var(--muted);
+}
+.st-pop-item:hover {
+  background: var(--surface-2);
+}
+.st-pop-item.is-on {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+.st-pop-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+.st-pop-row > span {
+  flex: 1;
+  color: var(--muted);
+}
+.st-pop-val {
+  min-width: 96px;
+  text-align: center;
+}
+.st-pop-val small {
+  color: var(--violet);
+}
+.st-pop-hint {
+  margin: 4px 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+.st-tile-sep {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  max-width: 120px;
+  margin: 0 8px;
+  padding-left: 8px;
+  border-left: 2px solid var(--border-strong);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+/* The waveform with its sections. */
+.st-wave {
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 10px 8px;
+}
+.st-wavebar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+  min-width: 0;
+}
+.st-overview {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  border-radius: var(--radius-sm);
+  background: #070a10;
+  border: 1px solid var(--border-strong);
+  overflow: hidden;
+  cursor: pointer;
+}
+.st-overview canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+.st-ov-scroll {
+  position: absolute;
+  inset: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.st-ov-track {
+  position: relative;
+  height: 100%;
+}
+.st-ov-empty {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 12px;
+  text-align: center;
+  font-size: 13px;
+  pointer-events: none;
+}
+.st-band {
+  position: absolute;
+  top: var(--bubble-h);
+  bottom: 0;
+  background: color-mix(in srgb, var(--sec) 14%, transparent);
+  border-left: 1px solid color-mix(in srgb, var(--sec) 60%, transparent);
+  pointer-events: none;
+}
+.st-sec {
+  position: absolute;
+  top: 0;
+  height: var(--bubble-h);
+  padding: 3px 2px 3px 3px;
+  display: flex;
+  min-width: 0;
+  pointer-events: none;
+}
+.st-bubble {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 6px 0 3px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--sec) 55%, transparent);
+  background: color-mix(in srgb, var(--sec) 22%, var(--surface));
+  color: color-mix(in srgb, var(--sec) 35%, #fff);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: left;
+  pointer-events: auto;
+  cursor: pointer;
+}
+.st-bubble:hover {
+  background: color-mix(in srgb, var(--sec) 34%, var(--surface));
+}
+.st-bubble-num {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--sec);
+  color: var(--accent-ink);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-style: normal;
+}
+.st-bubble-bars {
+  margin-left: auto;
+  padding-left: 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  opacity: 0.6;
+}
+.st-bubble-loop {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  margin-left: 3px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  color: var(--text-2);
+  pointer-events: auto;
+  cursor: pointer;
+}
+.st-bubble-loop.is-on {
+  background: var(--cyan-strong);
+  border-color: var(--cyan-strong);
+  color: #031417;
+}
+.st-sec.is-current .st-bubble {
+  background: var(--sec);
+  border-color: var(--sec);
+  color: var(--accent-ink);
+}
+.st-sec.is-current .st-bubble-num {
+  background: var(--accent-ink);
+  color: var(--sec);
+}
+.st-sec.is-queued .st-bubble {
+  border: 2px solid var(--accent-light);
+  animation: st-queued 0.7s steps(2, jump-none) infinite;
+}
+.st-sec.is-loop .st-bubble {
+  border: 2px solid var(--cyan);
+}
+.st-sec.is-selected .st-bubble {
+  border: 2px solid #fff;
+}
+@keyframes st-queued {
+  from {
+    background: color-mix(in srgb, var(--accent) 50%, var(--surface));
+  }
+  to {
+    background: var(--surface);
+  }
+}
+.st-played {
+  position: absolute;
+  left: 0;
+  top: var(--bubble-h);
+  bottom: 0;
+  background: rgba(7, 10, 16, 0.58);
+  pointer-events: none;
+}
+.st-head {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: #fff;
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.7);
+  pointer-events: none;
+}
+.st-loop-range {
+  position: absolute;
+  top: var(--bubble-h);
+  bottom: 0;
+  background: rgba(34, 211, 238, 0.14);
+  box-shadow: inset 0 0 0 2px var(--cyan);
+  pointer-events: none;
+}
+.st-jump-at {
+  position: absolute;
+  top: var(--bubble-h);
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--accent-light);
+  pointer-events: none;
+}
+
+/* Edit mode: the markers, wider to touch than the line. */
+.st-marker {
+  position: absolute;
+  top: var(--bubble-h);
+  bottom: 0;
+  width: 22px;
+  margin-left: -11px;
+  cursor: ew-resize;
+  touch-action: none;
+}
+.st-marker::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 10px;
+  width: 2px;
+  background: repeating-linear-gradient(to bottom, var(--sec) 0 5px, transparent 5px 9px);
+}
+.st-marker i {
+  position: absolute;
+  top: 0;
+  left: 3px;
+  border-top: 12px solid var(--sec);
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+}
+.st-marker.is-on::before {
+  left: 9px;
+  width: 4px;
+  box-shadow: 0 0 8px var(--sec);
+}
+.st-marker b {
+  position: absolute;
+  left: 14px;
+  bottom: 2px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--sec);
+  color: var(--accent-ink);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.st-marker-edit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  min-height: 40px;
+  min-width: 0;
+  font-size: 13px;
+}
+.st-marker-edit .input {
+  flex: 0 1 190px;
+  min-width: 90px;
+  height: 34px;
+  font-size: 15px;
+  font-weight: 700;
+}
+.st-swatch {
+  flex: none;
+  width: 16px;
+  height: 34px;
+  border-radius: 3px;
+  background: var(--sec);
+}
+.st-names {
+  display: flex;
+  gap: 4px;
+  min-width: 0;
+  overflow-x: auto;
+}
+.st-names .toggle {
+  flex: none;
+  height: 30px;
+}
+
+.st-now {
+  font-size: 15px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.st-view {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+}
+.st-zoom {
+  min-width: 38px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted);
+}
+.st-grid-res {
+  height: 26px;
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  font-size: 12px;
+  font-weight: 600;
+}
+.st-grid-res:disabled {
+  opacity: 0.5;
+}
+.st-quant {
+  display: flex;
+  flex: none;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  overflow: hidden;
+}
+.st-quant button {
+  height: 32px;
+  padding: 0 10px;
+  border: none;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.st-quant button + button {
+  border-left: 1px solid var(--border-strong);
+}
+.st-quant button.is-on {
+  background: var(--accent-soft);
+  color: var(--accent-light);
+}
+.st-map-empty {
+  margin: 0;
+  padding: 10px;
+  font-size: 13px;
+}
+
+/* Mixer: console, master, click and the groups, as the bottom of Playback. */
+.st-mixer {
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  gap: 4px;
+  padding: 8px 10px 10px;
+  background: var(--bg-elev);
+  border-top: 1px solid var(--border-strong);
+}
+.st-console {
+  flex: none;
+  width: 92px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-right: 4px;
+}
+.st-cbtn {
+  flex: 1;
+  max-height: 70px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.st-cbtn:hover:not(:disabled) {
+  background: var(--surface-3);
+}
+.st-cbtn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.st-cbtn.is-on {
+  background: var(--cyan-strong);
+  border-color: var(--cyan-strong);
+  color: #031417;
+}
+.st-tracks {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+}
+.st-strip {
+  flex: 1 0 76px;
+  max-width: 120px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 4px 4px;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  border-top: 3px solid var(--sec);
+}
+.st-strip-fixed {
+  flex: 0 0 82px;
+  background: var(--surface-2);
+}
+.st-master + .st-strip-fixed {
+  margin-right: 6px;
+}
+.st-fader-row {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  gap: 6px;
+}
+.st-solo {
+  flex: none;
+  width: 100%;
+  height: 24px;
+  border-radius: 4px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.st-solo.is-on {
+  background: var(--warn);
+  border-color: var(--warn);
+  color: #1c1405;
+}
+.st-solo.is-blank {
+  visibility: hidden;
+}
+/* The name is the mute, as in Playback. */
+.st-name {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  padding: 0 4px;
+  border-radius: 4px;
+  border: 1px solid color-mix(in srgb, var(--sec) 45%, transparent);
+  background: color-mix(in srgb, var(--sec) 18%, var(--surface));
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.st-pad-key {
+  flex: none;
+  width: 100%;
+  height: 24px;
+  border-radius: 4px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  font-size: 11px;
+  font-weight: 600;
+}
+.st-padstrip + .st-tracks {
+  margin-left: 6px;
+}
+.st-name.is-static {
+  cursor: default;
+}
+.st-strip-count {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+}
+.st-strip.is-muted .st-name {
+  background: var(--danger-soft);
+  border-color: var(--danger);
+  color: var(--danger);
+  text-decoration: line-through;
+}
+.st-strip.is-muted .st-fader-row {
+  opacity: 0.45;
+}
+@media (prefers-reduced-motion: reduce) {
+  .st-sec.is-queued .st-bubble {
+    animation: none;
+    background: color-mix(in srgb, var(--accent) 30%, var(--surface));
+  }
+}
+@media (max-width: 900px) {
+  .st-tempo,
+  .st-back {
+    display: none;
+  }
+}
