@@ -150,6 +150,9 @@ export function useCueTrack({ player, setlistId, canEdit: canEditSetlist, notify
     setCue,
     shifted,
     shift,
+    // One square in beats, and the squares of a bar (for the header buttons).
+    cellStep: resolution === 8 ? 0.5 : 1,
+    barBeats: (bars[0]?.cells.length || 4),
     moved,
     moveCue,
     countBar,
@@ -270,6 +273,16 @@ export function CueHeader({ cue, solos, onTrack, loadedTracks }) {
         >
           {cue.resolution === 8 ? '1/8' : '1/4'}
         </button>
+        {cue.canEdit && cue.cues.length > 0 && (
+          <>
+            <button className="toggle" onClick={(e) => cue.shift(-(e.shiftKey ? cue.barBeats : 1) * cue.cellStep)} title="Sposta tutte le cue indietro di un quadratino (Maiusc: di una battuta)">
+              ‹
+            </button>
+            <button className="toggle" onClick={(e) => cue.shift((e.shiftKey ? cue.barBeats : 1) * cue.cellStep)} title="Sposta tutte le cue avanti di un quadratino (Maiusc: di una battuta)">
+              ›
+            </button>
+          </>
+        )}
         {stem && (
           <>
             <button className={`toggle mute ${mute ? 'is-on' : ''}`} onClick={() => onTrack(stem, { mute: !mute })}>

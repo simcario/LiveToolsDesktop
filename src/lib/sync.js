@@ -2,11 +2,13 @@
 // Source: a click stem (beat by beat) or a rhythmic stem (tempo + bar 1),
 // chosen automatically or by the user; per song, kept on this computer.
 // The grid set by hand is stored on the song (`grid`, shared by the band):
-//   { from, to, anchors: [{ beat, t }], bpm }
+//   { from, to, anchors: [{ beat, t }], bpm, lead }
 // from/to = range of the automatic analysis (seconds, null = whole track);
 // anchors = warp (beat 0 = bar 1, beat 1) that replaces the analysis; bpm =
 // tempo when there is a single anchor, or typed in the Arrangement (it wins
-// over the tempo detected in the audio).
+// over the tempo detected in the audio); lead = bars put before the bar 1 of the
+// analysis, which lands where the reference stem enters: with an intro without
+// it, bar 1 goes back to where the audio starts (see lib/arrange.js leadToAudio).
 import { invoke } from '@tauri-apps/api/core';
 
 const KEY = 'livetools-desktop:sync';
@@ -89,6 +91,7 @@ export function gridOf(item) {
       .filter((a) => Number.isInteger(a?.beat) && a.beat >= 0 && Number.isFinite(a?.t))
       .sort((a, b) => a.beat - b.beat),
     bpm: Number(g.bpm) > 0 ? Number(g.bpm) : null,
+    lead: Number.isInteger(g.lead) && g.lead > 0 ? g.lead : 0,
   };
 }
 
@@ -124,8 +127,11 @@ export function syncSpec(item, analysis, choice, regions = null) {
   const nudge = (Number(choice.nudgeMs) || 0) / 1000;
   const shift = Number(choice.shiftBeats) || 0;
   if (analysis.mode === 'click') {
-    const at = Math.max(0, Math.min(analysis.beats.length - 2, analysis.downbeat + shift));
-    const beats = analysis.beats.slice(at);
+    const at = Math.max(0, Math.min(analysis.beats.length - 2, analysis.downbeat + shift)) - g.lead * analysis.beatsPerBar;
+    // Bars put before the first click: at the pace of its first beats.
+    const step = analysis.beats[1] - analysis.beats[0];
+    const before = Array.from({ length: Math.max(0, -at) }, (_, i) => analysis.beats[0] - (-at - i) * step);
+    const beats = [...before, ...analysis.beats.slice(Math.max(0, at))];
     // Tempo typed by hand (Arrangement): bar 1 from the click stem, then that tempo.
     if (g.bpm) {
       const first = regions ? placeBeats(beats, regions)[0] : beats[0];
@@ -137,9 +143,12 @@ export function syncSpec(item, analysis, choice, regions = null) {
   const beat = 60 / analysis.bpm / (sig.compound ? 3 : 1);
   const placed = regions ? placeInRegions(regions, analysis.origin) : null;
   const origin = placed ?? (regions?.[0] ? analysis.origin + regions[0].at - regions[0].from : analysis.origin);
+  // Bar of the first section (the one the lead bars belong to).
+  const bpm0 = tempoChanges(item) ? Number(item.sections?.[0]?.bpm) || Number(item.bpm) || analysis.bpm : g.bpm ?? analysis.bpm;
+  const bar = (sig.beats * 60) / bpm0 / (sig.compound ? 3 : 1);
   return {
     kind: 'offset',
-    origin: origin + shift * beat + nudge,
+    origin: origin + shift * beat + nudge - g.lead * bar,
     // The detected tempo is more precise than the song's, unless sections change
     // it or it was typed by hand in the Arrangement (grid.bpm).
     bpm: tempoChanges(item) ? null : g.bpm ?? analysis.bpm,

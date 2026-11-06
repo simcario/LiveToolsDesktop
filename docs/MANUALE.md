@@ -147,6 +147,7 @@ ricarica.
 | **Ins** | Arrangement: nuova sezione alla battuta della testina |
 | **Home** | inizio del brano |
 | **C** | click acceso / spento |
+| **Maiusc+C** | click in ottavi acceso / spento (dalla prossima versione) |
 | **Ctrl+1 / 2 / 3** | pagina Live / Scaletta / Brani |
 | **Ctrl+Alt+L / E / R** | apre o chiude Browser / Dettaglio / ispettore |
 | **Ctrl+,** | Impostazioni |
@@ -325,6 +326,12 @@ Il click è generato dal motore (nessun campione): **Impostazioni › Trasporto*
 Cowbell, Stick, HiHat), volume, e volume / intonazione di accento, movimenti, suddivisioni e count-in. Il
 count-in segue le stesse regole del metronomo web, con cambi di tempo e metro per sezione.
 
+**Click in ottavi** (dalla prossima versione): il pulsante **×2** del trasporto, **Maiusc+C** o
+**Impostazioni › Trasporto › Click in ottavi** raddoppia il click: nei tempi semplici (4/4, 3/4…) suona anche
+i controtempi, cioè il 4/4 in ottavi, un po' più piano dei movimenti (regolabili con la voce *Ottavi* di
+volume e intonazione). Nei tempi composti (6/8, 12/8) il click è già in ottavi e non cambia; il count-in resta
+in quarti.
+
 ### 5.2 Griglia allineata all'audio
 
 Al caricamento l'app allinea click, count-in e righello alle tracce:
@@ -337,6 +344,12 @@ Al caricamento l'app allinea click, count-in e righello alle tracce:
 Il menu **Griglia** nell'Arrangement mostra traccia usata, BPM rilevato, posizione del "1" e affidabilità;
 permette di scegliere un'altra traccia, usare i *Dati del brano*, spostare il "1" di un movimento (◀ 1 / 1 ▶)
 e correggere di ±5 ms.
+
+Dalla prossima versione, se l'audio comincia una battuta o più prima del "1" trovato (succede quando la traccia
+di riferimento entra dopo un intro, o con *Analisi da / a*), all'apertura nell'Arrangement la battuta 1 torna
+all'inizio dell'audio: la griglia resta a tempo con la musica e conta le battute dall'intro, invece di lasciarlo
+prima della battuta -1. Cue e sezioni già create si spostano con lei e restano sulla stessa musica. La
+correzione è *Non salvata*: **Salva** per tenerla, **Ctrl+Z** per annullarla. Non tocca le griglie fatte a mano.
 
 ### 5.3 Griglia a mano (tasto W)
 
@@ -393,13 +406,19 @@ Utile quando un brano non ha una traccia guida.
    giusto: la cue si sposta lì (se c'era già un'altra cue, la sostituisce). Un clic senza trascinare apre il menu
    come prima. **Ctrl+Z** annulla lo spostamento.
 4. La **mano** sposta tutte le cue insieme trascinando (dalla prossima versione non apre il menu: per inserire usa un
-   altro strumento), la **gomma** ne cancella una.
+   altro strumento), la **gomma** ne cancella una. Dalla prossima versione l'intera traccia cue si sposta anche
+   trascinando la sua barra colorata in alto (quella con "CUE") con qualsiasi strumento, o con i pulsanti **‹ ›**
+   nell'intestazione: un quadratino alla volta, con **Maiusc** una battuta.
 
 Le cue si sentono subito come traccia *live*, generata su questo computer. Con **Renderizza in file audio**
 diventano uno stem "Cues" caricato online, che si ascolta anche dal Rehearsal del web. Se modifichi le cue
-dopo il render, l'app usa di nuovo la traccia live finché non renderizzi ancora.
+dopo il render, l'app usa di nuovo la traccia live finché non renderizzi ancora. Dalla prossima versione il
+Rehearsal e il Player palco del web generano da soli le cue non renderizzate, sulla griglia pubblicata dal desktop:
+si sentono nel gruppo *Guide* anche senza file audio.
 
-Le cue non possono stare nel count-in (lì c'è solo il click). Le cue si creano solo dal desktop.
+Le cue non possono stare nel count-in (lì c'è solo il click). Le cue si creano solo dal desktop. Dalla prossima
+versione la prima cue parte sempre dalla battuta 1.1: se la battuta 1 è finita un poco prima dell'inizio del brano
+(tracce allineate a mano), all'apertura nell'Arrangement il brano viene riportato a posto.
 
 ---
 

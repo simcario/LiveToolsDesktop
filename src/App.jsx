@@ -297,7 +297,8 @@ function Workspace({ user }) {
           break;
         case 'c':
         case 'C':
-          update({ click: { ...settings.click, enabled: !settings.click.enabled } });
+          if (e.shiftKey) update({ click: { ...settings.click, eighths: !settings.click.eighths } });
+          else update({ click: { ...settings.click, enabled: !settings.click.enabled } });
           break;
         default:
       }

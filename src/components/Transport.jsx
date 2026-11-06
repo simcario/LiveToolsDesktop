@@ -168,6 +168,13 @@ export default function Transport({ user, item, player, settings, update, canDri
             <Icon name="metronome" size={16} />
           </button>
           <button
+            className={`t-btn ${settings.click.eighths ? 'is-on' : ''}`}
+            onClick={() => update({ click: { ...settings.click, eighths: !settings.click.eighths } })}
+            title="Click in ottavi: raddoppia i battiti nei tempi semplici (Maiusc+C)"
+          >
+            <span className="mono small">×2</span>
+          </button>
+          <button
             className={`t-btn ${settings.autoAdvance ? 'is-on' : ''}`}
             onClick={() => update({ autoAdvance: !settings.autoAdvance })}
             title="A fine brano prepara il successivo"

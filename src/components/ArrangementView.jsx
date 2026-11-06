@@ -14,7 +14,7 @@ import SyncControl from './SyncControl';
 import { CueHeader, cueCellAt, drawCueLane, useCueTrack, useNowCue } from './CueLane';
 import { CuePicker } from './CuePicker';
 import InsertBarsModal from './InsertBarsModal';
-import { closeLeadingGap, cutAt, keepGrid, moveSegment, removeSegment, segmentEnd, segmentIndexAt, snapToBeat, stemRegions, toggleSegmentMute, trimSegment } from '../lib/arrange';
+import { closeLeadingGap, leadToAudio, cutAt, keepGrid, moveSegment, removeSegment, segmentEnd, segmentIndexAt, snapToBeat, stemRegions, toggleSegmentMute, trimSegment } from '../lib/arrange';
 import { clearHistory, recordStep, travel, useHistory } from '../lib/arrangeHistory';
 import { discardDraft, editDraft, saveDraft, useDrafts } from '../lib/drafts';
 import { regionsOf, stemsOf } from '../shared/media.js';
@@ -709,15 +709,25 @@ export default function ArrangementView({ player, item, lanes, settings, update,
     player.reload();
   };
 
-  // Songs saved with an empty start: once per session, so undo and "Scarta" stay final.
+  // Songs saved with an empty start: once per session and set of tracks (new tracks
+  // loaded are checked again), so undo and "Scarta" stay final.
   const gapChecked = useRef(new Set());
   useEffect(() => {
-    if (!song || !canEditSong || loaded?.itemId !== song.id || gapChecked.current.has(song.id)) return;
-    gapChecked.current.add(song.id);
+    if (!song || !canEditSong || loaded?.itemId !== song.id || !tempo) return;
+    const key = `${song.id}:${(loaded.tracks || []).map((x) => x.stem.id).sort().join(',')}`;
+    if (gapChecked.current.has(key)) return;
+    gapChecked.current.add(key);
     const closed = closeLeadingGap(song, regionsOf(song), tempo?.origin);
-    if (!closed) return;
-    writeClosedGap(closed, 'Corretto l’inizio del brano');
-    notify(`“${song.title}”: ${gapText(closed)}. “Salva” per tenerlo, Ctrl+Z per annullare`);
+    if (closed) {
+      writeClosedGap(closed, 'Corretto l’inizio del brano');
+      notify(`“${song.title}”: ${gapText(closed)}. “Salva” per tenerlo, Ctrl+Z per annullare`);
+      return;
+    }
+    // Audio before bar -1 (bar 1 found where the reference stem enters): bar 1 goes back to the audio.
+    const lead = leadToAudio(song, tempo);
+    if (!lead) return;
+    writeClosedGap(lead, 'Battuta 1 all’inizio dell’audio');
+    notify(`“${song.title}”: la battuta 1 è tornata all’inizio dell’audio (${lead.bars === 1 ? '1 battuta' : `${lead.bars} battute`} prima). “Salva” per tenerlo, Ctrl+Z per annullare`);
   });
 
   const selectedStem = selection && stemsOf(song).find((s) => s.id === selection.stemId);
@@ -788,7 +798,10 @@ export default function ArrangementView({ player, item, lanes, settings, update,
     const rect = e.currentTarget.getBoundingClientRect();
     const row = rows[Math.floor((e.clientY - rect.top - RULER_H) / LANE_H)];
     if (row?.kind !== 'cue' || warpOn) return null;
-    return cueCellAt(cue.bars, (e.clientX - rect.left) / pps + t0);
+    const at = cueCellAt(cue.bars, (e.clientX - rect.left) / pps + t0);
+    // The coloured strip on top of the clip (with the CUE badge) grabs the whole track, as a clip.
+    const y = (e.clientY - rect.top - RULER_H) % LANE_H;
+    return at && { ...at, strip: y < 18 };
   };
 
   // Lane of the sections: click goes there, Ctrl+click adds one, the start of a section drags.
@@ -874,7 +887,8 @@ export default function ArrangementView({ player, item, lanes, settings, update,
         return;
       }
       // Arrow: a touch opens the menu; a cue dragged goes to the square where it is dropped.
-      if (tool !== 'move') {
+      // The strip on top moves the whole track with every tool, like the hand.
+      if (tool !== 'move' && !hit.strip) {
         if (!cue.byG.has(hit.cell.g)) {
           open();
           return;

@@ -125,6 +125,7 @@ pub struct ClickKinds {
     pub beat: KindMix,
     pub group: KindMix,
     pub count: KindMix,
+    pub sub: KindMix,
 }
 
 impl ClickKinds {
@@ -134,6 +135,7 @@ impl ClickKinds {
             ClickKind::Beat => self.beat,
             ClickKind::Group => self.group,
             ClickKind::Count => self.count,
+            ClickKind::Sub => self.sub,
         }
     }
 }
@@ -150,11 +152,18 @@ pub struct ClickParams {
     pub sound: ClickSound,
     #[serde(default)]
     pub kinds: ClickKinds,
+    /// Clicks per beat: 1 = quarters, 2 = eighths ("click doppio").
+    #[serde(default = "one")]
+    pub subdivide: u32,
+}
+
+fn one() -> u32 {
+    1
 }
 
 impl Default for ClickParams {
     fn default() -> Self {
-        Self { enabled: false, gain: 0.8, out_start: 0, mono: false, sound: ClickSound::Beep, kinds: ClickKinds::default() }
+        Self { enabled: false, gain: 0.8, out_start: 0, mono: false, sound: ClickSound::Beep, kinds: ClickKinds::default(), subdivide: 1 }
     }
 }
 
@@ -302,7 +311,7 @@ impl ClickVoice {
             ClickKind::Accent => 0,
             ClickKind::Count => 1,
             ClickKind::Group => 2,
-            ClickKind::Beat => 3,
+            ClickKind::Beat | ClickKind::Sub => 3,
         };
         // Frequency and level by kind, length in seconds, filter damping.
         let (freqs, peaks, secs, damping): ([f32; 4], [f32; 4], f32, f32) = match params.sound {
@@ -313,7 +322,8 @@ impl ClickVoice {
             ClickSound::HiHat => ([9000.0, 8000.0, 7600.0, 7000.0], [0.8, 0.8, 0.8, 0.5], 0.05, 1.2),
         };
         let mix = params.kinds.of(kind);
-        let peak = peaks[i] * mix.gain.max(0.0);
+        // The eighths are softer than the beats.
+        let peak = peaks[i] * mix.gain.max(0.0) * if kind == ClickKind::Sub { 0.6 } else { 1.0 };
         let freq = (freqs[i] * mix.pitch.clamp(0.1, 8.0)).min(sr * 0.45);
         if peak <= 1e-4 {
             self.left = 0;
@@ -954,9 +964,9 @@ impl Renderer {
         if let Some(tempo) = self.tempo.as_ref() {
             let click = self.click;
             let count_in = self.count_in;
-            let mut triggers = [(0usize, ClickKind::Beat); 16];
+            let mut triggers = [(0usize, ClickKind::Beat); 32];
             let mut count = 0;
-            tempo.clicks_in(pos, pos + frames as i64, |f, kind, in_count_in| {
+            tempo.clicks_in(pos, pos + frames as i64, click.subdivide, |f, kind, in_count_in| {
                 // A requested count-in always sounds, even with the click off.
                 if (click.enabled || (count_in && in_count_in)) && count < triggers.len() {
                     triggers[count] = ((f - pos) as usize, kind);

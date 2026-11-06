@@ -40,6 +40,18 @@ const SETTINGS = [
     Control: ClickEnabled,
   },
   {
+    id: 'click.eighths',
+    section: 'transport',
+    category: 'Metronomo',
+    title: 'Click in ottavi',
+    description:
+      'Raddoppia il click: nei tempi semplici (4/4, 3/4…) suona anche i controtempi, cioè il 4/4 in ottavi, più piano dei movimenti. ' +
+      'Nei tempi composti (6/8, 12/8) il click è già in ottavi e non cambia; il count-in resta in quarti. ' +
+      'Si attiva anche dal pulsante ×2 del trasporto (scorciatoia: Maiusc+C).',
+    keywords: 'raddoppia doppio ottavi suddivisione controtempo double',
+    Control: ClickEighths,
+  },
+  {
     id: 'click.sound',
     section: 'transport',
     category: 'Metronomo',
@@ -454,6 +466,18 @@ function ClickEnabled({ settings, update, onBusy, ...item }) {
       <label className="check">
         <input type="checkbox" checked={on} onChange={(e) => setClick(settings, update, { enabled: e.target.checked })} />
         Attivo
+      </label>
+    </PrefItem>
+  );
+}
+
+function ClickEighths({ settings, update, onBusy, ...item }) {
+  const on = !!settings.click.eighths;
+  return (
+    <PrefItem {...item} modified={on !== D.click.eighths}>
+      <label className="check">
+        <input type="checkbox" checked={on} onChange={(e) => setClick(settings, update, { eighths: e.target.checked })} />
+        Suona gli ottavi
       </label>
     </PrefItem>
   );

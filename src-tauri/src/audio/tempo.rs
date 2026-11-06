@@ -82,6 +82,8 @@ pub enum ClickKind {
     Count,
     Group,
     Beat,
+    /// The "and" between two beats when the click plays eighths (simple metres only).
+    Sub,
 }
 
 fn parse_sig(sig: &str) -> (u32, u32) {
@@ -413,23 +415,32 @@ pub struct TempoFrames {
 
 impl TempoFrames {
     /// Calls `f(frame, kind, in_count_in)` for each click in [from, to). No allocations.
-    pub fn clicks_in(&self, from: i64, to: i64, mut f: impl FnMut(i64, ClickKind, bool)) {
+    /// `sub` = 2 adds the eighths between the beats of simple metres (not in the count-in,
+    /// nor in compound metres, whose clicks are already eighths).
+    pub fn clicks_in(&self, from: i64, to: i64, sub: u32, mut f: impl FnMut(i64, ClickKind, bool)) {
         let (from_f, to_f) = (from as f64, to as f64);
         for s in &self.segs {
             let end = s.clicks.map_or(f64::INFINITY, |n| s.start + n as f64 * s.beat);
             if end <= from_f || s.start >= to_f {
                 continue;
             }
-            let mut k = ((from_f - s.start) / s.beat).ceil().max(0.0) as u64;
+            let div = if sub > 1 && !s.count_in && !s.compound { sub as u64 } else { 1 };
+            let step = s.beat / div as f64;
+            let mut k = ((from_f - s.start) / step).ceil().max(0.0) as u64;
             loop {
-                if s.clicks.is_some_and(|n| k >= n) {
+                if s.clicks.is_some_and(|n| k >= n * div) {
                     break;
                 }
-                let t = s.start + k as f64 * s.beat;
+                let t = s.start + k as f64 * step;
                 if t >= to_f {
                     break;
                 }
-                let i = (k + s.first_beat) % s.beats;
+                if k % div != 0 {
+                    f(t.floor() as i64, ClickKind::Sub, false);
+                    k += 1;
+                    continue;
+                }
+                let i = (k / div + s.first_beat) % s.beats;
                 let kind = if s.count_in {
                     if i == 0 { ClickKind::Accent } else { ClickKind::Count }
                 } else if i == 0 {
@@ -468,7 +479,7 @@ mod tests {
 
         let frames = map.frames(1000);
         let mut clicks = Vec::new();
-        frames.clicks_in(-2000, 1, |f, k, c| clicks.push((f, k, c)));
+        frames.clicks_in(-2000, 1, 1, |f, k, c| clicks.push((f, k, c)));
         assert_eq!(clicks.len(), 5);
         assert_eq!(clicks[0], (-2000, ClickKind::Accent, true));
         assert_eq!(clicks[1], (-1500, ClickKind::Count, true));
@@ -491,8 +502,8 @@ mod tests {
             assert_eq!(map.position(t), plain.position(t), "t = {t}");
         }
         let (mut a, mut b) = (Vec::new(), Vec::new());
-        map.frames(48_000).clicks_in(-96_000, 48_000 * 500, |f, k, c| a.push((f, k, c)));
-        plain.frames(48_000).clicks_in(-96_000, 48_000 * 500, |f, k, c| b.push((f, k, c)));
+        map.frames(48_000).clicks_in(-96_000, 48_000 * 500, 1, |f, k, c| a.push((f, k, c)));
+        plain.frames(48_000).clicks_in(-96_000, 48_000 * 500, 1, |f, k, c| b.push((f, k, c)));
         assert_eq!(a.len(), b.len());
         // Within a frame: the sums of the segments round, never by more.
         assert!(a.iter().zip(&b).all(|(x, y)| (x.0 - y.0).abs() <= 1 && x.1 == y.1 && x.2 == y.2));
@@ -503,7 +514,7 @@ mod tests {
         let map = TempoMap::build(Some(60.0), Some("6/8"), 0, &[]);
         let frames = map.frames(300);
         let mut kinds = Vec::new();
-        frames.clicks_in(0, 600, |_, k, _| kinds.push(k));
+        frames.clicks_in(0, 600, 1, |_, k, _| kinds.push(k));
         // 60 BPM dotted quarter = 3 clicks per second, 6 per bar.
         assert_eq!(kinds.len(), 6);
         assert_eq!(kinds[0], ClickKind::Accent);
@@ -540,7 +551,7 @@ mod tests {
         assert!((map.pre_roll - 1.0).abs() < 1e-9);
         let frames = map.frames(100);
         let mut clicks = Vec::new();
-        frames.clicks_in(500, 640, |f, _, _| clicks.push(f));
+        frames.clicks_in(500, 640, 1, |f, _, _| clicks.push(f));
         assert_eq!(clicks, vec![500, 540, 580, 620]);
     }
 
@@ -560,7 +571,7 @@ mod tests {
         assert_eq!(map.position(6.4 + 0.4 * 4.0), (5, 1, 4));
         let frames = map.frames(100);
         let mut clicks = Vec::new();
-        frames.clicks_in(300, 500, |f, k, _| clicks.push((f, k)));
+        frames.clicks_in(300, 500, 1, |f, k, _| clicks.push((f, k)));
         assert_eq!(
             clicks,
             vec![(300, ClickKind::Accent), (350, ClickKind::Beat), (400, ClickKind::Beat), (440, ClickKind::Beat), (480, ClickKind::Accent)]
@@ -574,5 +585,26 @@ mod tests {
         assert!((map.origin - 1.0).abs() < 1e-9);
         assert_eq!(map.position(3.0), (2, 1, 4));
         assert!((map.pre_roll - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn eighths_between_beats_not_in_count_in_nor_compound() {
+        // 120 BPM 4/4 with one bar of count-in before bar 1 (at 0): beats every 50 frames at 100 fps.
+        let map = TempoMap::build(Some(120.0), Some("4/4"), 1, &[]);
+        let frames = map.frames(100);
+        let mut clicks = Vec::new();
+        frames.clicks_in(-200, 100, 2, |f, k, c| clicks.push((f, k, c)));
+        // Count-in in quarters: 4 clicks over 200 frames.
+        assert_eq!(clicks.iter().filter(|x| x.2).count(), 4);
+        assert!(clicks.iter().filter(|x| x.2).all(|x| x.1 != ClickKind::Sub));
+        // Then bar 1 (at 0): accent, eighth, beat, eighth.
+        let song: Vec<_> = clicks.iter().filter(|x| !x.2).map(|x| (x.0, x.1)).collect();
+        assert_eq!(song, vec![(0, ClickKind::Accent), (25, ClickKind::Sub), (50, ClickKind::Beat), (75, ClickKind::Sub)]);
+        // 6/8 already clicks in eighths: unchanged.
+        let six = TempoMap::build(Some(60.0), Some("6/8"), 0, &[]).frames(100);
+        let (mut a, mut b) = (Vec::new(), Vec::new());
+        six.clicks_in(0, 400, 1, |f, _, _| a.push(f));
+        six.clicks_in(0, 400, 2, |f, _, _| b.push(f));
+        assert_eq!(a, b);
     }
 }

@@ -136,6 +136,8 @@ export const groupLabel = (group) => GROUP_LABELS[group] || INSTRUMENTS[group] |
 /** Groups of the audible stems of a song: instruments first, then click and guides. */
 export function rehearsalGroups(item) {
   const present = new Set(stemsOf(item).filter((s) => !s.muted).map(rehearsalGroup));
+  // Cues without a "Cues" file: the rehearsal makes them (lib/cue-track.js), in the guides.
+  if (present.size && cueTrackOf(item).cues.length) present.add('guide');
   return [...Object.keys(INSTRUMENTS), 'click', 'guide'].filter((k) => present.has(k));
 }
 

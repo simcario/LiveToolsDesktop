@@ -7,6 +7,7 @@ import { recordStep } from './arrangeHistory';
 import { editDraft } from './drafts';
 import { gridBeats } from './grid';
 import { gridOf } from './sync';
+import { sheetKey } from './cueTrack';
 
 const WHOLE = [{ at: 0, from: 0, len: null }];
 
@@ -54,14 +55,15 @@ const MIN_GAP = 0.5;
  * Bar 1 (`origin`, seconds) never goes below 0: the bars before the audio can
  * hold a spoken count-off, and a negative bar 1 would lose those cues (their
  * squares start at 0) and open a pre-roll of silence. A song already there,
- * after the pinned reference was moved below 0, comes forward (negative gap).
+ * with bar 1 below 0 (the pinned reference or every track moved too early) comes forward (negative gap).
  *
  * Resolves to the fields to write, { gap, media, fields }, or null without a gap.
  */
 export function closeLeadingGap(item, all = regionsOf(item), origin = null) {
   if (!Number.isFinite(origin)) return null;
-  const pinnedBelowZero = all[GRID_KEY]?.regions?.some((g) => g.at < 0);
-  const lost = pinnedBelowZero && origin <= -MIN_GAP;
+  // Bar 1 below 0, even by a little (a track aligned by hand): the first beat of
+  // the cue track would be lost (it started at 1.2), so everything comes forward.
+  const lost = origin < -1e-4;
   const gap = lost ? origin : Math.min(firstStart(item, all) - (Number(all[LEAD_KEY]) || 0), origin);
   if (!lost && gap < MIN_GAP) return null;
   const earlier = (g) => {
@@ -84,6 +86,41 @@ export function closeLeadingGap(item, all = regionsOf(item), origin = null) {
   if (item.prompter?.cues?.length) fields.prompter = { ...item.prompter, cues: item.prompter.cues.map((c) => ({ ...c, t: Math.max(0, r4(c.t - gap)) })) };
   if (item.duration) fields.duration = Math.max(0, Math.round(item.duration - gap));
   return { gap, media, fields };
+}
+
+/**
+ * The other way round: audio a bar or more before bar 1. The analysis puts bar 1
+ * where the reference stem enters (drums, or the range chosen for the tempo), so
+ * an intro without it fell in the pre-roll, before bar -1. Bar 1 goes back by
+ * whole bars to where the audio starts (grid.lead, read by sync.js syncSpec): the
+ * grid keeps its phase with the music, and what is placed in bars follows it so it
+ * stays on the same music: cues move by those beats, the first section grows.
+ * Not with a grid set by hand (its anchors are the user's choice).
+ *
+ * Resolves to { bars, media, fields } for the draft, or null.
+ */
+export function leadToAudio(item, tempo, all = regionsOf(item)) {
+  const grid = gridOf(item);
+  if (grid.anchors.length || !Number.isFinite(tempo?.origin)) return null;
+  const seg = tempo.segments?.find((s) => !s.countIn);
+  if (!seg?.beat || !seg.beats) return null;
+  const bar = seg.beat * seg.beats;
+  // Bar 1 never before the audio: not even a hair, or the first cue square is lost.
+  const k = Math.floor((tempo.origin - firstStart(item, all) + 1e-4) / bar);
+  if (k < 1) return null;
+  const fields = { grid: { ...(item.grid || {}), lead: grid.lead + k } };
+  const sections = growSection(item.sections, 1, k);
+  if (sections) fields.sections = sections;
+  const media = {};
+  const sheet = cueTrackOf(item);
+  if (sheet.cues.length) {
+    const shift = k * seg.beats;
+    const cues = sheet.cues.map((c) => ({ ...c, g: c.g + shift }));
+    // A rendered "Cues" file is still right: the cues sound where they did.
+    const renderedKey = sheet.renderedKey && sheet.renderedKey === sheetKey(sheet.cues) ? sheetKey(cues) : sheet.renderedKey;
+    media.cueTrack = { ...item.cueTrack, cues, renderedKey };
+  }
+  return { bars: k, media, fields };
 }
 
 export const moveRegions = (regions, delta) => regions.map((r) => ({ ...r, at: Math.round((r.at + delta) * 1e4) / 1e4 }));

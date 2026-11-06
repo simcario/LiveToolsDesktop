@@ -19,7 +19,8 @@ export const DEFAULT_SETTINGS = {
   },
   // Metronome: synthesised sound and, for each kind of beat, level (dB) and
   // pitch (semitones) on top of the sound's own.
-  click: { enabled: true, gainDb: -6, sound: 'beep', kinds: {} },
+  // eighths: the click plays the eighths of simple metres (4/4 in eighths), shortcut Shift+C.
+  click: { enabled: true, gainDb: -6, sound: 'beep', kinds: {}, eighths: false },
   masterDb: 0,
   // Pad Player (Palco): synthesised ambient pad. mode 'link' = key of the song loaded, 'live' = key chosen here.
   pad: { gainDb: -10, mode: 'link', key: 'C', withSong: false },
@@ -150,6 +151,7 @@ export const CLICK_KINDS = [
   ['beat', 'Altri movimenti', 'I quarti dopo il primo'],
   ['group', 'Gruppi', 'Inizio di ogni gruppo nei tempi composti (6/8, 12/8)'],
   ['count', 'Count-in', 'I battiti del count-in dopo il primo'],
+  ['sub', 'Ottavi', 'I controtempi quando il click suona in ottavi'],
 ];
 
 export const DEFAULT_KIND = { db: 0, semitones: 0 };
@@ -163,7 +165,7 @@ export function clickVoice(click) {
       return [k, { gain: db <= -40 ? 0 : 10 ** (db / 20), pitch: 2 ** (semitones / 12) }];
     }),
   );
-  return { sound: click.sound || 'beep', kinds };
+  return { sound: click.sound || 'beep', kinds, subdivide: click.eighths ? 2 : 1 };
 }
 
 export const OUTPUT_ROLES = [
