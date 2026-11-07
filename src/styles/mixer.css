@@ -1,0 +1,304 @@
+/* Shared with LiveTools Mobile (mobile/scripts/sync-desktop.mjs copies this file): edit it here. */
+
+/* ---------- Mixer: Dettaglio tab, its own window (F3), the Arrange of the tablet ---------- */
+.mx {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-elev);
+}
+.mx-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.mx-hint {
+  min-width: 0;
+}
+.mx-strips {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 4px;
+  padding: 6px 10px 8px;
+  overflow-x: auto;
+}
+.mx-strip {
+  flex: 0 0 84px;
+  max-width: 84px;
+}
+.mx-route {
+  flex: none;
+  width: 100%;
+  height: 22px;
+  border-radius: 4px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+.mx-instr.is-blank {
+  flex: none;
+  height: 22px;
+}
+.mx-strip.is-absent .st-fader-row,
+.mx-strip.is-absent .st-name {
+  opacity: 0.5;
+}
+.mx-pan {
+  flex: none;
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 26px;
+  align-items: center;
+  gap: 3px;
+}
+.mx-pan input {
+  width: 100%;
+  min-width: 0;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--sec);
+}
+.mx-pan .m-db {
+  text-align: right;
+}
+.mx-strip .fader-wrap {
+  --cap-w: 24px;
+  --cap-h: 30px;
+  min-height: 40px;
+}
+.mx-strip .st-fader-row.is-locked {
+  opacity: 0.55;
+}
+.mx-btns {
+  flex: none;
+  width: 100%;
+  display: flex;
+  gap: 3px;
+}
+.mx-btns .st-solo {
+  height: 20px;
+  font-size: 11px;
+}
+.mx-btns .mx-mute.is-on {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+.mx-strip .st-name {
+  height: 24px;
+  font-size: 11px;
+}
+.mx-empty {
+  align-self: center;
+  margin: auto;
+}
+/* compact (tablet tab): the column with Ripristina and Salva before the strips. */
+.mx-side {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-right: 6px;
+  border-right: 1px solid var(--border);
+}
+
+/* Track name = button of the channel section; badge when gain or EQ change the sound. */
+.mx-strip .mx-name {
+  position: relative;
+}
+.mx-strip .mx-name:hover,
+.mx-strip .mx-name.is-open {
+  border-color: var(--sec);
+  background: color-mix(in srgb, var(--sec) 32%, var(--surface));
+}
+.mx-eq-badge {
+  flex: none;
+  padding: 0 3px;
+  border-radius: 3px;
+  background: var(--sec);
+  color: #0b0f17;
+  font-size: 8.5px;
+  font-weight: 800;
+  line-height: 13px;
+}
+
+/* ---------- Channel section (click on a track name): gain + EQ over the spectrum ---------- */
+.ch {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ch-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.ch-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 220px;
+  font-size: 13px;
+}
+.ch-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--sec);
+}
+.ch-toggle.is-on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+.ch-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 8px;
+}
+.ch-gain {
+  flex: none;
+  width: 64px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+}
+.ch-gain-row {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 6px;
+}
+.ch-vslider {
+  writing-mode: vertical-lr;
+  direction: rtl;
+  width: 22px;
+  height: 100%;
+  min-height: 60px;
+  margin: 0;
+  accent-color: var(--sec);
+}
+.ch-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.ch-value {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.ch-eq {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ch-graph {
+  flex: 1;
+  min-height: 110px;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  touch-action: none;
+  cursor: crosshair;
+}
+.ch-graph.is-locked {
+  cursor: default;
+}
+.ch-controls {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+.ch-keys {
+  display: flex;
+  gap: 3px;
+}
+.ch-key {
+  min-width: 28px;
+  height: 24px;
+  padding: 0 5px;
+  border-radius: 4px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.ch-key.is-on {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--band) 60%, transparent);
+}
+.ch-key.is-sel {
+  background: var(--band);
+  border-color: var(--band);
+  color: #0b0f17;
+}
+.ch-type {
+  width: 110px;
+}
+.ch-param {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 170px;
+  flex: 1;
+}
+.ch-param input {
+  flex: 1;
+  min-width: 70px;
+  margin: 0;
+  accent-color: var(--sec);
+}
+.ch-param .ch-value {
+  width: 62px;
+  text-align: right;
+}
+.ch-param.is-disabled {
+  opacity: 0.45;
+}
+/* The fader strip of the channel beside the section. */
+.mx-strip.is-open {
+  flex: 0 0 84px;
+}
+/* Tablet: bigger targets. */
+.mx.is-compact .ch-key {
+  min-width: 38px;
+  height: 34px;
+  font-size: 13px;
+}
+.mx.is-compact .ch-param input {
+  height: 28px;
+}
+.mx.is-compact .ch-vslider {
+  width: 30px;
+}
