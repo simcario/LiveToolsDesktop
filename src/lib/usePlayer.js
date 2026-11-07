@@ -4,8 +4,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { emit, listen } from '@tauri-apps/api/event';
 import { convertFileSrc } from '@tauri-apps/api/core';
-import { regionsOf, rehearsalGroup, stemsOf, videoOf } from '../shared/media.js';
+import { cueTrackOf, regionsOf, rehearsalGroup, stemsOf, videoOf } from '../shared/media.js';
 import { isSeparator } from '../shared/setlists.js';
+import { eqOf, inputOf } from '../shared/eq.js';
 import { dbToGain, engine, engineStatus, onSongEnded, onStretchProgress, subscribeStatus } from './engine';
 import { driveStage } from './data';
 import { editDraft } from './drafts';
@@ -29,14 +30,18 @@ const isMuted = (stem, leftOut) => (getMix(stem.id).mute ?? !!stem.muted) || !!l
 // Volume of a rehearsal group (Palco mixer), on this computer: added to that of each of its tracks.
 export const groupMixKey = (group) => `group:${group}`;
 const groupGain = (stem) => getMix(groupMixKey(rehearsalGroup(stem))).gainDb || 0;
-const ownGain = (stem) => getMix(stem.id).gainDb ?? stem.gain ?? 0;
+// Volume and pan of a track are those saved with the song (Mixer, "Salva"):
+// the same on every computer and on the web. Mute, solo and the output stay local.
+const ownGain = (stem) => Number(stem.gain) || 0;
 
 function trackMix(stem, settings, solo, leftOut) {
-  const m = getMix(stem.id);
   const route = routeOf(stem, settings);
   return {
     gainDb: ownGain(stem) + groupGain(stem),
-    pan: m.pan ?? stem.pan ?? 0,
+    pan: Number(stem.pan) || 0,
+    // Channel section (Mixer → click on the track name), saved with the song too.
+    inputDb: inputOf(stem),
+    eq: eqOf(stem),
     mute: isMuted(stem, leftOut),
     solo: !!solo,
     outStart: route.start,
@@ -374,6 +379,33 @@ export function usePlayer({ user, setlist, items, settings, canDrive, canEdit, n
     })();
   }, [cueWanted?.stem.path, load, notify]);
 
+  // Mix of the song changed (Mixer, undo, "Scarta", "Ripristina volumi", another
+  // computer): volume, pan, group and channel section (gain, EQ) of the loaded tracks follow at once.
+  const mixSong = items.find((i) => i.id === loaded?.itemId);
+  const mixJson = mixSong
+    ? JSON.stringify([stemsOf(mixSong).map((s) => [s.id, s.gain, s.pan, s.role, s.instrument, s.input, s.eq]), cueTrackOf(mixSong).gain, cueTrackOf(mixSong).pan, cueTrackOf(mixSong).input, cueTrackOf(mixSong).eq])
+    : null;
+  useEffect(() => {
+    const l = ctx.current.loaded;
+    const item = l && ctx.current.items.find((i) => i.id === l.itemId);
+    if (!item) return;
+    const byId = new Map(stemsOf(item).map((s) => [s.id, s]));
+    const sheet = cueTrackOf(item);
+    const next = new Map();
+    l.tracks.forEach(({ stem }) => {
+      const src = stem.live ? { gain: sheet.gain, pan: sheet.pan, input: sheet.input, eq: sheet.eq, role: stem.role, instrument: stem.instrument } : byId.get(stem.id);
+      if (!src) return;
+      const now = { ...stem, gain: Number(src.gain) || 0, pan: Number(src.pan) || 0, input: src.input, eq: src.eq, role: src.role, instrument: src.instrument };
+      if (['gain', 'pan', 'role', 'instrument'].every((k) => now[k] === stem[k]) && now.input === stem.input && JSON.stringify(now.eq) === JSON.stringify(stem.eq)) return;
+      next.set(stem.id, now);
+      const { settings: st, leftOut: out, solos: so } = ctx.current;
+      engine.setTrack(stem.id, trackMix(now, st, !!so[stem.id], out));
+    });
+    if (next.size) {
+      setLoaded((c) => (c?.itemId === l.itemId ? { ...c, tracks: c.tracks.map((tr) => (next.has(tr.stem.id) ? { ...tr, stem: next.get(tr.stem.id) } : tr)) } : c));
+    }
+  }, [mixJson]);
+
   const songs = items.filter((i) => !isSeparator(i));
 
   const step = useCallback(
@@ -409,13 +441,12 @@ export function usePlayer({ user, setlist, items, settings, canDrive, canEdit, n
     [load],
   );
 
+  // Local part of a track's mix: mute, solo, output. Volume and pan go through the song (Mixer).
   const setTrack = useCallback((stem, patch) => {
     const { solo, ...persist } = patch;
     if (Object.keys(persist).length) setMix(stem.id, persist);
     if (solo !== undefined) setSolos((s) => ({ ...s, [stem.id]: solo }));
     const mix = {};
-    if (patch.gainDb !== undefined) mix.gainDb = patch.gainDb + groupGain(stem);
-    if (patch.pan !== undefined) mix.pan = patch.pan;
     if (patch.mute !== undefined) mix.mute = patch.mute || !!ctx.current.leftOut[rehearsalGroup(stem)];
     if (solo !== undefined) mix.solo = solo;
     if ('route' in patch) {

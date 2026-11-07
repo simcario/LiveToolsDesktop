@@ -16,6 +16,7 @@ use rtrb::{Producer, RingBuffer};
 use serde::{Deserialize, Serialize};
 
 use super::decode::{self, ProbeInfo};
+use super::eq::EqSpec;
 use super::device::{AudioHost, DeviceEntry, DeviceInfo};
 use super::render::{ClickParams, Garbage, NextSong, PadParams, Renderer, RtCmd, RtTrack, Shared, TrackControl, OUT_MONO, OUT_OFF, OUT_STEREO};
 use super::stream::{self, DecoderHandle, Region, TrackStream};
@@ -43,6 +44,9 @@ pub struct TrackMix {
     pub out_start: Option<u32>,
     /// "stereo" | "mono" | "off"
     pub out_mode: Option<String>,
+    /// Channel section (Mixer → click on the track name): input gain and EQ.
+    pub input_db: Option<f32>,
+    pub eq: Option<EqSpec>,
 }
 
 fn one() -> f64 {
@@ -182,6 +186,27 @@ impl Monitor {
         let s = &self.shared;
         let sr = s.sample_rate.load(Ordering::Relaxed).max(1) as f64;
         s.position.load(Ordering::Relaxed) as f64 / sr * *self.rate.read()
+    }
+
+    /// Spectrum of loaded track `track` (post EQ, before the fader) for the graph of
+    /// the channel section, in dBFS; None stops copying it (section closed).
+    pub fn spectrum(&self, track: Option<usize>, bins: usize) -> Vec<f32> {
+        let controls = self.controls.read();
+        let mut fresh = false;
+        for (i, c) in controls.iter().enumerate() {
+            let on = Some(i) == track;
+            if c.tap.swap(on, Ordering::Relaxed) != on && on {
+                fresh = true;
+            }
+        }
+        if fresh {
+            self.shared.tap.clear();
+        }
+        if track.map_or(true, |t| t >= controls.len()) {
+            return Vec::new();
+        }
+        let sr = self.shared.sample_rate.load(Ordering::Relaxed).max(1) as f32;
+        self.shared.tap.spectrum(sr, bins.clamp(16, 512))
     }
 
     pub fn status(&self) -> Status {
@@ -328,6 +353,12 @@ fn apply_mix(c: &TrackControl, m: &TrackMix) {
             _ => OUT_STEREO,
         };
         c.out_mode.store(v, Ordering::Relaxed);
+    }
+    if let Some(db) = m.input_db {
+        c.channel.input.store(10f32.powf(db.clamp(-48.0, 48.0) / 20.0));
+    }
+    if let Some(eq) = &m.eq {
+        c.channel.set_eq(eq);
     }
 }
 

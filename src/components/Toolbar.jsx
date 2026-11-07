@@ -1,12 +1,13 @@
 // Bars of commands, made of groups by category: a group never splits and goes
 // to a new line when the bar is full. Order, hidden groups and forced new lines
 // are the user's, per bar, on this computer (settings.toolbars).
-import { Children, useState } from 'react';
+import { Children, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useSettings } from '../lib/settings';
 import Icon from './Icon';
 
-/** A category of commands. locked: always shown. grow: takes the free room of its line. */
+/** A category of commands. locked: always shown. grow: takes the free room of its line.
+ * pin: stays in the bar when the bar has `overflow` (the other groups go under ⋯). */
 export function ToolGroup({ label, grow = false, children }) {
   return (
     <div className={`tb-group ${grow ? 'is-grow' : ''}`} role="group" aria-label={label}>
@@ -23,7 +24,10 @@ function arrange(groups, order) {
   const list = (order || []).filter((id) => ids.includes(id));
   ids.forEach((id, i) => {
     if (list.includes(id)) return;
-    const before = ids.slice(0, i).reverse().find((x) => list.includes(x));
+    const before = ids
+      .slice(0, i)
+      .reverse()
+      .find((x) => list.includes(x));
     list.splice(before ? list.indexOf(before) + 1 : 0, 0, id);
   });
   return list.map((id) => groups.find((g) => g.props.id === id));
@@ -69,14 +73,7 @@ function ToolbarPanel({ title, groups, conf, onChange, onReset, labels, onLabels
         if (e.key === 'Escape') onClose();
       }}
     >
-      <div
-        className="modal modal-sm tb-panel"
-        role="dialog"
-        aria-modal="true"
-        aria-label={`Personalizza la barra ${title}`}
-        tabIndex={-1}
-        ref={(el) => el && !el.contains(document.activeElement) && el.focus()}
-      >
+      <div className="modal modal-sm tb-panel" role="dialog" aria-modal="true" aria-label={`Personalizza la barra ${title}`} tabIndex={-1} ref={(el) => el && !el.contains(document.activeElement) && el.focus()}>
         <div className="modal-head">
           <h2>Barra {title}</h2>
           <button type="button" className="btn btn-ghost btn-icon" onClick={onClose} aria-label="Chiudi">
@@ -140,7 +137,9 @@ function ToolbarPanel({ title, groups, conf, onChange, onReset, labels, onLabels
   );
 }
 
-export default function Toolbar({ id, title, className = '', as: Tag = 'div', children }) {
+// overflow: only the groups with `pin` stay in the bar, the others open from the ⋯ button
+// (a tablet, where a bar of many lines would leave no room).
+export default function Toolbar({ id, title, className = '', as: Tag = 'div', overflow = false, children }) {
   const [settings, update] = useSettings();
   const [open, setOpen] = useState(false);
   const conf = settings.toolbars?.[id] || {};
@@ -149,6 +148,17 @@ export default function Toolbar({ id, title, className = '', as: Tag = 'div', ch
   const hidden = conf.hidden || [];
   const breaks = conf.breaks || [];
   const shown = groups.filter((g) => g.props.locked || !hidden.includes(g.props.id));
+  const inBar = overflow ? shown.filter((g) => g.props.pin) : shown;
+  const inMore = overflow ? shown.filter((g) => !g.props.pin) : [];
+  const [more, setMore] = useState(false);
+  const moreRef = useRef(null);
+  // A touch outside closes the ⋯ panel; inside it stays open (zoom can be pressed again and again).
+  useEffect(() => {
+    if (!more) return undefined;
+    const down = (e) => !moreRef.current?.contains(e.target) && !e.target.closest?.('.modal-backdrop, .cue-picker') && setMore(false);
+    document.addEventListener('pointerdown', down);
+    return () => document.removeEventListener('pointerdown', down);
+  }, [more]);
   return (
     <Tag
       className={`tb ${className} ${settings.toolbarLabels ? 'tb-labeled' : ''}`}
@@ -158,10 +168,33 @@ export default function Toolbar({ id, title, className = '', as: Tag = 'div', ch
         setOpen(true);
       }}
     >
-      {shown.flatMap((g, i) => [i > 0 && breaks.includes(g.props.id) ? <span key={`br-${g.props.id}`} className="tb-break" /> : null, g])}
-      <button className="tb-custom" onClick={() => setOpen(true)} title={`Personalizza la barra ${title}`} aria-label={`Personalizza la barra ${title}`}>
-        <Icon name="sliders" size={14} />
-      </button>
+      {inBar.flatMap((g, i) => [i > 0 && !overflow && breaks.includes(g.props.id) ? <span key={`br-${g.props.id}`} className="tb-break" /> : null, g])}
+      {overflow && (
+        <span className="tb-more-wrap" ref={moreRef}>
+          <button className={`tb-more ${more ? 'is-on' : ''}`} onClick={() => setMore((v) => !v)} aria-expanded={more} aria-label="Altri comandi" title="Altri comandi">
+            <Icon name="more" size={20} />
+          </button>
+          {more && (
+            <div className="tb-pop" role="dialog" aria-label={`Altri comandi: ${title}`}>
+              {inMore}
+              <button
+                className="tb-pop-custom"
+                onClick={() => {
+                  setMore(false);
+                  setOpen(true);
+                }}
+              >
+                <Icon name="sliders" size={14} /> Personalizza la barra
+              </button>
+            </div>
+          )}
+        </span>
+      )}
+      {!overflow && (
+        <button className="tb-custom" onClick={() => setOpen(true)} title={`Personalizza la barra ${title}`} aria-label={`Personalizza la barra ${title}`}>
+          <Icon name="sliders" size={14} />
+        </button>
+      )}
       {open && (
         <ToolbarPanel
           title={title}

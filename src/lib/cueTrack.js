@@ -185,7 +185,7 @@ export function liveCuePlan(item) {
   );
   return {
     skip: rendered?.id ?? null,
-    stem: { id: 'cues-live', name: 'Cues (live)', role: 'guide', instrument: 'other', gain: 0, pan: 0, muted: false, live: true, path: `local/cues/${item.id}-${sig}.wav` },
+    stem: { id: 'cues-live', name: 'Cues (live)', role: 'guide', instrument: 'other', gain: sheet.gain, pan: sheet.pan, input: sheet.input, eq: sheet.eq, muted: false, live: true, path: `local/cues/${item.id}-${sig}.wav` },
     resolution: sheet.resolution,
     cues: sheet.cues,
   };

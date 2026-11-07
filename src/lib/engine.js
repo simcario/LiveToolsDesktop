@@ -90,6 +90,8 @@ export const engine = {
   scheduleJump: (jump) => invoke('engine_schedule_jump', { jump }),
   cancelJump: () => invoke('engine_cancel_jump'),
   setTrack: (id, mix) => invoke('engine_set_track', { id, mix }),
+  // Spectrum (dBFS, log spaced 20 Hz–20 kHz) of loaded track `track` after its EQ; null stops it.
+  spectrum: (track, bins = 160) => invoke('engine_spectrum', { track, bins }),
   setClick: (click) => invoke('engine_set_click', { click }),
   previewClick: (kind) => invoke('engine_preview_click', { kind }),
   setMaster: (gainDb) => invoke('engine_set_master', { gainDb }),

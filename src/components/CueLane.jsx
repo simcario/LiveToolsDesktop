@@ -257,7 +257,6 @@ export function CueHeader({ cue, solos, onTrack, loadedTracks }) {
   const stem = track?.stem;
   const m = stem ? getMix(stem.id) : {};
   const mute = stem ? m.mute ?? !!stem.muted : false;
-  const gain = stem ? m.gainDb ?? stem.gain ?? 0 : 0;
   return (
     <div className="t-header t-header-cue" style={{ '--lane-color': CUE_COLOR }}>
       <span className="t-color" />
@@ -295,23 +294,10 @@ export function CueHeader({ cue, solos, onTrack, loadedTracks }) {
         )}
       </span>
       <div className="t-row">
-        {stem && !cue.busy ? (
-          <input
-            className="slider"
-            type="range"
-            min={-60}
-            max={6}
-            step={0.5}
-            value={gain}
-            onChange={(e) => onTrack(stem, { gainDb: Number(e.target.value) })}
-            onDoubleClick={() => onTrack(stem, { gainDb: 0 })}
-            title={`${gain.toFixed(1)} dB`}
-          />
-        ) : (
-          <span className="small muted ellipsis grow">
-            {cue.busy || (cue.cues.length ? (cue.needsReload ? 'Aggiorno le cue…' : '') : 'Nessuna cue')}
-          </span>
-        )}
+        {/* Volume of the cue track: in the Mixer (Dettaglio → Mixer, F3). */}
+        <span className="small muted ellipsis grow">
+          {cue.busy || (cue.cues.length ? (cue.needsReload ? 'Aggiorno le cue…' : '') : 'Nessuna cue')}
+        </span>
         {cue.needsReload && (
           <button className="toggle" onClick={cue.reload} disabled={!!cue.busy} title="Ricarica il brano nel player per ascoltare le cue aggiornate">
             <Icon name="undo" size={11} />

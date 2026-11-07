@@ -31,6 +31,7 @@ import PreferencesPanel from './components/PreferencesPanel';
 import HelpPanel from './components/HelpPanel';
 import Transport from './components/Transport';
 import { ZoneResizer, zoneFrame } from './components/Zones';
+import { toggleMixerWindow, useMixer, useMixerBridge } from './lib/useMixer';
 
 const VIEWS = ['stage', 'arrangement', 'prompter', 'score'];
 const ZONE_KEYS = { KeyL: 'left', KeyE: 'lower', KeyR: 'right' };
@@ -202,6 +203,10 @@ function Workspace({ user }) {
   }, [loadedId]);
   const askItem = askSave && items.find((i) => i.id === askSave);
 
+  // Mixer of the song in the player: Dettaglio → Mixer and its window (F3).
+  const mixer = useMixer({ player, lanes, canEdit, setlistId, notify });
+  useMixerBridge(mixer);
+
   const prompterSource = usePrompterOutput(player.loadedItem, settings);
   useNdiOutputs(settings);
   useNdiPrompter(prompterSource, settings.ndi.prompter.enabled);
@@ -242,6 +247,12 @@ function Workspace({ user }) {
       if (e.key === 'F1') {
         e.preventDefault();
         setHelpOpen(true);
+        return;
+      }
+      // Mixer in its own window, as Cubase's MixConsole.
+      if (e.key === 'F3') {
+        e.preventDefault();
+        toggleMixerWindow();
         return;
       }
       if (settingsOpen || prefsOpen || helpOpen) return;
@@ -439,7 +450,7 @@ function Workspace({ user }) {
       {!stage && <ZoneResizer zone="left" />}
       {page === 'live' && !stage && settings.zones.lower.open && (
         <>
-          <DetailView item={selected} number={selected ? numbers[selected.id] : null} lanes={lanes} player={player} onVideoOutput={openVideoOutput} />
+          <DetailView item={selected} number={selected ? numbers[selected.id] : null} lanes={lanes} player={player} mixer={mixer} onVideoOutput={openVideoOutput} />
           <ZoneResizer zone="lower" />
         </>
       )}

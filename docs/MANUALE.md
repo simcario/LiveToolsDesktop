@@ -37,7 +37,7 @@ chiude, si aggiorna e si riapre. Non aggiornare a ridosso di un concerto.
 | **Control bar** (in alto) | ⏮ ▶ ■ ⏭, posizione battuta.movimento e tempo, BPM / metro / tonalità, count-in, click, auto-avanzamento, *Segui palco* / *Guida*, scheda audio, impostazioni |
 | **Browser** (sinistra) | tab *Brani*, *Scalette* e, nella vista Arrangement, *Sezioni*; stato dei media offline, icona dello spartito (PDF, link o accordi), *Scarica tutta la scaletta* |
 | **Vista centrale** | **Palco**, **Arrangement**, **Gobbo** o **Spartito** (Tab per cambiare) |
-| **Dettaglio** (sotto) | tab *Brano*, *Tracce* e *Video*: dati del brano, stato dei download, barra *Rehearsal*, anteprima video |
+| **Dettaglio** (sotto) | tab *Brano*, *Tracce*, *Video* e (dalla prossima versione) *Mixer*: dati del brano, stato dei download, barra *Rehearsal*, anteprima video, volumi delle tracce |
 | **Barra di stato** | pagine **Live** (Ctrl+1), **Scaletta** (Ctrl+2), **Brani** (Ctrl+3); avviso aggiornamenti |
 
 I pannelli intorno alla vista centrale (Browser, Dettaglio e, nelle pagine Scaletta e Brani, l'ispettore) si
@@ -150,6 +150,7 @@ ricarica.
 | **Maiusc+C** | click in ottavi acceso / spento (dalla prossima versione) |
 | **Ctrl+1 / 2 / 3** | pagina Live / Scaletta / Brani |
 | **Ctrl+Alt+L / E / R** | apre o chiude Browser / Dettaglio / ispettore |
+| **F3** | mixer del brano in una finestra separata, e di nuovo per chiuderla (dalla prossima versione) |
 | **Ctrl+,** | Impostazioni |
 | **F1** | Questo manuale (anche dal pulsante **?** in alto) |
 
@@ -276,7 +277,7 @@ eliminare una sezione con un tempo proprio.
 ### 4.3 Arrangement
 
 Timeline del brano caricato: righello in battute, corsia delle sezioni, forme d'onda, corsie video, click e
-cue, testina che segue. Header delle tracce con M/S, volume, uscita, meter.
+cue, testina che segue. Header delle tracce con M/S e meter (dalla prossima versione volume e uscita sono nel **Mixer**, vedi sotto).
 
 Dalla prossima versione sotto il righello c'è la **corsia delle sezioni**, come la Marker Track di Cubase, con gli stessi
 colori della vista Palco:
@@ -293,13 +294,41 @@ della testina. Le modifiche si salvano con **Salva**.
 
 **Ctrl+rotella** = zoom; pulsanti *Segui la testina* e *Adatta alla finestra*.
 
+**Mixer** (dalla prossima versione). Nel Dettaglio, tab **Mixer**, oppure in una finestra separata come la MixConsole di
+Cubase: **F3** o il pulsante **Mixer** della barra dell'Arrangement (di nuovo F3 per chiuderla). Una striscia per **ogni traccia del
+multitraccia**, nell'ordine della sequenza, più la traccia cue live; le tracce non ancora scaricate compaiono sbiadite e
+senza meter, ma si possono già regolare:
+
+- in alto il **menu della destinazione**, come in Cubase: il **ruolo** (*Main (PA)*, *Click*, *Guide / Cue*, *Solo
+  monitor*, gli stessi della vista Sequenze della scaletta, che escono dove dice la matrice uscite) oppure un'**uscita
+  diretta** di questo computer;
+- sotto, per Main e Solo monitor, lo **strumento** (Batteria, Basso, Tastiere…): come nelle Sequenze, il Rehearsal di chi
+  lo suona toglie la traccia dal mix;
+- **pan**, **fader del volume** con meter (doppio clic: 0 dB / centro), **M** e **S**;
+- il **nome** in fondo apre la **sezione canale** della traccia (accanto resta la sua striscia; di nuovo clic sul nome,
+  **✕** o **Esc** per tornare al mixer, **‹ ›** per passare alla traccia vicina). Come su un banco digitale:
+  - **Gain** d'ingresso (±24 dB), prima dell'EQ, con il meter;
+  - **EQ** a 5 bande più **passa alto** e **passa basso** (12 dB/ottava). Il grafico mostra la curva sopra lo
+    **spettro della traccia** mentre suona (le frequenze in uso, dopo l'EQ). Si trascina un punto: in orizzontale la
+    frequenza, in verticale il guadagno (±15 dB); la **rotella** sul grafico stringe o allarga la campana (Q); doppio clic
+    = banda a 0 dB, oppure passa alto/basso acceso/spento. Sotto, i pulsanti **HP 1 2 3 4 5 LP** scelgono la banda e i
+    cursori **Freq**, **Gain** e **Q**; ogni banda può essere **Campana**, **Shelf basso** o **Shelf alto** (lo shelf
+    non ha Q). **EQ** esclude e riattiva tutto (per il confronto), **Piatto** azzera.
+  - Una traccia con gain o EQ modificati ha il segno **EQ** sul nome.
+
+Volume, pan, ruolo, strumento, gain ed EQ si salvano **con il brano** (pulsante **Salva**, anche nel mixer): al prossimo caricamento, su ogni
+computer della band e nella prova sul web, il brano suona così. Si annullano con Ctrl+Z nell'Arrangement (un trascinamento
+del fader = un passo). **Ripristina volumi** riporta tutte le tracce a 0 dB e pan al centro (gain ed EQ restano: si azzerano con **Piatto**), poi Salva. Mute, solo e
+l'uscita diretta restano solo su questo computer. Chi non può modificare il brano vede i volumi ma non li cambia.
+
 **Precount**: battute di count-in prima della battuta 1, uguali per tutti i brani; si impostano in **Impostazioni › Trasporto** e si sentono con il count-in attivo.
 
 ### 4.4 Audio e uscite
 
 Dal pulsante della scheda audio nella control bar: scegli il dispositivo e la **matrice uscite**, cioè su
-quali canali escono Main, Click, Guide e Monitor. Volume, mute e uscita si possono cambiare per singola
-traccia e restano salvati su questo computer. Le uscite che la scheda non ha ricadono su Out 1-2 (comodo
+quali canali escono Main, Click, Guide e Monitor. Mute e uscita si possono cambiare per singola
+traccia e restano salvati su questo computer; il volume di ogni traccia si regola nel **Mixer** e si salva con il brano
+(vedi *Arrangement*). Le uscite che la scheda non ha ricadono su Out 1-2 (comodo
 per provare sul portatile).
 
 Su Windows si usa WASAPI condiviso. Il supporto ASIO è in preparazione e non è ancora incluso nelle versioni

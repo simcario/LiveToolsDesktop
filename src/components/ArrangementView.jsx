@@ -7,7 +7,8 @@ import { useOnsets } from '../lib/onsets';
 import { nearestBarIndex, sectionIndexAt } from '../lib/sections';
 import { useSections } from '../lib/useSections';
 import { gridOf } from '../lib/sync';
-import { getMix, outputOptions, parseRoute, routeValue, useMix } from '../lib/settings';
+import { getMix, useMix } from '../lib/settings';
+import { toggleMixerWindow } from '../lib/useMixer';
 import Icon from './Icon';
 import Meter from './Meter';
 import SyncControl from './SyncControl';
@@ -27,6 +28,8 @@ const MARK_EDGE = 6; // px around the start of a section where a drag moves it
 const LANE_H = 64;
 const MIN_PPS = 4;
 const MAX_PPS = 400;
+const DOUBLE_TAP = 400; // ms: dblclick never reaches a touch screen (tablet), two taps make one
+const TAP_SLOP = 8; // px a finger may move and still be a tap, not a scroll
 
 // Tools for the segments of the tracks (Cubase style), with their keys and cursors.
 const TOOLS = [
@@ -272,7 +275,7 @@ function GridBar({ grid, tempo, onChange }) {
   const [tapped, setTapped] = useState(null);
   const seg = tempo?.segments?.find((s) => !s.countIn);
   const single = grid.anchors.length <= 1;
-  const shownBpm = single ? grid.bpm ?? seg?.bpm : null;
+  const shownBpm = single ? (grid.bpm ?? seg?.bpm) : null;
   const [bpmText, setBpmText] = useState('');
   useEffect(() => setBpmText(shownBpm ? String(Math.round(shownBpm * 100) / 100) : ''), [shownBpm]);
 
@@ -330,14 +333,9 @@ function GridBar({ grid, tempo, onChange }) {
         Tap{tapped ? ` ${tapped}` : ''}
       </button>
       <span className="t-sep" style={{ height: 18 }} />
-      <span className="small muted">
-        {grid.anchors.length ? `${grid.anchors.length} ancoraggi` : 'Griglia automatica'}
-      </span>
+      <span className="small muted">{grid.anchors.length ? `${grid.anchors.length} ancoraggi` : 'Griglia automatica'}</span>
       {(grid.anchors.length > 0 || grid.bpm) && (
-        <button
-          className="btn btn-sm btn-ghost"
-          onClick={() => confirm('Togliere ancoraggi e tempo manuale? La griglia torna a quella automatica.') && onChange({ ...grid, anchors: [], bpm: null })}
-        >
+        <button className="btn btn-sm btn-ghost" onClick={() => confirm('Togliere ancoraggi e tempo manuale? La griglia torna a quella automatica.') && onChange({ ...grid, anchors: [], bpm: null })}>
           <Icon name="undo" size={13} /> Automatica
         </button>
       )}
@@ -349,7 +347,8 @@ function GridBar({ grid, tempo, onChange }) {
   );
 }
 
-function TrackHeader({ row, index, solos, onTrack, channels, selected, onSelect }) {
+// Volume, pan and destination of the tracks are in the Mixer (Dettaglio → Mixer, F3).
+function TrackHeader({ row, index, solos, onTrack, selected, onSelect }) {
   if (row.kind === 'click') {
     return (
       <div className="t-header" style={{ '--lane-color': ROLE_COLORS.click }}>
@@ -370,19 +369,18 @@ function TrackHeader({ row, index, solos, onTrack, channels, selected, onSelect 
         <span className="t-color" />
         <span className="t-name">{row.name}</span>
         <span className="t-btns">
-          <button className="toggle" onClick={row.onOutput} title="Apri l’uscita video (proiettore / secondo schermo)">
-            <Icon name="monitor" size={12} />
-          </button>
+          {row.onOutput && (
+            <button className="toggle" onClick={row.onOutput} title="Apri l’uscita video (proiettore / secondo schermo)">
+              <Icon name="monitor" size={12} />
+            </button>
+          )}
         </span>
         <div className="t-row small muted">Video · offset {(row.offset || 0).toFixed(2)} s</div>
       </div>
     );
   }
   const { stem } = row;
-  const m = getMix(stem.id);
-  const gain = m.gainDb ?? stem.gain ?? 0;
-  const mute = m.mute ?? !!stem.muted;
-  const route = m.route || null;
+  const mute = getMix(stem.id).mute ?? !!stem.muted;
   return (
     <div className={`t-header ${selected ? 'is-selected' : ''}`} style={{ '--lane-color': row.color }} onMouseDown={onSelect} title="Clic: seleziona la traccia (Ctrl+E taglia nel punto del cursore)">
       <span className="t-color" />
@@ -398,41 +396,18 @@ function TrackHeader({ row, index, solos, onTrack, channels, selected, onSelect 
         </button>
       </span>
       <div className="t-row">
-        <input
-          className="slider"
-          type="range"
-          min={-60}
-          max={6}
-          step={0.5}
-          value={gain}
-          onChange={(e) => onTrack(stem, { gainDb: Number(e.target.value) })}
-          onDoubleClick={() => onTrack(stem, { gainDb: 0 })}
-          title={`${gain.toFixed(1)} dB`}
-        />
-        <select
-          className="select-xs"
-          value={route ? routeValue(route) : 'role'}
-          onChange={(e) => onTrack(stem, { route: e.target.value === 'role' ? null : parseRoute(e.target.value) })}
-          title="Uscita"
-        >
-          <option value="role">Ruolo ({stem.role || 'main'})</option>
-          {outputOptions(channels).map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
         <Meter track={index} horizontal />
       </div>
     </div>
   );
 }
 
-export default function ArrangementView({ player, item, lanes, settings, update, onVideoOutput, canEdit, setlistId, notify }) {
+// onMixer: the Mixer button (by default the F3 window of the desktop); null hides it (mobile: the Mixer is a view of its own).
+// compact (tablet): the title is already in the bar above, grid and view open from ⋯, zoom with two fingers.
+export default function ArrangementView({ player, item, lanes, settings, update, onVideoOutput, onMixer = toggleMixerWindow, canEdit, setlistId, notify, compact = false }) {
   const loaded = player.loaded;
   const peaks = usePeaks();
   useMix();
-  const channels = useEngineStatus((s) => s.device?.channels ?? 2);
   const scroller = useRef(null);
   const canvas = useRef(null);
   const playhead = useRef(null);
@@ -476,28 +451,29 @@ export default function ArrangementView({ player, item, lanes, settings, update,
 
   const rows = [];
   if (loaded?.video) rows.push({ kind: 'video', name: loaded.video.name, offset: loaded.video.offset, duration: loaded.duration, color: ROLE_COLORS.video, onOutput: onVideoOutput });
-  loaded?.tracks.forEach((t, i) =>
-    // The audio of the cues is mixed from the cue track's header.
-    !(cue.exists && i === cue.audioIndex) &&
-    rows.push({
-      kind: 'audio',
-      stem: t.stem,
-      index: i,
-      name: t.stem.name,
-      local: t.local,
-      duration: t.info?.duration,
-      color: laneColor(lanes, t.stem),
-      muted: getMix(t.stem.id).mute ?? !!t.stem.muted,
-      regions: t.stem.live
-        ? stemRegions(null, '')
-        : clipDrag?.stemId === t.stem.id
-          ? clipDrag.edge
-            ? trimSegment(stemRegions(song, t.stem.id), clipDrag.index, clipDrag.edge, clipDrag.t, t.info?.duration || duration)
-            : moveSegment(stemRegions(song, t.stem.id), clipDrag.index, clipDrag.delta)
-          : stemRegions(song, t.stem.id),
-      dragIndex: clipDrag?.stemId === t.stem.id ? clipDrag.index : -1,
-      selected: selection?.stemId === t.stem.id ? selection.index ?? -1 : null,
-    }),
+  loaded?.tracks.forEach(
+    (t, i) =>
+      // The audio of the cues is mixed from the cue track's header.
+      !(cue.exists && i === cue.audioIndex) &&
+      rows.push({
+        kind: 'audio',
+        stem: t.stem,
+        index: i,
+        name: t.stem.name,
+        local: t.local,
+        duration: t.info?.duration,
+        color: laneColor(lanes, t.stem),
+        muted: getMix(t.stem.id).mute ?? !!t.stem.muted,
+        regions: t.stem.live
+          ? stemRegions(null, '')
+          : clipDrag?.stemId === t.stem.id
+            ? clipDrag.edge
+              ? trimSegment(stemRegions(song, t.stem.id), clipDrag.index, clipDrag.edge, clipDrag.t, t.info?.duration || duration)
+              : moveSegment(stemRegions(song, t.stem.id), clipDrag.index, clipDrag.delta)
+            : stemRegions(song, t.stem.id),
+        dragIndex: clipDrag?.stemId === t.stem.id ? clipDrag.index : -1,
+        selected: selection?.stemId === t.stem.id ? (selection.index ?? -1) : null,
+      }),
   );
   if (loaded && cue.exists) rows.push({ kind: 'cue' });
   if (loaded) {
@@ -714,7 +690,10 @@ export default function ArrangementView({ player, item, lanes, settings, update,
   const gapChecked = useRef(new Set());
   useEffect(() => {
     if (!song || !canEditSong || loaded?.itemId !== song.id || !tempo) return;
-    const key = `${song.id}:${(loaded.tracks || []).map((x) => x.stem.id).sort().join(',')}`;
+    const key = `${song.id}:${(loaded.tracks || [])
+      .map((x) => x.stem.id)
+      .sort()
+      .join(',')}`;
     if (gapChecked.current.has(key)) return;
     gapChecked.current.add(key);
     const closed = closeLeadingGap(song, regionsOf(song), tempo?.origin);
@@ -866,12 +845,25 @@ export default function ArrangementView({ player, item, lanes, settings, update,
     const toolCursor = TOOLS.find(([k]) => k === tool)[4];
     const cueCursor = tool === 'move' || (tool !== 'erase' && hit && cue.byG.has(hit.cell.g)) ? 'grab' : tool === 'erase' ? 'not-allowed' : 'pointer';
     e.currentTarget.style.cursor = hit ? cueCursor : onEdge ? 'ew-resize' : onSegment && (canEditSong || tool === 'select') ? toolCursor : '';
-    const g = tool === 'move' ? null : hit?.cell.g ?? null;
+    const g = tool === 'move' ? null : (hit?.cell.g ?? null);
     if (g !== cueHover) setCueHover(g);
   };
 
+  const lastTap = useRef({ at: 0, x: 0 });
   const onPointerDown = (e) => {
     if (e.button !== 0) return;
+    // The second finger of a pinch zooms (above): it must not cut, move or locate.
+    if (e.pointerType === 'touch' && !e.isPrimary) return;
+    // Touch: two taps in the same place are a double click (rename a section, pin a grid line).
+    if (e.pointerType === 'touch') {
+      const now = performance.now();
+      const double = now - lastTap.current.at < DOUBLE_TAP && Math.abs(e.clientX - lastTap.current.x) < TAP_SLOP * 3;
+      lastTap.current = { at: double ? 0 : now, x: e.clientX };
+      if (double) {
+        onDoubleClick(e);
+        return;
+      }
+    }
     const rect = e.currentTarget.getBoundingClientRect();
     const t = (e.clientX - rect.left) / pps + t0;
     if (onLane(e)) {
@@ -1032,7 +1024,8 @@ export default function ArrangementView({ player, item, lanes, settings, update,
     }
     if (row?.kind === 'audio') setSelection(null);
     if (!warpOn) {
-      player.locate(t);
+      if (e.pointerType === 'touch') locateOnTap(e, t);
+      else player.locate(t);
       return;
     }
     const line = lineAt(t);
@@ -1073,6 +1066,23 @@ export default function ArrangementView({ player, item, lanes, settings, update,
     };
     el.addEventListener('pointermove', move);
     el.addEventListener('pointerup', up);
+  };
+
+  // A finger moves the playhead when it lifts without having scrolled the timeline (a scroll cancels the pointer).
+  const locateOnTap = (e, t) => {
+    const el = e.currentTarget;
+    const x0 = e.clientX;
+    const y0 = e.clientY;
+    const done = () => {
+      el.removeEventListener('pointerup', up);
+      el.removeEventListener('pointercancel', done);
+    };
+    const up = (ev) => {
+      done();
+      if (Math.abs(ev.clientX - x0) < TAP_SLOP && Math.abs(ev.clientY - y0) < TAP_SLOP) player.locate(t);
+    };
+    el.addEventListener('pointerup', up);
+    el.addEventListener('pointercancel', done);
   };
 
   // Double click on a grid line: pin it where it is.
@@ -1124,6 +1134,49 @@ export default function ArrangementView({ player, item, lanes, settings, update,
     [pps, update],
   );
 
+  // Two fingers on the timeline: zoom around the point between them (touch screens).
+  const ppsRef = useRef(pps);
+  ppsRef.current = pps;
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el) return undefined;
+    let pinch = null;
+    let raf = 0;
+    const span = (ts) => Math.hypot(ts[0].clientX - ts[1].clientX, ts[0].clientY - ts[1].clientY) || 1;
+    const start = (e) => {
+      if (e.touches.length !== 2) return;
+      const r = el.getBoundingClientRect();
+      const ax = (e.touches[0].clientX + e.touches[1].clientX) / 2 - r.left;
+      pinch = { d: span(e.touches), pps: ppsRef.current, ax, t: (el.scrollLeft + ax) / ppsRef.current };
+    };
+    const move = (e) => {
+      if (!pinch || e.touches.length !== 2) return;
+      e.preventDefault();
+      const next = Math.max(MIN_PPS, Math.min(MAX_PPS, (pinch.pps * span(e.touches)) / pinch.d));
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        update({ pxPerSec: next });
+        requestAnimationFrame(() => {
+          el.scrollLeft = pinch ? pinch.t * next - pinch.ax : el.scrollLeft;
+        });
+      });
+    };
+    const end = (e) => {
+      if (e.touches.length < 2) pinch = null;
+    };
+    el.addEventListener('touchstart', start, { passive: true });
+    el.addEventListener('touchmove', move, { passive: false });
+    el.addEventListener('touchend', end);
+    el.addEventListener('touchcancel', end);
+    return () => {
+      cancelAnimationFrame(raf);
+      el.removeEventListener('touchstart', start);
+      el.removeEventListener('touchmove', move);
+      el.removeEventListener('touchend', end);
+      el.removeEventListener('touchcancel', end);
+    };
+  }, [update, !!loaded]);
+
   const onWheel = (e) => {
     if (!e.ctrlKey && !e.metaKey) return;
     e.preventDefault();
@@ -1157,14 +1210,16 @@ export default function ArrangementView({ player, item, lanes, settings, update,
 
   return (
     <div className="arr">
-      <Toolbar id="arrangement" title="Arrangement" className="arr-toolbar">
-        <ToolGroup id="song" label="Brano" grow>
-          <strong className="ellipsis">{player.loadedItem?.title}</strong>
-          <span className="small muted">
-            {loaded.tracks.length} tracce{loaded.video ? ' · video' : ''}
-          </span>
-        </ToolGroup>
-        <ToolGroup id="edit" label="Modifica">
+      <Toolbar id="arrangement" title="Arrangement" className="arr-toolbar" overflow={compact}>
+        {!compact && (
+          <ToolGroup id="song" label="Brano" grow>
+            <strong className="ellipsis">{player.loadedItem?.title}</strong>
+            <span className="small muted">
+              {loaded.tracks.length} tracce{loaded.video ? ' · video' : ''}
+            </span>
+          </ToolGroup>
+        )}
+        <ToolGroup id="edit" label="Modifica" pin>
           <span className="arr-add">
             <button
               className={`btn btn-sm ${addOpen ? 'is-on' : ''}`}
@@ -1224,13 +1279,7 @@ export default function ArrangementView({ player, item, lanes, settings, update,
           </button>
           <span className="view-switch arr-tools" role="toolbar" aria-label="Strumenti">
             {TOOLS.map(([k, icon, label, key]) => (
-              <button
-                key={k}
-                className={tool === k ? 'is-on' : ''}
-                onClick={() => update({ arrTool: k })}
-                disabled={k !== 'select' && !canEditSong}
-                title={`${label} (${key})`}
-              >
+              <button key={k} className={tool === k ? 'is-on' : ''} onClick={() => update({ arrTool: k })} disabled={k !== 'select' && !canEditSong} title={`${label} (${key})`}>
                 <Icon name={icon} size={14} />
               </button>
             ))}
@@ -1255,22 +1304,34 @@ export default function ArrangementView({ player, item, lanes, settings, update,
           </button>
         </ToolGroup>
         {sections.length > 0 && (
-          <ToolGroup id="sections" label="Sezioni">
+          <ToolGroup id="sections" label="Sezioni" pin>
             <span className="arr-sections" role="group" aria-label="Sezioni">
-              <button className="btn btn-sm btn-icon" onClick={() => goSection(prevSection)} disabled={!prevSection} title={prevSection ? `Vai a ${prevSection.label}` : 'Sei alla prima sezione'} aria-label="Sezione precedente">
+              <button
+                className="btn btn-sm btn-icon"
+                onClick={() => goSection(prevSection)}
+                disabled={!prevSection}
+                title={prevSection ? `Vai a ${prevSection.label}` : 'Sei alla prima sezione'}
+                aria-label="Sezione precedente"
+              >
                 <Icon name="skip-back" size={13} />
               </button>
               <span className="arr-section-now ellipsis" style={{ color: sections[sectionNow]?.color }}>
                 {sections[sectionNow]?.label || 'Sezioni'}
               </span>
-              <button className="btn btn-sm btn-icon" onClick={() => goSection(nextSection)} disabled={!nextSection} title={nextSection ? `Vai a ${nextSection.label}` : 'Sei all’ultima sezione'} aria-label="Sezione successiva">
+              <button
+                className="btn btn-sm btn-icon"
+                onClick={() => goSection(nextSection)}
+                disabled={!nextSection}
+                title={nextSection ? `Vai a ${nextSection.label}` : 'Sei all’ultima sezione'}
+                aria-label="Sezione successiva"
+              >
                 <Icon name="skip-forward" size={13} />
               </button>
             </span>
           </ToolGroup>
         )}
         {dirty && (
-          <ToolGroup id="save" label="Salvataggio" locked>
+          <ToolGroup id="save" label="Salvataggio" locked pin>
             <span className="arr-save">
               <span className="small arr-unsaved">Non salvato</span>
               <button className="btn btn-sm btn-ghost" onClick={discardSong} disabled={saving} title="Torna all’ultimo salvataggio">
@@ -1283,11 +1344,7 @@ export default function ArrangementView({ player, item, lanes, settings, update,
           </ToolGroup>
         )}
         <ToolGroup id="view" label="Vista">
-          <button
-            className={`btn btn-sm ${settings.followPlayhead ? 'is-on' : ''}`}
-            onClick={() => update({ followPlayhead: !settings.followPlayhead })}
-            title="Segui la testina"
-          >
+          <button className={`btn btn-sm ${settings.followPlayhead ? 'is-on' : ''}`} onClick={() => update({ followPlayhead: !settings.followPlayhead })} title="Segui la testina">
             <Icon name="follow" size={14} /> Segui
           </button>
           <button className="btn btn-sm btn-icon" onClick={() => zoom(1 / 1.5)} title="Riduci (Ctrl + rotella)">
@@ -1299,8 +1356,13 @@ export default function ArrangementView({ player, item, lanes, settings, update,
           <button className="btn btn-sm" onClick={fit} title="Adatta il brano alla finestra">
             <Icon name="maximize" size={14} /> Adatta
           </button>
+          {onMixer && (
+            <button className="btn btn-sm" onClick={onMixer} title="Mixer delle tracce in una finestra separata (F3). Anche nel Dettaglio, tab Mixer">
+              <Icon name="sliders" size={14} /> Mixer
+            </button>
+          )}
         </ToolGroup>
-        {loaded.video && (
+        {loaded.video && onVideoOutput && (
           <ToolGroup id="output" label="Uscite">
             <button className="btn btn-sm" onClick={onVideoOutput}>
               <Icon name="monitor" size={14} /> Uscita video
@@ -1312,7 +1374,7 @@ export default function ArrangementView({ player, item, lanes, settings, update,
       <div className="arr-body">
         <div className="arr-timeline" ref={scroller} onWheel={onWheel}>
           <div
-            className={`arr-content ${warpOn ? 'is-warp' : ''}`}
+            className={`arr-content is-tool-${tool} ${warpOn ? 'is-warp' : ''}`}
             style={{ width: contentW, height }}
             onPointerDown={onPointerDown}
             onDoubleClick={onDoubleClick}
@@ -1320,33 +1382,35 @@ export default function ArrangementView({ player, item, lanes, settings, update,
             onMouseLeave={() => setCueHover(null)}
           >
             <canvas className="arr-canvas" ref={canvas} />
-            {sections.filter((s) => s.index === secName).map((s) => (
-              <input
-                key={s.index}
-                className="arr-sec-name"
-                style={{ left: (s.start - t0) * pps + 5, top: MARK_Y + 2 }}
-                defaultValue={s.name}
-                placeholder={s.label}
-                aria-label="Nome della sezione"
-                autoFocus
-                onFocus={(e) => e.target.select()}
-                onPointerDown={(e) => e.stopPropagation()}
-                onDoubleClick={(e) => e.stopPropagation()}
-                onBlur={(e) => {
-                  const label = e.target.value.trim();
-                  if (label !== s.name) sec.rename(s.index, label);
-                  setSecName(null);
-                }}
-                onKeyDown={(e) => {
-                  e.stopPropagation();
-                  if (e.key === 'Enter') e.target.blur();
-                  if (e.key === 'Escape') {
-                    e.target.value = s.name;
-                    e.target.blur();
-                  }
-                }}
-              />
-            ))}
+            {sections
+              .filter((s) => s.index === secName)
+              .map((s) => (
+                <input
+                  key={s.index}
+                  className="arr-sec-name"
+                  style={{ left: (s.start - t0) * pps + 5, top: MARK_Y + 2 }}
+                  defaultValue={s.name}
+                  placeholder={s.label}
+                  aria-label="Nome della sezione"
+                  autoFocus
+                  onFocus={(e) => e.target.select()}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onDoubleClick={(e) => e.stopPropagation()}
+                  onBlur={(e) => {
+                    const label = e.target.value.trim();
+                    if (label !== s.name) sec.rename(s.index, label);
+                    setSecName(null);
+                  }}
+                  onKeyDown={(e) => {
+                    e.stopPropagation();
+                    if (e.key === 'Enter') e.target.blur();
+                    if (e.key === 'Escape') {
+                      e.target.value = s.name;
+                      e.target.blur();
+                    }
+                  }}
+                />
+              ))}
             <div className="arr-playhead" ref={playhead} style={{ height }} />
           </div>
         </div>
@@ -1355,7 +1419,13 @@ export default function ArrangementView({ player, item, lanes, settings, update,
             <span>Tracce</span>
             <span className="arr-lane-head">
               Sezioni
-              <button className="toggle" onClick={sec.addAtPlayhead} disabled={!sec.editable} title="Aggiungi una sezione alla battuta della testina (Ins). Ctrl+clic sulla corsia: nel punto scelto" aria-label="Aggiungi una sezione alla testina">
+              <button
+                className="toggle"
+                onClick={sec.addAtPlayhead}
+                disabled={!sec.editable}
+                title="Aggiungi una sezione alla battuta della testina (Ins). Ctrl+clic sulla corsia: nel punto scelto"
+                aria-label="Aggiungi una sezione alla testina"
+              >
                 <Icon name="marker-add" size={13} />
               </button>
             </span>
@@ -1370,7 +1440,6 @@ export default function ArrangementView({ player, item, lanes, settings, update,
                 index={r.index}
                 solos={player.solos}
                 onTrack={player.setTrack}
-                channels={channels}
                 selected={r.kind === 'audio' && selection?.stemId === r.stem.id}
                 onSelect={r.kind === 'audio' && !r.stem.live ? () => setSelection((s) => (s?.stemId === r.stem.id ? s : { stemId: r.stem.id, index: null })) : undefined}
               />

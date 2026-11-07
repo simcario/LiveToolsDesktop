@@ -3,6 +3,7 @@ pub mod beats;
 pub mod decode;
 pub mod device;
 pub mod engine;
+pub mod eq;
 pub mod render;
 mod resample;
 pub mod stream;

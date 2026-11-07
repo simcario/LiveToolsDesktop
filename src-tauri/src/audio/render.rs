@@ -10,6 +10,7 @@ use rtrb::Consumer;
 use serde::Deserialize;
 
 use super::atomic::AtomicF32;
+use super::eq::{ChannelControl, EqState, Tap};
 use super::stream::TrackStream;
 use super::tempo::{ClickKind, TempoFrames};
 
@@ -39,6 +40,8 @@ pub struct Shared {
     pub fade: AtomicF32,
     pub fade_target: AtomicF32,
     pub out_peaks: Vec<AtomicF32>,
+    /// The track looked at in a channel section (its `tap` flag), for the spectrum.
+    pub tap: Tap,
 }
 
 impl Shared {
@@ -57,6 +60,7 @@ impl Shared {
             fade: AtomicF32::new(1.0),
             fade_target: AtomicF32::new(1.0),
             out_peaks: (0..MAX_OUTPUTS).map(|_| AtomicF32::new(0.0)).collect(),
+            tap: Tap::new(),
         }
     }
 }
@@ -71,6 +75,10 @@ pub struct TrackControl {
     pub out_mode: AtomicU8,
     pub peak_l: AtomicF32,
     pub peak_r: AtomicF32,
+    /// Input gain and EQ (Mixer → channel section).
+    pub channel: ChannelControl,
+    /// Copied into `Shared::tap` (spectrum of the channel section open).
+    pub tap: AtomicBool,
 }
 
 impl TrackControl {
@@ -84,6 +92,8 @@ impl TrackControl {
             out_mode: AtomicU8::new(OUT_STEREO),
             peak_l: AtomicF32::new(0.0),
             peak_r: AtomicF32::new(0.0),
+            channel: ChannelControl::new(),
+            tap: AtomicBool::new(false),
         }
     }
 }
@@ -192,11 +202,12 @@ pub struct RtTrack {
     pub stream: Option<TrackStream>,
     /// Frames missed during an underrun, skipped later to stay in sync.
     deficit: usize,
+    eq: EqState,
 }
 
 impl RtTrack {
     pub fn new(control: Arc<TrackControl>, stream: Option<TrackStream>) -> Self {
-        Self { control, stream, deficit: 0 }
+        Self { control, stream, deficit: 0, eq: EqState::new() }
     }
 }
 
@@ -503,7 +514,7 @@ fn xfade_curve(x: f32) -> f32 {
 /// Mixes a deck of tracks into `out`: `n` frames from frame `lead` of the
 /// block, frame f weighted by `env[f]`. Reports underruns only for the deck playing.
 #[allow(clippy::too_many_arguments)]
-fn mix_tracks(tracks: &mut [RtTrack], scratch: &mut [f32], out: &mut [f32], lead: usize, n: usize, ch: usize, env: &[f32], master: f32, underruns: Option<&AtomicU32>) {
+fn mix_tracks(tracks: &mut [RtTrack], scratch: &mut [f32], out: &mut [f32], lead: usize, n: usize, ch: usize, env: &[f32], master: f32, sr: f32, underruns: Option<&AtomicU32>, tap: Option<&Tap>) {
     if n == 0 {
         return;
     }
@@ -533,6 +544,13 @@ fn mix_tracks(tracks: &mut [RtTrack], scratch: &mut [f32], out: &mut [f32], lead
         }
 
         let c = &t.control;
+        // Channel section: input gain and EQ, before fader and pan.
+        t.eq.process(&c.channel, buf, sr);
+        if let Some(tap) = tap {
+            if c.tap.load(Ordering::Relaxed) {
+                tap.write(buf);
+            }
+        }
         let audible = !c.mute.load(Ordering::Relaxed) && (!any_solo || c.solo.load(Ordering::Relaxed));
         let mode = c.out_mode.load(Ordering::Relaxed);
         let gain = c.gain.load() * master;
@@ -945,7 +963,7 @@ impl Renderer {
         self.fade_gain = g;
         self.shared.fade.store(g);
 
-        mix_tracks(&mut self.tracks, &mut self.scratch, out, lead, n, ch, &self.env, master, Some(&self.shared.underruns));
+        mix_tracks(&mut self.tracks, &mut self.scratch, out, lead, n, ch, &self.env, master, sr as f32, Some(&self.shared.underruns), Some(&self.shared.tap));
         if self.xin_len > 0 {
             self.xin_done += frames as i64;
             if self.xin_done >= self.xin_len {
@@ -953,7 +971,7 @@ impl Renderer {
             }
         }
         if self.tail_on {
-            mix_tracks(&mut self.tail, &mut self.scratch, out, 0, frames, ch, &self.tail_env, master, None);
+            mix_tracks(&mut self.tail, &mut self.scratch, out, 0, frames, ch, &self.tail_env, master, sr as f32, None, None);
             self.tail_x = (self.tail_x - self.tail_step * frames as f32).max(0.0);
             let dry = self.tail.iter().all(|t| t.stream.as_ref().is_none_or(|s| s.eof.load(Ordering::Acquire) && s.rx.slots() == 0));
             if self.tail_x <= 0.0 || dry {

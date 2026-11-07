@@ -8,11 +8,13 @@ import Icon from './Icon';
 import SyncControl from './SyncControl';
 import SyncedVideo from './SyncedVideo';
 import { ZoneLayoutToggle, ZoneTabs } from './Zones';
+import MixerPanel from './MixerPanel';
 
 const TABS = [
   ['song', 'Brano', 'music'],
   ['tracks', 'Tracce', 'layers'],
   ['video', 'Video', 'video'],
+  ['mixer', 'Mixer', 'sliders'],
 ];
 
 export function CacheState({ c }) {
@@ -29,12 +31,13 @@ export function CacheState({ c }) {
   return <Icon name="cloud" size={13} style={{ color: 'var(--faint)' }} />;
 }
 
-export default function DetailView({ item, number, lanes, player, onVideoOutput }) {
+export default function DetailView({ item, number, lanes, player, mixer, onVideoOutput }) {
   const cache = useMediaCache();
   const loaded = player.loaded;
   const [settings, update] = useSettings();
-  const tabbed = settings.sideTabs;
   const tab = TABS.some(([k]) => k === settings.detailTab) ? settings.detailTab : 'song';
+  // The mixer takes the whole zone: shown as a tab even with the panels side by side.
+  const tabbed = settings.sideTabs || tab === 'mixer';
   const col = (k) => `d-col ${tabbed && tab !== k ? 'is-off' : ''}`;
 
   if (!item) {
@@ -122,6 +125,12 @@ export default function DetailView({ item, number, lanes, player, onVideoOutput 
       <div className={col('tracks')}>
         <div className="panel-head">
           <Icon name="layers" size={13} /> Sequenza · {stems.length} tracce
+          <span className="grow" />
+          {!tabbed && (
+            <button className="btn btn-ghost btn-sm" onClick={() => update({ detailTab: 'mixer' })} title="Volumi, pan e gruppi delle tracce (F3: in una finestra)">
+              <Icon name="sliders" size={13} /> Mixer
+            </button>
+          )}
         </div>
         <div className="d-body">
           {stems.length === 0 && !video && (
@@ -189,6 +198,7 @@ export default function DetailView({ item, number, lanes, player, onVideoOutput 
           )}
         </div>
       </div>
+      {tab === 'mixer' && mixer && <MixerPanel state={mixer.state} dispatch={mixer.dispatch} />}
     </section>
   );
 }

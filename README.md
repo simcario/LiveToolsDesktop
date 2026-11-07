@@ -134,6 +134,11 @@ Il codice condiviso con il web sta in `src/shared/` (copia di `setlists.js`, `me
 modifica nel repository web: `npm run sync-shared`. La configurazione Firebase invece non è nel repo: sta in
 `desktop/.env` (copia `.env.example`, valori dalla console Firebase) e senza di essa la build si ferma.
 
+L'app per tablet (`../mobile`) copia da qui motore, `src/lib`, `src/shared` e la vista Palco intera
+(`components/StageView.jsx`, `Toolbar.jsx`, `src/styles/stage.css`, `toolbar.css`): dopo una modifica, in `mobile/`
+`npm run sync-desktop`. Per questo il Palco non deve dipendere da finestre o comandi che il tablet non ha (l'uscita
+video compare solo con `onVideoOutput`).
+
 ## Requisiti
 
 - Node.js ≥ 20, Rust stable (`rustup`).

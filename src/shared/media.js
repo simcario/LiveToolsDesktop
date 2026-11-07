@@ -2,7 +2,8 @@
 // in Firebase Storage and described on the song document. The LiveTools
 // desktop app downloads them and plays them in sync.
 //
-// song.stems = [{ id, name, file, path, size, type, role, instrument, gain, pan, muted }]
+// song.stems = [{ id, name, file, path, size, type, role, instrument, gain, pan, input, eq, muted }]
+// (input, eq: channel section of the Mixer, see eq.js)
 // song.video = { id, name, file, path, size, type, offset } | null
 //
 // The media belong to the song of the library (songs/{songId}, files at
@@ -233,6 +234,12 @@ export const cueTrackOf = (song) => ({
   cues: (song?.cueTrack?.cues || []).filter((c) => Number.isFinite(c?.g) && c.label),
   // Cues the "Cues" stem was rendered from (to tell when it is out of date).
   renderedKey: song?.cueTrack?.renderedKey ?? null,
+  // Mix of the cue track made from the sheet (desktop live track, web rehearsal): dB, -1..1.
+  gain: Number(song?.cueTrack?.gain) || 0,
+  pan: Number(song?.cueTrack?.pan) || 0,
+  // Channel section (Mixer → click on the track name): input gain dB and EQ, see eq.js.
+  input: Number(song?.cueTrack?.input) || 0,
+  eq: song?.cueTrack?.eq || null,
 });
 
 export function saveCueTrack(db, target, cueTrack) {

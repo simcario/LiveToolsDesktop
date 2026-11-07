@@ -50,9 +50,6 @@
 
   --transport-h: 56px;
   --status-h: 30px;
-  --lane-h: 64px;
-  --ruler-h: 56px;
-  --headers-w: 250px;
   --browser-w: 270px;
   --detail-h: 230px;
   --inspector-w: 400px;
@@ -908,6 +905,27 @@ input[type='range'].slider:hover::-webkit-slider-thumb {
   display: none;
 }
 
+/* Mixer: styles/mixer.css; here only its window. */
+.mixer-window {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--text);
+}
+.mixer-window .mx-strip {
+  flex-basis: 96px;
+  max-width: 110px;
+}
+.mixer-window .mx-strip .fader-wrap {
+  --cap-w: 28px;
+  --cap-h: 34px;
+}
+.mixer-window .video-empty {
+  margin: auto;
+}
+
 /* Sezioni tab: the list of the sections of the song in the player */
 .sp {
   flex: 1;
@@ -992,183 +1010,6 @@ input[type='range'].slider:hover::-webkit-slider-thumb {
   cursor: pointer;
 }
 .sp-del:hover {
-  color: var(--danger);
-}
-
-/* ---------- Arrangement view ---------- */
-.arr-lane-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-}
-.arr-sec-name {
-  position: absolute;
-  z-index: 5;
-  width: 150px;
-  height: 22px;
-  padding: 0 4px;
-  border: 1px solid var(--accent-border);
-  border-radius: 3px;
-  background: var(--bg);
-  font-size: 11px;
-  font-weight: 700;
-}
-.arr-sections {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-.arr-section-now {
-  min-width: 70px;
-  max-width: 130px;
-  text-align: center;
-  font-weight: 700;
-}
-.arr {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-.arr-toolbar {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 4px 8px;
-  min-height: 34px;
-  padding: 3px 10px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-elev);
-  flex: none;
-}
-.arr-body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) var(--headers-w);
-  align-content: start;
-}
-.arr-timeline {
-  overflow-x: auto;
-  overflow-y: hidden;
-  position: relative;
-  cursor: text;
-}
-.arr-content {
-  position: relative;
-}
-.arr-canvas {
-  position: sticky;
-  left: 0;
-  display: block;
-}
-.arr-playhead {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 1px;
-  background: var(--text);
-  pointer-events: none;
-  box-shadow: 0 0 6px rgba(255, 255, 255, 0.4);
-  will-change: transform;
-}
-.arr-playhead::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -5px;
-  border-left: 5px solid transparent;
-  border-right: 5px solid transparent;
-  border-top: 7px solid var(--text);
-}
-.arr-headers {
-  border-left: 1px solid var(--border-strong);
-  background: var(--bg-elev);
-}
-.arr-ruler-head {
-  height: var(--ruler-h);
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  padding: 7px 10px 3px;
-  border-bottom: 1px solid var(--border-strong);
-  font-size: 10px;
-  color: var(--faint);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  font-weight: 700;
-}
-.t-header {
-  height: var(--lane-h);
-  display: grid;
-  grid-template-columns: 5px minmax(0, 1fr) auto;
-  grid-template-rows: auto auto;
-  column-gap: 8px;
-  row-gap: 5px;
-  align-content: center;
-  padding: 0 8px 0 0;
-  border-bottom: 1px solid var(--bg);
-  background: var(--surface);
-}
-.t-header .t-color {
-  grid-row: 1 / -1;
-  align-self: stretch;
-  background: var(--lane-color);
-}
-.t-header .t-name {
-  font-weight: 700;
-  font-size: 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.t-header .t-btns {
-  display: flex;
-  gap: 3px;
-}
-.t-header .t-row {
-  grid-column: 2 / -1;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.t-header .t-row .slider {
-  flex: 1;
-  min-width: 0;
-}
-.t-header .t-row .meter.h {
-  width: 40px;
-}
-
-/* Grid alignment (click / rhythm stem) */
-.sync-ctl {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  min-width: 0;
-  flex-wrap: wrap;
-}
-.sync-ctl .select-xs {
-  max-width: 190px;
-  height: 22px;
-}
-.sync-info {
-  color: var(--text-2);
-  white-space: nowrap;
-}
-.sync-info .ok {
-  color: var(--yes);
-}
-.sync-info .warn,
-.sync-info.warn {
-  color: var(--warn);
-}
-.sync-info .err,
-.sync-info.err {
   color: var(--danger);
 }
 
@@ -2355,177 +2196,6 @@ textarea.se-fill {
   color: var(--faint);
 }
 
-/* ---------- Grid editor (Arrangement) ---------- */
-.grid-bar {
-  gap: 6px;
-  background: rgba(245, 158, 11, 0.06);
-}
-.grid-bpm {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-.grid-hint {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-}
-.grid-hint b {
-  color: var(--text-2);
-}
-.arr-content.is-warp {
-  cursor: col-resize;
-}
-
-/* ---------- Cue track (Arrangement): spoken cues on the beats ---------- */
-.cue-picker {
-  position: fixed;
-  z-index: 50;
-  width: 430px;
-  max-height: 380px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px;
-  border: 1px solid var(--border-strong);
-  border-radius: 10px;
-  background: var(--surface-2);
-  box-shadow: var(--shadow-lg);
-}
-.cue-picker-head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-}
-.cue-picker-list {
-  min-height: 0;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.cue-group-name {
-  display: block;
-  margin-bottom: 4px;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--faint);
-}
-.cue-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-.cue-chip {
-  display: inline-flex;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--surface);
-  overflow: hidden;
-}
-.cue-chip button {
-  border: none;
-  background: none;
-  color: var(--text-2);
-  font: inherit;
-  font-size: 11px;
-  padding: 3px 8px;
-  cursor: pointer;
-}
-.cue-chip button:hover {
-  color: var(--text);
-  background: var(--surface-3);
-}
-.cue-chip .cue-listen {
-  padding: 3px 6px;
-  border-left: 1px solid var(--border);
-  color: var(--faint);
-}
-.cue-chip.is-on {
-  border-color: rgba(34, 211, 238, 0.5);
-}
-.cue-chip.is-on button:first-child {
-  color: var(--cyan);
-}
-.cue-badge {
-  display: inline-block;
-  padding: 1px 4px;
-  border-radius: 3px;
-  background: #0b0f17;
-  color: #c4b5fd;
-  font-size: 8px;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  vertical-align: 1px;
-}
-.t-header-cue .t-name {
-  color: #c4b5fd;
-}
-.arr-add {
-  position: relative;
-}
-.arr-add-menu {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  z-index: 40;
-  min-width: 280px;
-  padding: 4px;
-  border: 1px solid var(--border-strong);
-  border-radius: 8px;
-  background: var(--surface-2);
-  box-shadow: var(--shadow-lg);
-}
-.arr-add-menu button {
-  width: 100%;
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 8px;
-  border: none;
-  border-radius: 6px;
-  background: none;
-  color: var(--text);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  text-align: left;
-  cursor: pointer;
-}
-.arr-add-menu button > span:last-child {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.arr-add-menu button:hover:not(:disabled) {
-  background: var(--surface-3);
-}
-.arr-add-menu button:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-.icon-flip {
-  transform: scaleX(-1);
-}
-.t-header.is-selected {
-  background: var(--surface-3);
-  box-shadow: inset 2px 0 0 #f8fafc;
-}
-/* Arrangement tools (select, move, cut, mute, erase) */
-.view-switch.arr-tools button {
-  height: 22px;
-  padding: 0 7px;
-}
-.view-switch.arr-tools button:disabled {
-  opacity: 0.35;
-  cursor: default;
-}
-
-/* Count-in bars of the song (Arrangement toolbar) */
 /* ---------- Preferences (VS Code style: sections | settings) ---------- */
 .prefs {
   width: min(1040px, calc(100vw - 48px));
@@ -3035,14 +2705,6 @@ textarea.se-fill {
 }
 
 /* ---------- Unsaved edits (Arrangement, setlist); tempo typed on the LCD ---------- */
-.arr-save {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.arr-unsaved {
-  color: var(--warn);
-}
 .b-unsaved {
   color: var(--warn);
   font-size: 9px;

@@ -66,6 +66,11 @@ fn engine_cancel_jump(engine: State<'_, Engine>) {
 }
 
 #[tauri::command]
+fn engine_spectrum(monitor: State<'_, std::sync::Arc<audio::engine::Monitor>>, track: Option<usize>, bins: usize) -> Vec<f32> {
+    monitor.spectrum(track, bins)
+}
+
+#[tauri::command]
 fn engine_set_track(engine: State<'_, Engine>, id: String, mix: TrackMix) {
     engine.0.lock().set_track(&id, mix);
 }
@@ -165,6 +170,7 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .manage(engine)
         .manage(ndi::Ndi::new(monitor.clone()))
+        .manage(monitor.clone())
         .setup(move |app| {
             media::init(app.handle());
             // ~30 status updates per second to every window (transport, meters, video sync).
@@ -203,6 +209,7 @@ pub fn run() {
             engine_schedule_jump,
             engine_cancel_jump,
             engine_set_track,
+            engine_spectrum,
             engine_set_click,
             engine_set_master,
             engine_preview_click,

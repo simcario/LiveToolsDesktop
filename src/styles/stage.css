@@ -1200,3 +1200,7 @@ input.fader::-moz-range-thumb {
     display: none;
   }
 }
+/* The leds of the beats are under bar.beat; the tablet moves them into the box of the time signature. */
+.st-tempo .st-leds {
+  display: none;
+}
