@@ -110,7 +110,10 @@ function UploadRow({ upload }) {
     <div className="md-row md-upload">
       <Icon name="cloud" size={13} />
       <span className="md-main">
-        <span className="small ellipsis">{upload.name}</span>
+        <span className="small ellipsis">
+          {upload.name}
+          {upload.phase === 'mp3' && <span className="muted"> · conversione in MP3</span>}
+        </span>
         <span className="bar-progress">
           <span style={{ width: `${Math.round(upload.progress * 100)}%` }} />
         </span>

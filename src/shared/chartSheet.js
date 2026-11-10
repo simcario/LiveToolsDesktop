@@ -53,7 +53,7 @@ function lineHtml(l) {
 }
 
 /** Sections to print: their own lines, without repeats and blank lines at the edges. */
-function sectionsOf(lines) {
+export function sectionsOf(lines) {
   const out = [];
   let cur = null;
   lines.forEach((l) => {

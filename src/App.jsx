@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { signOut } from 'firebase/auth';
-import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { getRole, isSeparator } from './shared/setlists.js';
 import { auth } from './lib/firebase';
 import { useAccess, useAuthUser, useSetlist, useSetlists } from './lib/data';
@@ -21,6 +20,7 @@ import Icon from './components/Icon';
 import DetailView from './components/DetailView';
 import LoadingModal from './components/LoadingModal';
 import Login from './components/Login';
+import FreeDeviceGate from './components/FreeDeviceGate';
 import StageView from './components/StageView';
 import PrompterView from './components/PrompterView';
 import ScoreView from './components/ScoreView';
@@ -32,6 +32,7 @@ import HelpPanel from './components/HelpPanel';
 import Transport from './components/Transport';
 import { ZoneResizer, zoneFrame } from './components/Zones';
 import { toggleMixerWindow, useMixer, useMixerBridge } from './lib/useMixer';
+import { togglePrompterOutput, toggleVideoOutput } from './lib/outputs';
 
 const VIEWS = ['stage', 'arrangement', 'prompter', 'score'];
 const ZONE_KEYS = { KeyL: 'left', KeyE: 'lower', KeyR: 'right' };
@@ -42,17 +43,9 @@ const PAGES = [
   ['songs', 'Brani', 'music'],
 ];
 
-async function openOutput(label, title) {
-  const existing = await WebviewWindow.getByLabel(label);
-  if (existing) {
-    await existing.setFocus();
-    return;
-  }
-  // eslint-disable-next-line no-new
-  new WebviewWindow(label, { url: `index.html?view=${label}`, title: `LiveTools · ${title}`, width: 960, height: 540 });
-}
-const openVideoOutput = () => openOutput('video', 'Uscita video');
-const openPrompterOutput = () => openOutput('prompter', 'Gobbo');
+// Video and gobbo windows: the buttons and F4 / F6 open and close them (lib/outputs.js).
+const openVideoOutput = toggleVideoOutput;
+const openPrompterOutput = togglePrompterOutput;
 
 function UpdateChip({ onOpen }) {
   const status = useUpdater((u) => u.status);
@@ -253,6 +246,13 @@ function Workspace({ user }) {
       if (e.key === 'F3') {
         e.preventDefault();
         toggleMixerWindow();
+        return;
+      }
+      // Output windows on / off, without reaching the projector with the mouse.
+      if (e.key === 'F4' || e.key === 'F6') {
+        e.preventDefault();
+        if (e.key === 'F4') toggleVideoOutput();
+        else togglePrompterOutput();
         return;
       }
       if (settingsOpen || prefsOpen || helpOpen) return;
@@ -493,5 +493,9 @@ export default function App() {
   }, [user]);
   if (user === undefined) return <div className="login" />;
   if (!user) return <Login />;
-  return <Workspace user={user} />;
+  return (
+    <FreeDeviceGate user={user}>
+      <Workspace user={user} />
+    </FreeDeviceGate>
+  );
 }

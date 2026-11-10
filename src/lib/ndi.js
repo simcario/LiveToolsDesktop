@@ -48,8 +48,37 @@ export function useNdiOutputs(settings) {
 
 /** The video of the song loaded (the local file), see usePlayer. */
 export function setNdiVideoSource(video) {
-  const source = video?.local ? { path: video.local, offset: video.offset || 0 } : null;
+  // Video item: fades from and to black, as the video window.
+  const source = video?.local ? { path: video.local, offset: video.offset || 0, fadeIn: video.fades?.in || 0, fadeOut: video.fades?.out || 0 } : null;
   invoke('ndi_video_source', { source }).catch(() => {});
+}
+
+// Picture of the setlist on the NDI video output when there is no video: drawn
+// 1920×1080 on black (whole, centred) and sent once; null = black.
+let stillRun = 0;
+export async function setNdiStill(src) {
+  const run = ++stillRun;
+  const send = (bytes) => invoke('ndi_video_still', bytes).catch(() => {});
+  if (!src) return send(new Uint8Array(0));
+  try {
+    const img = new Image();
+    // The local file comes from the asset protocol: without CORS the canvas could not be read.
+    img.crossOrigin = 'anonymous';
+    img.src = src;
+    await img.decode();
+    if (run !== stillRun) return undefined;
+    const canvas = new OffscreenCanvas(1920, 1080);
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, 1920, 1080);
+    const k = Math.min(1920 / img.naturalWidth, 1080 / img.naturalHeight);
+    const w = img.naturalWidth * k;
+    const h = img.naturalHeight * k;
+    ctx.drawImage(img, (1920 - w) / 2, (1080 - h) / 2, w, h);
+    return send(new Uint8Array(ctx.getImageData(0, 0, 1920, 1080).data.buffer));
+  } catch {
+    return run === stillRun ? send(new Uint8Array(0)) : undefined;
+  }
 }
 
 // ---------- Gobbo picture ----------

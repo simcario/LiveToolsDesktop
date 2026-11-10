@@ -4,13 +4,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { emit, listen } from '@tauri-apps/api/event';
 import { convertFileSrc } from '@tauri-apps/api/core';
-import { cueTrackOf, regionsOf, rehearsalGroup, stemsOf, videoOf } from '../shared/media.js';
+import { cueTrackOf, isVideoItem, padLeadOf, regionsOf, rehearsalGroup, stemsOf, videoAudioStem, videoFades, videoOf } from '../shared/media.js';
 import { isSeparator } from '../shared/setlists.js';
 import { eqOf, inputOf } from '../shared/eq.js';
 import { dbToGain, engine, engineStatus, onSongEnded, onStretchProgress, subscribeStatus } from './engine';
 import { driveStage } from './data';
 import { editDraft } from './drafts';
-import { setNdiVideoSource } from './ndi';
+import { setNdiStill, setNdiVideoSource } from './ndi';
 import { liveCueLocal, liveCuePlan, makeLiveCues } from './cueTrack';
 import { ensureFile, missingFiles, requestPeaks } from './mediaCache';
 import { clickVoice, getMix, setMix } from './settings';
@@ -25,7 +25,8 @@ function routeOf(stem, settings) {
 
 // Rehearsal: groups (instrument, click, guide) left out of the mix in this
 // session, on top of the mute of each track.
-const isMuted = (stem, leftOut) => (getMix(stem.id).mute ?? !!stem.muted) || !!leftOut?.[rehearsalGroup(stem)];
+// The cue track has only the mute of the song (cueTrack.muted, the whole band).
+const isMuted = (stem, leftOut) => (stem.live ? !!stem.muted : (getMix(stem.id).mute ?? !!stem.muted)) || !!leftOut?.[rehearsalGroup(stem)];
 
 // Volume of a rehearsal group (Palco mixer), on this computer: added to that of each of its tracks.
 export const groupMixKey = (group) => `group:${group}`;
@@ -52,16 +53,33 @@ function trackMix(stem, settings, solo, leftOut) {
 /** Count-in bars: one value for every song (Impostazioni → Trasporto → Precount). */
 export const countInOf = (settings) => Number(settings.defaultCountIn) || 0;
 
-// The track the cues of a song are heard from: the live one ({ stem, plan }),
-// the up-to-date rendered "Cues" stem ({ stem }) or none.
-function wantedCueStem(item) {
-  const plan = liveCuePlan(item);
-  if (plan) return { stem: plan.stem, plan };
-  const rendered = stemsOf(item).find((s) => s.generated === 'cues');
-  return rendered ? { stem: rendered } : null;
-}
+// The tracks the cues of a song are heard from: the live one made from the
+// cue sheet, and the "Cues" stem of the mixdown (an audio track as the others).
+const renderedCuesId = (item) => stemsOf(item).find((s) => s.generated === 'cues')?.id ?? null;
+const cueKeyOf = (item) => `${liveCuePlan(item)?.stem.path ?? ''}|${renderedCuesId(item) ?? ''}`;
 
 const num = (v) => (Number(v) > 0 ? Number(v) : null);
+
+// Length of a video file (seconds) from its metadata, null when it can't be read.
+function videoLength(src) {
+  return new Promise((resolve) => {
+    const v = document.createElement('video');
+    let done = false;
+    const finish = (d) => {
+      if (done) return;
+      done = true;
+      v.removeAttribute('src');
+      v.load();
+      resolve(d);
+    };
+    v.preload = 'metadata';
+    v.muted = true;
+    v.onloadedmetadata = () => finish(Number.isFinite(v.duration) ? v.duration : null);
+    v.onerror = () => finish(null);
+    setTimeout(() => finish(null), 10000);
+    v.src = src;
+  });
+}
 
 const sectionSpecs = (item) =>
   (item.sections || []).map((s) => ({
@@ -128,9 +146,9 @@ export function usePlayer({ user, setlist, items, settings, canDrive, canEdit, n
   // queue as the next song); null when `alive()` turns false on the way.
   const prepare = useCallback(async (item, { send, alive, ui }) => {
     const { settings: st, leftOut: out } = ctx.current;
-    // Cues not rendered to a file (or changed since): played from a local track.
+    // The cue sheet is played from a local track (muted with the cue track).
     const cuePlan = liveCuePlan(item);
-    const stems = stemsOf(item).filter((s) => s.id !== cuePlan?.skip);
+    const stems = stemsOf(item);
     const video = videoOf(item);
     const toFetch = missingFiles([...stems, ...(video ? [video] : [])].map((m) => ({ path: m.path, size: m.size })));
     ui.setDownloading(toFetch.length ? toFetch : null);
@@ -152,6 +170,18 @@ export function usePlayer({ user, setlist, items, settings, canDrive, canEdit, n
     const sync = await analyzeSource(item, available, getSyncChoice(item.id), ui.setBusy);
     if (!alive()) return null;
     spec.sync = syncSpec(item, sync.analysis, sync.choice, refRegions(item, sync));
+    // Video item: its sound is a track read from the video file, with the fades
+    // of the item; the song lasts as the video, with or without sound.
+    const fades = isVideoItem(item) ? videoFades(item) : null;
+    if (fades && videoLocal) {
+      const at = Number(video.offset) || 0;
+      const stem = videoAudioStem(item);
+      available.push({ stem, local: videoLocal });
+      spec.tracks = [...spec.tracks, { ...specOf({ stem, local: videoLocal }), regions: [{ at, from: 0, len: null, fadeIn: fades.in, fadeOut: fades.out }] }];
+      const length = await videoLength(convertFileSrc(videoLocal));
+      if (!alive()) return null;
+      if (length) spec.length = at + length;
+    }
     const withCues = () => {
       if (!cueLocal) return;
       const cue = { stem: cuePlan.stem, local: cueLocal };
@@ -199,9 +229,12 @@ export function usePlayer({ user, setlist, items, settings, canDrive, canEdit, n
         tempo: result.tempo,
         rate: change.rate,
         change: `${change.semitones}:${change.rate}`,
-        tracks: available.map((a, i) => ({ ...a, info: result.tracks[i]?.info, error: result.tracks[i]?.error })),
-        video: videoLocal ? { ...video, local: videoLocal, src: convertFileSrc(videoLocal) } : null,
+        // A video without sound has no track to show.
+        tracks: available.map((a, i) => ({ ...a, info: result.tracks[i]?.info, error: result.tracks[i]?.error })).filter((a) => !(a.stem.instrument === 'video' && a.error)),
+        video: videoLocal ? { ...video, local: videoLocal, src: convertFileSrc(videoLocal), fades } : null,
         sync,
+        // Cue tracks asked for (also when a file could not be had): see the cue effect.
+        cueKey: cueKeyOf(item),
       },
     };
   }, [notify]);
@@ -339,51 +372,53 @@ export function usePlayer({ user, setlist, items, settings, canDrive, canEdit, n
     });
   }, [sectionsJson]);
 
-  // Cues edited in the Arrangement: the cue track is remade (or the rendered
-  // "Cues" file taken) and swapped in the engine, heard at once without
-  // reloading the song. Adding the first cue or removing them all reloads.
+  // Cues edited in the Arrangement: the cue track is remade and swapped in the
+  // engine, heard at once without reloading the song. Adding the first cue,
+  // removing them all, a new mixdown or its file deleted reload the song.
   const cueSong = items.find((i) => i.id === loaded?.itemId);
-  const cueWanted = cueSong ? wantedCueStem(cueSong) : null;
+  const cueKey = cueSong ? cueKeyOf(cueSong) : null;
   const cueRun = useRef(0);
   useEffect(() => {
     const l = ctx.current.loaded;
     const item = l && ctx.current.items.find((i) => i.id === l.itemId);
-    if (!item) return;
-    const idx = l.tracks.findIndex((tr) => tr.stem.live || tr.stem.generated === 'cues');
+    if (!item || l.cueKey === cueKeyOf(item)) return;
+    const idx = l.tracks.findIndex((tr) => tr.stem.live);
     const cur = l.tracks[idx];
-    const want = wantedCueStem(item);
-    if ((cur?.stem.path ?? null) === (want?.stem.path ?? null)) return;
+    const plan = liveCuePlan(item);
+    const want = plan && { stem: plan.stem, plan };
+    const fileChanged = l.cueKey.split('|')[1] !== (renderedCuesId(item) ?? '');
     const run = ++cueRun.current;
     (async () => {
       try {
-        if (!cur || !want) {
+        if (fileChanged || !cur || !want) {
           const at = engineStatus().position;
           await load(item);
           if (run === cueRun.current) engine.locate(at);
           return;
         }
-        const local = want.plan
-          ? (await liveCueLocal(want.plan).catch(() => null)) || (await makeLiveCues(want.plan, l.tempo, l.duration))
-          : await ensureFile({ path: want.stem.path, size: want.stem.size });
+        const local = (await liveCueLocal(want.plan).catch(() => null)) || (await makeLiveCues(want.plan, l.tempo, l.duration));
         if (run !== cueRun.current || ctx.current.loaded?.itemId !== item.id || !local) return;
         const res = await engine.replaceTrack(cur.stem.id, want.stem.id, local);
         const { settings: st, leftOut: out } = ctx.current;
         engine.setTrack(want.stem.id, trackMix(want.stem, st, false, out));
         setLoaded((c) =>
-          c?.itemId === item.id ? { ...c, tracks: c.tracks.map((tr, i) => (i === idx ? { stem: want.stem, local, info: res.info, error: null } : tr)) } : c,
+          c?.itemId === item.id
+            ? { ...c, cueKey: cueKeyOf(item), tracks: c.tracks.map((tr, i) => (i === idx ? { stem: want.stem, local, info: res.info, error: null } : tr)) }
+            : c,
         );
         requestPeaks([local]);
       } catch (e) {
         notify(`Cue non aggiornate: ${e?.message || e}`, true);
       }
     })();
-  }, [cueWanted?.stem.path, load, notify]);
+  }, [cueKey, load, notify]);
 
   // Mix of the song changed (Mixer, undo, "Scarta", "Ripristina volumi", another
-  // computer): volume, pan, group and channel section (gain, EQ) of the loaded tracks follow at once.
+  // computer): volume, pan, group, mute of the song and channel section (gain, EQ) of the loaded tracks follow at once.
   const mixSong = items.find((i) => i.id === loaded?.itemId);
+  const mixSheet = cueTrackOf(mixSong);
   const mixJson = mixSong
-    ? JSON.stringify([stemsOf(mixSong).map((s) => [s.id, s.gain, s.pan, s.role, s.instrument, s.input, s.eq]), cueTrackOf(mixSong).gain, cueTrackOf(mixSong).pan, cueTrackOf(mixSong).input, cueTrackOf(mixSong).eq])
+    ? JSON.stringify([stemsOf(mixSong).map((s) => [s.id, s.gain, s.pan, s.role, s.instrument, s.input, s.eq, !!s.muted]), mixSheet.gain, mixSheet.pan, mixSheet.input, mixSheet.eq, mixSheet.muted])
     : null;
   useEffect(() => {
     const l = ctx.current.loaded;
@@ -393,10 +428,10 @@ export function usePlayer({ user, setlist, items, settings, canDrive, canEdit, n
     const sheet = cueTrackOf(item);
     const next = new Map();
     l.tracks.forEach(({ stem }) => {
-      const src = stem.live ? { gain: sheet.gain, pan: sheet.pan, input: sheet.input, eq: sheet.eq, role: stem.role, instrument: stem.instrument } : byId.get(stem.id);
+      const src = stem.live ? { gain: sheet.gain, pan: sheet.pan, input: sheet.input, eq: sheet.eq, role: stem.role, instrument: stem.instrument, muted: sheet.muted } : byId.get(stem.id);
       if (!src) return;
-      const now = { ...stem, gain: Number(src.gain) || 0, pan: Number(src.pan) || 0, input: src.input, eq: src.eq, role: src.role, instrument: src.instrument };
-      if (['gain', 'pan', 'role', 'instrument'].every((k) => now[k] === stem[k]) && now.input === stem.input && JSON.stringify(now.eq) === JSON.stringify(stem.eq)) return;
+      const now = { ...stem, gain: Number(src.gain) || 0, pan: Number(src.pan) || 0, input: src.input, eq: src.eq, role: src.role, instrument: src.instrument, muted: !!src.muted };
+      if (['gain', 'pan', 'role', 'instrument', 'muted'].every((k) => now[k] === stem[k]) && now.input === stem.input && JSON.stringify(now.eq) === JSON.stringify(stem.eq)) return;
       next.set(stem.id, now);
       const { settings: st, leftOut: out, solos: so } = ctx.current;
       engine.setTrack(stem.id, trackMix(now, st, !!so[stem.id], out));
@@ -613,13 +648,15 @@ export function usePlayer({ user, setlist, items, settings, canDrive, canEdit, n
     const timer = setTimeout(() => {
       const l = ctx.current.loaded;
       const item = l && ctx.current.items.find((i) => i.id === l.itemId);
-      if (item) publishBeatMap(setlist.id, item, beatMapOf(l.tempo, l.duration)).catch(() => {});
+      if (item && !isVideoItem(item)) publishBeatMap(setlist.id, item, beatMapOf(l.tempo, l.duration)).catch(() => {});
     }, 4000);
     return () => clearTimeout(timer);
   }, [tempoKey, canEdit, setlist?.id, loaded?.tempo]);
 
   // Pad Player: the key of the song in the player, or the one chosen live.
-  const padKey = settings.pad.mode === 'live' ? keyPitch(settings.pad.key) : keyPitch(playedKey(loadedSong));
+  // A video item has no key: the pad gives the one of the song after it.
+  const padSong = isVideoItem(loadedSong) ? nextSong : loadedSong;
+  const padKey = settings.pad.mode === 'live' ? keyPitch(settings.pad.key) : keyPitch(playedKey(padSong));
   useEffect(() => {
     const r = settings.outputs.pad || settings.outputs.main;
     engine
@@ -635,6 +672,28 @@ export function usePlayer({ user, setlist, items, settings, canDrive, canEdit, n
       was = s.playing;
     });
   }, []);
+
+  // Video item with padLead: the pad comes in that many seconds before the end of
+  // the video (once per load), in the key of the next song, and goes on into it.
+  const padFired = useRef(null);
+  useEffect(
+    () =>
+      subscribeStatus((s) => {
+        const { loaded: l, items: its } = ctx.current;
+        const item = l && its.find((i) => i.id === l.itemId);
+        const lead = padLeadOf(item);
+        if (lead == null || !s.playing || s.songId !== item.id || padFired.current === item.id) return;
+        if (s.position >= l.duration - lead) {
+          padFired.current = item.id;
+          setPadOn(true);
+        }
+      }),
+    [],
+  );
+  useEffect(() => {
+    // Loaded again (or another song): it can fire again.
+    padFired.current = null;
+  }, [loaded?.itemId]);
 
   // Tracks Fade: out while playing, back in if already out (or going out).
   const toggleFade = useCallback(() => {
@@ -652,17 +711,61 @@ export function usePlayer({ user, setlist, items, settings, canDrive, canEdit, n
     if (item) load(item);
   }, [liveItemId, settings.followStage, load]);
 
+  // Where the song in the engine is, for the video of a video item that goes on
+  // after the next song took over (overlap, crossfade).
+  const lastPos = useRef(null);
+  useEffect(
+    () =>
+      subscribeStatus((s) => {
+        // Per song: the status that brings the next one must not hide where the one before was.
+        if (!s.playing || !s.songId) return;
+        const cur = lastPos.current || {};
+        // A new song: only the one before is kept.
+        if (cur.last !== s.songId) lastPos.current = cur.last ? { [cur.last]: cur[cur.last] } : {};
+        lastPos.current.last = s.songId;
+        lastPos.current[s.songId] = { position: s.position, at: Date.now() };
+      }),
+    [],
+  );
+
+  // Picture of the setlist on the video output when there is no video (ScreenImage.jsx).
+  const screen = setlist?.screenImage?.path ? setlist.screenImage : null;
+  const [still, setStill] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    if (!screen) setStill(null);
+    else
+      ensureFile({ path: screen.path, size: screen.size })
+        .then((local) => alive && setStill(local ? convertFileSrc(local) : null))
+        .catch(() => alive && setStill(null));
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [screen?.path]);
+  useEffect(() => {
+    setNdiStill(still);
+  }, [still]);
+
   // The video output window asks for the current source when it opens.
   const video = loaded?.video;
+  const shownVideo = useRef(null);
   useEffect(() => {
-    const payload = video ? { src: video.src, offset: video.offset || 0, name: video.name } : null;
-    emit('video-source', payload);
+    const payload = video ? { src: video.src, offset: video.offset || 0, name: video.name, fades: video.fades || null, still } : { src: null, still };
+    const prev = shownVideo.current;
+    shownVideo.current = video ? { ...video, itemId: ctx.current.loaded?.itemId } : null;
+    // A video item still playing when the next song took over: its picture fades out by itself.
+    const p = prev && lastPos.current?.[prev.itemId];
+    if (prev?.fades && p && engineStatus().playing && prev.src !== video?.src) {
+      const at = p.position + (Date.now() - p.at) / 1000;
+      emit('video-source', { ...payload, tail: { src: prev.src, offset: prev.offset || 0, fades: prev.fades, at, since: Date.now() } });
+    } else emit('video-source', payload);
     setNdiVideoSource(video);
     const un = listen('video-hello', () => emit('video-source', payload));
     return () => {
       un.then((f) => f());
     };
-  }, [video]);
+  }, [video, still]);
 
   const loadedItem = items.find((i) => i.id === loaded?.itemId) || null;
 

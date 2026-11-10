@@ -7,6 +7,7 @@ import { laneColor, ROLE_COLORS } from '../lib/lanes';
 import Icon from './Icon';
 import SyncControl from './SyncControl';
 import SyncedVideo from './SyncedVideo';
+import { useOutputOpen } from '../lib/outputs';
 import { ZoneLayoutToggle, ZoneTabs } from './Zones';
 import MixerPanel from './MixerPanel';
 
@@ -32,6 +33,7 @@ export function CacheState({ c }) {
 }
 
 export default function DetailView({ item, number, lanes, player, mixer, onVideoOutput }) {
+  const videoOpen = useOutputOpen('video');
   const cache = useMediaCache();
   const loaded = player.loaded;
   const [settings, update] = useSettings();
@@ -186,13 +188,13 @@ export default function DetailView({ item, number, lanes, player, mixer, onVideo
         <div className="panel-head">
           <Icon name="video" size={13} /> Video
           <span className="grow" />
-          <button className="btn btn-ghost btn-sm" onClick={onVideoOutput} title="Apri l’uscita video su un secondo schermo">
+          <button className={`btn btn-ghost btn-sm ${videoOpen ? 'is-on' : ''}`} onClick={onVideoOutput} aria-pressed={videoOpen} title={videoOpen ? 'Chiudi l’uscita video (F4)' : 'Apri l’uscita video (F4)'}>
             <Icon name="monitor" size={14} /> Uscita
           </button>
         </div>
         <div className="video-box">
           {loaded?.video ? (
-            <SyncedVideo src={loaded.video.src} offset={loaded.video.offset || 0} />
+            <SyncedVideo src={loaded.video.src} offset={loaded.video.offset || 0} fades={loaded.video.fades} />
           ) : (
             <span className="video-empty">{video ? 'Il video parte quando il brano è nel player.' : 'Nessun video per il brano nel player.'}</span>
           )}

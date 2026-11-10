@@ -7,7 +7,8 @@ import { useSettings } from '../lib/settings';
 import Icon from './Icon';
 
 /** A category of commands. locked: always shown. grow: takes the free room of its line.
- * pin: stays in the bar when the bar has `overflow` (the other groups go under ⋯). */
+ * pin: stays in the bar when the bar has `overflow` (the other groups go under ⋯).
+ * corner: fixed in the top right corner, whatever the order and the lines of the others. */
 export function ToolGroup({ label, grow = false, children }) {
   return (
     <div className={`tb-group ${grow ? 'is-grow' : ''}`} role="group" aria-label={label}>
@@ -147,7 +148,10 @@ export default function Toolbar({ id, title, className = '', as: Tag = 'div', ov
   const groups = arrange(Children.toArray(children).filter(Boolean), conf.order);
   const hidden = conf.hidden || [];
   const breaks = conf.breaks || [];
-  const shown = groups.filter((g) => g.props.locked || !hidden.includes(g.props.id));
+  // corner: always in the top right corner of the bar, out of the order and of the new lines.
+  const corner = overflow ? [] : groups.filter((g) => g.props.corner);
+  const movable = groups.filter((g) => !corner.includes(g));
+  const shown = movable.filter((g) => g.props.locked || !hidden.includes(g.props.id));
   const inBar = overflow ? shown.filter((g) => g.props.pin) : shown;
   const inMore = overflow ? shown.filter((g) => !g.props.pin) : [];
   const [more, setMore] = useState(false);
@@ -159,15 +163,8 @@ export default function Toolbar({ id, title, className = '', as: Tag = 'div', ov
     document.addEventListener('pointerdown', down);
     return () => document.removeEventListener('pointerdown', down);
   }, [more]);
-  return (
-    <Tag
-      className={`tb ${className} ${settings.toolbarLabels ? 'tb-labeled' : ''}`}
-      onContextMenu={(e) => {
-        if (e.target.closest('input, select, textarea')) return;
-        e.preventDefault();
-        setOpen(true);
-      }}
-    >
+  const flow = (
+    <>
       {inBar.flatMap((g, i) => [i > 0 && !overflow && breaks.includes(g.props.id) ? <span key={`br-${g.props.id}`} className="tb-break" /> : null, g])}
       {overflow && (
         <span className="tb-more-wrap" ref={moreRef}>
@@ -195,10 +192,29 @@ export default function Toolbar({ id, title, className = '', as: Tag = 'div', ov
           <Icon name="sliders" size={14} />
         </button>
       )}
+    </>
+  );
+  return (
+    <Tag
+      className={`tb ${className} ${settings.toolbarLabels ? 'tb-labeled' : ''} ${corner.length ? 'tb-has-corner' : ''}`}
+      onContextMenu={(e) => {
+        if (e.target.closest('input, select, textarea')) return;
+        e.preventDefault();
+        setOpen(true);
+      }}
+    >
+      {corner.length ? (
+        <>
+          <div className="tb-flow">{flow}</div>
+          <div className="tb-corner">{corner}</div>
+        </>
+      ) : (
+        flow
+      )}
       {open && (
         <ToolbarPanel
           title={title}
-          groups={groups}
+          groups={movable}
           conf={conf}
           onChange={save}
           onReset={() => save({ order: undefined, hidden: undefined, breaks: undefined })}

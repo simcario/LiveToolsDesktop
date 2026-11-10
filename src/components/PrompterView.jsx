@@ -18,6 +18,7 @@ import {
   usePrompterData,
 } from '../lib/prompter';
 import Icon from './Icon';
+import { useOutputOpen } from '../lib/outputs';
 import Toolbar, { ToolGroup } from './Toolbar';
 import SlideText from './SlideText';
 
@@ -260,6 +261,7 @@ function CueTimeline({ cues, slides, tempo, duration, editable, onLocate, onMove
 
 export default function PrompterView({ item, setlistId, player, canEdit, settings, update, onOutput, notify }) {
   const [data, setData] = usePrompterData(setlistId, item, canEdit, notify);
+  const prompterOpen = useOutputOpen('prompter');
   const [split, setSplit] = useState(4);
   const [armed, setArmed] = useState(false);
   const [takeCues, setTakeCues] = useState(null); // cues of the take being recorded
@@ -528,7 +530,7 @@ export default function PrompterView({ item, setlistId, player, canEdit, setting
           >
             Successiva
           </button>
-          <button className="btn btn-sm" onClick={onOutput} title="Apri il gobbo su un secondo schermo">
+          <button className={`btn btn-sm ${prompterOpen ? 'is-on' : ''}`} onClick={onOutput} aria-pressed={prompterOpen} title={prompterOpen ? 'Chiudi il gobbo (F6)' : 'Apri il gobbo su un secondo schermo (F6)'}>
             <Icon name="monitor" size={14} /> Uscita gobbo
           </button>
         </ToolGroup>

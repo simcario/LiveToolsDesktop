@@ -747,6 +747,7 @@ input.fader::-moz-range-thumb {
   inset: 0;
   overflow-x: auto;
   overflow-y: hidden;
+  touch-action: pan-x; /* two fingers zoom the waveform, not the page */
 }
 .st-ov-track {
   position: relative;

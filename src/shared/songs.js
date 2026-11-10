@@ -53,20 +53,31 @@ export const SONG_ROLE_HINTS = {
 /**
  * Creates a library song. The id is known at once (the item that links it is
  * written in the same moment, also offline); `done` settles with the server.
+ * `setlist`: the setlist the song is created in. When it belongs to someone else
+ * (the user is one of its editors) the song belongs to the setlist owner and
+ * counts in their plan; whoever created it stays among its editors.
  */
-export function createSong(user, data) {
+export function createSong(user, data, setlist = null) {
   const ref = doc(collection(db, 'songs'));
+  const email = (user.email || '').toLowerCase();
+  const forOwner = !!setlist?.ownerUid && setlist.ownerUid !== user.uid;
   const done = setDoc(ref, {
     ...songFields(data),
     title: (data.title || '').trim() || 'Senza titolo',
     stems: [],
     video: null,
-    ownerUid: user.uid,
-    ownerEmail: (user.email || '').toLowerCase(),
-    ownerName: user.displayName || '',
-    editors: [],
+    ...(forOwner
+      ? {
+          ownerUid: setlist.ownerUid,
+          ownerEmail: (setlist.ownerEmail || '').toLowerCase(),
+          ownerName: setlist.ownerName || '',
+          editors: [email],
+          members: [email],
+          setlistId: setlist.id,
+        }
+      : { ownerUid: user.uid, ownerEmail: email, ownerName: user.displayName || '', editors: [], members: [] }),
     viewers: [],
-    members: [],
+    createdBy: user.uid,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });

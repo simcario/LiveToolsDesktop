@@ -2,7 +2,8 @@
 
 LiveTools Desktop suona le scalette di LiveTools dal vivo: **sequenze multitraccia (stem), click, video e
 gobbo**, sincronizzati tra loro e con il resto della band. Usa lo stesso account Google e gli stessi dati
-dell'app web: una scaletta creata sul web si apre qui, e viceversa.
+dell'app web: una scaletta creata sul web si apre qui, e viceversa. Guide, novità e download sono sul sito
+[livetoolsdaw.com](https://livetoolsdaw.com), che si apre anche dal link in fondo a Impostazioni e a questo manuale.
 
 > Questo manuale è per chi usa l'app (musicisti, direttore musicale, tecnico). Per compilare l'app e
 > pubblicare le versioni vedi [README](../README.md) e [RELEASE.md](RELEASE.md).
@@ -16,11 +17,51 @@ dell'app web: una scaletta creata sul web si apre qui, e viceversa.
 2. Avvia l'installer (installa per tutto il computer, servono i permessi di amministratore). Se mancano,
    installa da solo **WebView2**, **Visual C++ Redistributable** e **NDI 6 Runtime** (per le uscite NDI), se mancano.
 3. Apri **LiveTools** e accedi con Google: il login si apre nel browser, poi torna all'app.
-4. Se non hai ancora un ruolo, l'app mostra la pagina di attesa: chiedi l'abilitazione all'amministratore
-   (dall'app web, *Amministrazione*).
+4. Puoi usare l'app subito, con il piano Free. Le scalette condivise con te (anche tramite link di invito)
+   si aprono con tutto il loro materiale, anche se appartengono a un account a pagamento.
 
 La schermata di avvio elenca in basso il software di terze parti usato dall'app (framework, plugin Tauri,
 librerie audio e video, font).
+
+### Account e piano
+
+**Impostazioni › Account** mostra il piano (Free, Plus o Pro), i brani della tua libreria rispetto al limite
+del piano e, nel Pro, lo spazio occupato nel cloud LiveTools. La barra diventa gialla all'80% e rossa al
+limite.
+
+Per abbonarti premi **Plus** o **Pro** nella stessa sezione (Plus 4,99 €/mese o 39,99 €/anno, prova di 7
+giorni; Pro 9,99 €/mese o 89,99 €/anno, prova di 14 giorni): si apre nel browser la pagina *Account e
+abbonamento* di LiveTools web, dove paghi con Stripe. Entra con lo stesso account Google dell'app. Dopo il
+pagamento il piano compare qui da solo, entro pochi secondi. Con un abbonamento attivo il pulsante diventa
+**Gestisci abbonamento e fatture**. Se hai comprato dall'app Android, lo gestisci dal Play Store.
+
+Con il **Plus** tracce e video dei tuoi brani vanno sul tuo **Google Drive**. In *Impostazioni › Account* premi
+**Collega Google Drive**: si apre la pagina Account del web, dove scegli l'account Google (anche diverso da quello
+dell'app). Da lì in poi i caricamenti e il Mixdown delle cue vanno su quel Drive, cartella *LiveTools*, e l'app li
+scarica da lì come gli altri file. Un brano con i file sul tuo Drive si sente solo dai tuoi dispositivi.
+
+**Piano Free: un solo dispositivo.** Con il Free l'account funziona su un solo dispositivo, quello con cui hai
+cominciato (il computer, il browser o il tablet). Tracce e video restano solo lì (nella cartella dei media) e non vanno online. Da un
+altro dispositivo l'app mostra *Account in uso su un altro dispositivo* e non si usa: se hai cominciato dal
+computer, con lo stesso account non entri dal browser né dal tablet. Con Plus o Pro lo usi ovunque. Se cambi
+computer, l'amministratore può spostare l'account sul nuovo (i file salvati solo sul vecchio restano lì).
+
+**File audio in MP3.** Nel cloud LiveTools i file WAV, AIFF e FLAC (anche il Mixdown delle cue) vanno sempre in
+**MP3 a 320 kbps**: li converte il computer prima di caricarli (la riga del caricamento dice *conversione in
+MP3*; un brano di 5 minuti richiede circa mezzo minuto), il file originale resta sul disco e il brano occupa
+circa un quinto. Le tracce restano allineate al campione con il click e tra loro. MP3, M4A e Ogg si caricano
+come sono. Con il **Plus**, in *Impostazioni › Account* sotto Google Drive, scegli se convertirli anche per il
+Drive (*Converti in MP3*, la scelta iniziale) o caricarli così come sono.
+
+Quando l'amministratore attiva i limiti dei piani, l'app te lo dice prima di provarci:
+
+- con il **Free**, oltre i 10 brani nella libreria non puoi crearne di nuovi (né dalla pagina **Brani** né
+  aggiungendo un brano nuovo a una scaletta); puoi sempre aggiungere alle scalette i brani che hai già. Un
+  brano nuovo creato nella scaletta di un altro (di cui sei editor) va nella libreria del proprietario della
+  scaletta e conta nel suo piano;
+- **tracce audio, video e Mixdown delle cue** vanno nel cloud solo se il proprietario del brano ha il **Pro**,
+  entro i suoi 25 GB. Su un brano condiviso conta il piano del proprietario, non il tuo;
+- **spartiti PDF e immagini** fino a 20 MB si caricano con tutti i piani.
 
 ### Aggiornamenti
 
@@ -51,7 +92,8 @@ Dalla prossima versione:
   (o nell'intestazione, se sono affiancati) passa dalle tab ai pannelli affiancati e viceversa.
 - **Barre di comandi.** La barra principale e quelle di Palco, Arrangement, Gobbo, Spartito, Scaletta e Brani sono divise in gruppi per categoria
   (Trasporto, Tempo, Griglia, Vista…). Quando lo spazio finisce un gruppo va a capo intero, su una nuova riga: nessun
-  comando resta fuori schermo.
+  comando resta fuori schermo. Manuale, Impostazioni e il tuo avatar restano sempre nell'angolo in alto a destra della barra
+  principale, comunque vadano a capo gli altri gruppi.
 - **Personalizzare una barra.** Con il pulsante a cursori in fondo alla barra, o con un clic destro su di essa, puoi nascondere
   un gruppo, cambiarne l'ordine trascinando la maniglia e farlo partire da una *Nuova riga*. *Ripristina* torna alla
   disposizione iniziale. Puoi anche mostrare i nomi delle categorie sopra i gruppi. I gruppi indispensabili, come il Trasporto,
@@ -110,6 +152,11 @@ cartella media.
 Per il video: un file per brano, con **offset** rispetto all'audio. Formati audio letti: wav, aiff, flac,
 mp3, ogg, m4a/aac, alac. Il video è muto (la colonna sonora sta negli stem).
 
+**Elementi solo video** (dalla prossima versione). Un elemento della scaletta può essere solo un video, per esempio il
+video d'ingresso: nella scheda del brano scegli il tipo di esecuzione **Video** e carica il video, senza stem. Qui si
+sente il **suono del video** (gruppo *Video* nel mixer del Palco) e, di serie, a fine video parte subito il brano dopo
+(*AutoLink*, vedi *Transizioni*). Per i dettagli vedi *Video in scaletta* nel capitolo 10.
+
 I caricamenti continuano anche se cambi brano o pagina, e ogni file caricato è già nella cache locale.
 
 ### 3.4 Scaricare per l'offline
@@ -151,6 +198,8 @@ ricarica.
 | **Ctrl+1 / 2 / 3** | pagina Live / Scaletta / Brani |
 | **Ctrl+Alt+L / E / R** | apre o chiude Browser / Dettaglio / ispettore |
 | **F3** | mixer del brano in una finestra separata, e di nuovo per chiuderla (dalla prossima versione) |
+| **F4** | uscita video accesa / spenta (dalla prossima versione) |
+| **F6** | uscita gobbo accesa / spenta (dalla prossima versione) |
 | **Ctrl+,** | Impostazioni |
 | **F1** | Questo manuale (anche dal pulsante **?** in alto) |
 
@@ -211,7 +260,8 @@ poter modificare la scaletta) e scegli; la scelta vale per tutta la band:
   la prima sezione del successivo e 5 secondi. Questo prosegue fino alla sua fine.
 - *Dissolvenza*: negli ultimi 5 secondi questo sfuma mentre il successivo entra.
 - *Come l'auto-avanzamento*: la scelta predefinita. Segue l'opzione *Auto-avanzamento* di questo computer
-  (prepara il prossimo se è accesa, resta nel brano se è spenta).
+  (prepara il prossimo se è accesa, resta nel brano se è spenta). Per un elemento *Video* la scelta predefinita è
+  invece *AutoLink* (dalla prossima versione).
 
 Con *AutoLink*, *Sovrapponi* e *Dissolvenza* il brano successivo viene preparato appena carichi quello prima. Quando il
 cerchio diventa pieno, l'app è pronta a fare la transizione. Il successivo parte dall'inizio, senza count-in. Se non
@@ -229,7 +279,7 @@ sente ancora nella tonalità e nel tempo originali.
 **Zoom e griglia.** I comandi sono nella barra sopra la forma d'onda, anche mentre modifichi le sezioni, e le scelte
 restano salvate su questo computer.
 
-- **−** e **+** (o **Ctrl+rotella** sulla forma d'onda) cambiano lo zoom fino a ×32; il pulsante accanto riporta tutto il
+- **−** e **+** (o **Ctrl+rotella** sulla forma d'onda, o due dita su uno schermo touch) cambiano lo zoom fino a ×32; il pulsante accanto riporta tutto il
   brano nella finestra. Con lo zoom la forma d'onda scorre con la rotella o con la barra sotto. A brano in corso segue la
   testina, e dopo uno scorrimento a mano riprende a seguirla dopo 3 secondi.
 - Il pulsante della griglia mostra o nasconde le linee con i numeri di battuta. Il menu accanto sceglie la risoluzione:
@@ -446,11 +496,17 @@ Utile quando un brano non ha una traccia guida.
    trascinando la sua barra colorata in alto (quella con "CUE") con qualsiasi strumento, o con i pulsanti **‹ ›**
    nell'intestazione: un quadratino alla volta, con **Maiusc** una battuta.
 
-Le cue si sentono subito come traccia *live*, generata su questo computer. Con **Renderizza in file audio**
-diventano uno stem "Cues" caricato online, che si ascolta anche dal Rehearsal del web. Se modifichi le cue
-dopo il render, l'app usa di nuovo la traccia live finché non renderizzi ancora. Dalla prossima versione il
-Rehearsal e il Player palco del web generano da soli le cue non renderizzate, sulla griglia pubblicata dal desktop:
-si sentono nel gruppo *Guide* anche senza file audio.
+Le cue si sentono subito come traccia *live*, generata su questo computer. Dalla prossima versione il pulsante
+**Mixdown** nell'intestazione della traccia cue le trasforma in una vera traccia audio "Cues", caricata online:
+compare nell'Arrangement come le altre tracce (con forma d'onda, M e S) e si sente anche dal web. Appena la
+traccia audio è pronta, la traccia cue viene **mutata per tutta la band** (pulsante **M** acceso, corsia sbiadita)
+e la traccia audio è attiva; premi **Salva** per tenere il muto. Il muto della traccia cue vale per tutti i
+computer e per il web, non solo per il tuo: lo togli o lo rimetti con **M** nell'intestazione o nel Mixer.
+
+Se modifichi le cue dopo il mixdown, con la traccia cue muta senti ancora la traccia audio di prima: la corsia lo
+segnala ("da aggiornare") e un nuovo **Mixdown** la rifà. Il pulsante con la nuvola elimina la traccia audio e
+riattiva la traccia cue. Il Rehearsal e il Player palco del web generano da soli la traccia cue quando non è
+muta, sulla griglia pubblicata dal desktop: si sente nel gruppo *Guide* anche senza traccia audio.
 
 Le cue non possono stare nel count-in (lì c'è solo il click). Le cue si creano solo dal desktop. Dalla prossima
 versione la prima cue parte sempre dalla battuta 1.1: se la battuta 1 è finita un poco prima dell'inizio del brano
@@ -557,6 +613,31 @@ tutti i brani della scaletta, uno per pagina, nella tonalità in cui si suonano.
 
 Il video del brano segue l'orologio audio. Si vede nell'anteprima del dettaglio e in una **seconda
 finestra** per proiettore o secondo schermo (pulsante nell'Arrangement; doppio clic = schermo intero).
+Dalla prossima versione la finestra si apre già a schermo intero, sul secondo schermo se è collegato (doppio clic o
+Esc la riportano in finestra), e chiudendo LiveTools si chiudono anche le finestre di video, gobbo e mixer.
+I pulsanti *Video* / *Uscita video* e *Uscita gobbo* sono interruttori: il primo tocco accende l'uscita, il secondo la
+spegne (il pulsante resta evidenziato finché è accesa); lo stesso fanno **F4** (video) e **F6** (gobbo). Così si
+nasconde il proiettore dal computer, senza portare il mouse sul secondo schermo.
+
+### Video in scaletta (dalla prossima versione)
+
+Un elemento di tipo **Video** (vedi 3.3) è un video da solo, con il suo suono, che si lega al brano dopo senza stacchi.
+Nel Palco la sua tessera ha l'icona del video; il pulsante con i cursori apre, al posto di tonalità e tempo:
+
+- **Entrata** e **Uscita** — dissolvenza dal nero e verso il nero, di immagine e suono insieme (di serie: entrata netta,
+  uscita in 3 secondi). Vale per la finestra video e per l'uscita NDI.
+- **Pad** — quanti secondi prima della fine del video entra il **pad**, nella tonalità del brano dopo. Il pad continua
+  dentro il brano finché non premi **PAD**: così un brano che parte senza intro ha già la sua nota.
+
+Esempio: video d'ingresso, *Pad 20 s prima della fine*, transizione *AutoLink*. Gli ultimi 20 secondi del video
+suonano con il pad nella tonalità del primo brano; il video sfuma al nero e il brano parte esattamente alla fine del
+video. Con *Dissolvenza* il brano entra negli ultimi 5 secondi mentre il video sfuma.
+
+### Immagine della scaletta (dalla prossima versione)
+
+Nella barra della pagina **Scaletta**, gruppo *Schermo*, **Immagine…** sceglie un'immagine (JPG, PNG o WebP, fino a
+20 MB) da proiettare sull'uscita video quando non c'è nessun video: tra un brano e l'altro, dopo un video, nei brani
+senza video. Vale per tutta la band; senza immagine l'uscita resta nera. Passa anche sull'uscita NDI.
 
 ### Uscite NDI
 
@@ -564,7 +645,8 @@ Video e gobbo possono andare anche in rete come sorgenti **NDI®**, per vMix, OB
 schermo NDI, senza tenere aperte le finestre di uscita. Si attivano in **Impostazioni › Uscite NDI**:
 
 - **Uscita video** — il video del brano nel player, a tempo con l'audio (prima dell'inizio il primo
-  fotogramma, dopo la fine l'ultimo); senza video l'uscita resta nera.
+  fotogramma, dopo la fine l'ultimo); senza video l'uscita resta nera, o mostra l'immagine della scaletta
+  (dalla prossima versione).
 - **Uscita gobbo** — la slide del momento e, se attiva, la successiva, a 1920×1080, come nella finestra Gobbo.
 
 I nomi delle sorgenti si possono cambiare; di default sono **LiveTools - Video** e **LiveTools - Gobbo**

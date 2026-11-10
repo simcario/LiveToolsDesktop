@@ -9,6 +9,7 @@
     "core:window:allow-set-fullscreen",
     "core:window:allow-is-fullscreen",
     "core:window:allow-set-focus",
+    "core:window:allow-set-position",
     "core:window:allow-close",
     "opener:default",
     "dialog:allow-open",

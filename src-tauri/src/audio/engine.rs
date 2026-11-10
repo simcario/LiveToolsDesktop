@@ -71,6 +71,10 @@ pub struct SongSpec {
     /// already rendered at it). Bpm, sections, sync and regions stay the original ones.
     #[serde(default = "one")]
     pub rate: f64,
+    /// Shortest length of the song (seconds of the original): a video item
+    /// lasts as its video, also when the video has no sound.
+    #[serde(default)]
+    pub length: Option<f64>,
 }
 
 impl SongSpec {
@@ -286,7 +290,14 @@ struct Pending {
 fn scale_regions(regions: &[Region], rate: f64) -> Vec<Region> {
     regions
         .iter()
-        .map(|r| Region { at: r.at / rate, from: r.from / rate, len: r.len.map(|l| l / rate), muted: r.muted })
+        .map(|r| Region {
+            at: r.at / rate,
+            from: r.from / rate,
+            len: r.len.map(|l| l / rate),
+            muted: r.muted,
+            fade_in: r.fade_in / rate,
+            fade_out: r.fade_out / rate,
+        })
         .collect()
 }
 
@@ -496,6 +507,7 @@ impl Controller {
             controls.push(control);
             decoders.push(decoder);
         }
+        duration = duration.max(spec.length.unwrap_or(0.0).max(0.0) / rate);
         let result = SongLoad { id: spec.id.clone(), duration: duration * rate, tempo: tempo.clone(), tracks: loads };
         let song = Loaded {
             ids: spec.tracks.iter().map(|t| t.id.clone()).collect(),
@@ -753,7 +765,8 @@ impl Controller {
             .zip(&song.paths)
             .filter(|(_, p)| p.is_some())
             .filter_map(|((r, f), _)| stream::timeline_end(r, *f))
-            .fold(0f64, f64::max);
+            .fold(0f64, f64::max)
+            .max(song.spec.length.unwrap_or(0.0).max(0.0) / song.rate);
         song.duration = duration;
         let id = song.spec.id.clone();
         let original = song.song_duration();

@@ -27,11 +27,13 @@ import { autoSnapshot, logChange } from '../shared/history.js';
 import { createSong, itemFromSong, updateSong, useLibrary } from '../shared/songs.js';
 import { useAccess } from '../lib/data';
 import { db, storage } from '../lib/firebase';
+import { explainDenied, songLimitError } from '../shared/planGuard.js';
 import Icon from './Icon';
 import Toolbar, { ToolGroup } from './Toolbar';
 import { ZoneResizer } from './Zones';
 import MediaFields, { ScoreFile } from './MediaFields';
 import ChartTags from './ChartTags';
+import ScreenImage from './ScreenImage';
 import { ChartLines } from './ChordChart';
 import { printChords } from '../shared/chartSheet.js';
 
@@ -743,7 +745,7 @@ export default function SetlistEditor({ user, setlist, items, itemDocs, numbers,
     try {
       await fn();
     } catch (e) {
-      notify(`Scaletta non aggiornata: ${e.message}`, true);
+      notify(`Scaletta non aggiornata: ${explainDenied(e)}`, true);
     }
   };
 
@@ -755,12 +757,19 @@ export default function SetlistEditor({ user, setlist, items, itemDocs, numbers,
 
   const createItem = (data, type) =>
     safely(async () => {
+      // A new song counts in the library: within the plan's limit (Free: 10).
+      const newSong = type === 'song' && !data.songId && canCreateSongs;
+      const limit = newSong ? await songLimitError(user, setlist) : null;
+      if (limit) {
+        notify(limit, true);
+        return;
+      }
       const order = items.reduce((m, i) => Math.max(m, i.order ?? 0), -1) + 1;
       track(type === 'separator' ? `Aggiunto il blocco “${data.title}”` : `Aggiunto “${data.title}”`);
       // A new song also goes to the library ("Brani"), where its media live.
       let songId = data.songId || null;
-      if (type === 'song' && !songId && canCreateSongs) {
-        const song = createSong(user, data);
+      if (newSong) {
+        const song = createSong(user, data, setlist);
         song.done.catch((e) => console.warn('Brano non salvato nella libreria', e));
         songId = song.id;
       }
@@ -914,6 +923,9 @@ export default function SetlistEditor({ user, setlist, items, itemDocs, numbers,
             </button>
           </ToolGroup>
         )}
+        <ToolGroup id="screen" label="Schermo">
+          <ScreenImage setlist={setlist} canEdit={canEdit} notify={notify} />
+        </ToolGroup>
         <ToolGroup id="hint" label="Note">
           <span className="small faint">Colonne e condivisione: app web</span>
         </ToolGroup>

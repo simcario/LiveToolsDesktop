@@ -41,6 +41,24 @@ pub struct VideoSource {
     pub path: String,
     #[serde(default)]
     pub offset: f64,
+    /// Fades to and from black (seconds) of a video item.
+    #[serde(default, rename = "fadeIn")]
+    pub fade_in: f64,
+    #[serde(default, rename = "fadeOut")]
+    pub fade_out: f64,
+}
+
+/// Level of the picture at `t` seconds of a video `duration` long (as fadeLevel in media.js).
+#[cfg_attr(not(windows), allow(dead_code))]
+fn fade_level(t: f64, duration: f64, fade_in: f64, fade_out: f64) -> f32 {
+    let mut g = 1f64;
+    if fade_in > 0.0 {
+        g = g.min(t / fade_in);
+    }
+    if fade_out > 0.0 && duration > 0.0 {
+        g = g.min((duration - t) / fade_out);
+    }
+    g.clamp(0.0, 1.0) as f32
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -85,6 +103,8 @@ struct Shared {
     // Changed with a new generation, so the video thread reopens the file.
     video: Mutex<(u64, Option<VideoSource>)>,
     prompter: Mutex<Option<Arc<Frame>>>,
+    /// Picture of the setlist on the video output when there is no video to show.
+    still: Mutex<Option<Arc<Frame>>>,
 }
 
 struct Inner {
@@ -161,7 +181,9 @@ fn video_loop(sender: Sender, stop: Arc<AtomicBool>, shared: Arc<Shared>, monito
     let black = Frame::black(BLACK_SIZE.0, BLACK_SIZE.1);
     let mut seen = u64::MAX;
     #[cfg(windows)]
-    let mut decoder: Option<(video::Decoder, f64)> = None;
+    let mut decoder: Option<(video::Decoder, VideoSource)> = None;
+    #[cfg(windows)]
+    let mut faded: Option<Frame> = None;
     while !stop.load(Ordering::Relaxed) {
         let (generation, source) = shared.video.lock().clone();
         #[cfg(windows)]
@@ -169,7 +191,7 @@ fn video_loop(sender: Sender, stop: Arc<AtomicBool>, shared: Arc<Shared>, monito
             if generation != seen {
                 seen = generation;
                 decoder = source.and_then(|s| match video::Decoder::open(&s.path) {
-                    Ok(d) => Some((d, s.offset)),
+                    Ok(d) => Some((d, s)),
                     Err(e) => {
                         eprintln!("{e}");
                         None
@@ -177,8 +199,30 @@ fn video_loop(sender: Sender, stop: Arc<AtomicBool>, shared: Arc<Shared>, monito
                 });
             }
             // The video keeps its own times, slaved to the engine like the video window.
-            let frame = decoder.as_mut().and_then(|(d, offset)| d.frame_at(monitor.position() - *offset));
-            sender.send(frame.unwrap_or(&black));
+            let frame = decoder.as_mut().and_then(|(d, s)| {
+                let t = monitor.position() - s.offset;
+                let level = fade_level(t, d.duration(), s.fade_in, s.fade_out);
+                d.frame_at(t).map(|f| (f, level))
+            });
+            match frame {
+                Some((f, level)) if level < 0.999 => {
+                    // Fading: a copy of the frame towards black.
+                    let out = faded.get_or_insert_with(|| Frame::black(f.width, f.height));
+                    out.width = f.width;
+                    out.height = f.height;
+                    out.fourcc = f.fourcc;
+                    out.fps = f.fps;
+                    out.data.resize(f.data.len(), 0);
+                    let k = (level * 256.0) as u32;
+                    out.data.iter_mut().zip(&f.data).for_each(|(o, i)| *o = ((*i as u32 * k) >> 8) as u8);
+                    sender.send(out);
+                }
+                Some((f, _)) => sender.send(f),
+                None => match shared.still.lock().clone() {
+                    Some(still) => sender.send(&still),
+                    None => sender.send(&black),
+                },
+            }
         }
         #[cfg(not(windows))]
         {
@@ -212,6 +256,25 @@ pub fn ndi_video_source(ndi: State<'_, Ndi>, source: Option<VideoSource>) {
     let mut v = ndi.shared.video.lock();
     v.0 = v.0.wrapping_add(1);
     v.1 = source;
+}
+
+/// The picture of the setlist for the video output without a video: RGBA pixels
+/// of BLACK_SIZE as the raw request body, empty = none.
+#[tauri::command]
+pub fn ndi_video_still(ndi: State<'_, Ndi>, request: tauri::ipc::Request<'_>) -> Result<(), String> {
+    let tauri::ipc::InvokeBody::Raw(data) = request.body() else {
+        return Err("immagine NDI non valida".into());
+    };
+    if data.is_empty() {
+        *ndi.shared.still.lock() = None;
+        return Ok(());
+    }
+    let (width, height) = BLACK_SIZE;
+    if data.len() != (width * height * 4) as usize {
+        return Err("immagine NDI di dimensioni errate".into());
+    }
+    *ndi.shared.still.lock() = Some(Arc::new(Frame { width, height, fourcc: RGBX, fps: (30, 1), data: data.clone() }));
+    Ok(())
 }
 
 /// The Gobbo picture: RGBA pixels of PROMPTER_SIZE as the raw request body.

@@ -37,6 +37,33 @@
 .tb-labeled .tb-group {
   padding-top: 12px;
 }
+/* A bar with a `corner` group: the others wrap on the left, the corner stays
+   top right, centred on the first line (36px, as the LCD). */
+.tb.tb-has-corner {
+  flex-wrap: nowrap;
+  align-items: flex-start;
+}
+.tb-flow {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: inherit;
+}
+.tb-corner {
+  flex: none;
+  display: flex;
+  align-items: center;
+}
+.tb-corner .tb-group {
+  min-height: 36px;
+  padding-right: 0;
+  border-right: none;
+}
+.tb-labeled .tb-corner .tb-group {
+  min-height: 48px;
+}
 .tb-custom {
   flex: none;
   width: 26px;

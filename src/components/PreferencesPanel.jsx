@@ -10,9 +10,30 @@ import { checkForUpdates, installUpdate, useUpdater } from '../lib/updater';
 import { pedalDevice, useBluetoothDevices } from '../lib/pedal';
 import { defaultNdiName, useNdiStatus } from '../lib/ndi';
 import { DEFAULT_PEDAL, keyLabel, PEDAL_LAYOUTS, teachPedal, usePedalTest } from '../shared/score.js';
+import { auth } from '../lib/firebase';
+import { useAccount, useAuthUser } from '../lib/data';
+import { openUrl } from '@tauri-apps/plugin-opener';
+import { openSite, SITE_LABEL } from '../lib/site';
+import {
+  formatBytes,
+  formatPrice,
+  level,
+  PAID_PLAN_IDS,
+  planExpiry,
+  PLANS,
+  planSource,
+  share,
+  SOURCE_LABELS,
+  usageOf,
+} from '../shared/plans.js';
+import { driveReady, MEDIA_FORMATS, mediaFormatOf, saveMediaFormat } from '../shared/planGuard.js';
 import Icon from './Icon';
 
+// Account page of the web app, where plans are bought (Stripe).
+export const WEB_ACCOUNT = 'https://app.livetoolsdaw.com/account';
+
 const SECTIONS = [
+  { id: 'account', label: 'Account', icon: 'cloud' },
   { id: 'general', label: 'Generale', icon: 'settings' },
   { id: 'transport', label: 'Trasporto', icon: 'metronome' },
   { id: 'pedal', label: 'Pedale & spartito', icon: 'file-text' },
@@ -21,6 +42,15 @@ const SECTIONS = [
 ];
 
 const SETTINGS = [
+  {
+    id: 'account.plan',
+    section: 'account',
+    category: 'Account',
+    title: 'Piano e consumi',
+    description: 'Il tuo abbonamento, quanti brani hai nella libreria e quanto spazio occupano i tuoi file nel cloud LiveTools.',
+    keywords: 'abbonamento piano free plus pro spazio quota brani limite cloud drive',
+    Control: AccountPlan,
+  },
   {
     id: 'media.location',
     section: 'general',
@@ -206,6 +236,10 @@ export default function PreferencesPanel({ settings, update, onClose, initialSec
                 {q && <span className="prefs-count">{SETTINGS.filter((x) => x.section === s.id && matches(x, q)).length}</span>}
               </button>
             ))}
+            <button className="prefs-site" onClick={() => openSite()} title={`Apri ${SITE_LABEL} nel browser`}>
+              <Icon name="globe" size={14} />
+              {SITE_LABEL}
+            </button>
           </nav>
           <div className="prefs-main">
             <h3>{q ? 'Risultati della ricerca' : SECTIONS.find((s) => s.id === section).label}</h3>
@@ -243,6 +277,126 @@ function PrefItem({ category, title, description, modified, onReset, children })
       <p className="pref-desc">{description}</p>
       {children}
     </div>
+  );
+}
+
+// ---------- Account ----------
+
+function UsageBar({ label, used, limit, format = String }) {
+  const lv = level(used, limit);
+  const finite = Number.isFinite(limit);
+  return (
+    <div className={`usage usage-${lv}`}>
+      <div className="usage-head">
+        <span>{label}</span>
+        <b>{finite ? `${format(used)} di ${format(limit)}` : format(used)}</b>
+      </div>
+      {finite && (
+        <div className="bar-progress">
+          <span style={{ width: `${Math.min(100, 100 * share(used, limit))}%` }} />
+        </div>
+      )}
+      {lv === 'warn' && <span className="hint">Quasi al limite del piano.</span>}
+      {lv === 'full' && <span className="hint">Limite del piano raggiunto.</span>}
+    </div>
+  );
+}
+
+function AccountPlan({ onBusy, settings, update, ...item }) {
+  const user = useAuthUser() || auth.currentUser;
+  const { profile, enforced, superAdmin } = useAccount(user);
+  if (!profile) return <PrefItem {...item}><p className="hint">Caricamento…</p></PrefItem>;
+  const u = usageOf(profile, { superAdmin });
+  const until = planExpiry(profile);
+  const source = superAdmin ? null : planSource(profile);
+  const p = profile.plan || {};
+  // Bought on the web page (Stripe, in the browser, signed in with the same Google account).
+  const openAccount = (query = '') => openUrl(`${WEB_ACCOUNT}${query}`).catch(() => {});
+  return (
+    <PrefItem {...item}>
+      <div className="plan-card">
+        <div className="plan-name">
+          <b>{u.plan.label}</b>
+          {source && <span className="hint">{SOURCE_LABELS[source]}</span>}
+          {until && <span className="hint">{p.cancelAtPeriodEnd ? 'termina il' : source === 'stripe' ? 'rinnovo entro il' : 'fino al'} {until}</span>}
+        </div>
+        <p className="hint">{u.plan.summary}</p>
+        <UsageBar label="Brani" used={u.songs} limit={u.songLimit} />
+        {u.plan.media === 'cloud' && (
+          <UsageBar
+            label={Number.isFinite(u.storageLimit) ? 'Spazio nel cloud' : 'Spazio usato nel cloud'}
+            used={u.bytes}
+            limit={u.storageLimit}
+            format={formatBytes}
+          />
+        )}
+        {u.plan.media !== 'cloud' && u.bytes > 0 && (
+          <UsageBar label="File già nel cloud" used={u.bytes} limit={Infinity} format={formatBytes} />
+        )}
+        {!enforced && <p className="hint">I limiti dei piani non sono ancora attivi: per ora puoi usare tutto senza restrizioni.</p>}
+        {(u.plan.media === 'drive' || profile.drive) && (
+          <div className="plan-drive">
+            <b>Google Drive</b>
+            {driveReady(profile) ? (
+              <span className="hint">
+                Tracce e video dei tuoi brani vanno sul Drive di <b>{profile.drive.email}</b>, cartella “LiveTools”.
+              </span>
+            ) : profile.drive?.status === 'revoked' ? (
+              <span className="hint usage-alert">L’accesso a {profile.drive.email} è stato revocato: ricollega Drive.</span>
+            ) : (
+              <span className="hint">Collega il Google Drive dove salvare tracce e video: puoi scegliere qualsiasi account Google.</span>
+            )}
+            <button className="btn align-start" onClick={() => openAccount('?drive')}>
+              <Icon name="cloud" size={14} /> {driveReady(profile) ? 'Cambia account Drive' : 'Collega Google Drive'}
+            </button>
+            {u.plan.media === 'drive' && (
+              <div className="plan-format">
+                <b>File WAV, AIFF e FLAC</b>
+                {Object.entries(MEDIA_FORMATS).map(([id, label]) => (
+                  <label key={id} className="check">
+                    <input
+                      type="radio"
+                      name="media-format"
+                      checked={mediaFormatOf(profile) === id}
+                      onChange={() => saveMediaFormat(user.uid, id).catch((e) => console.warn('Formato non salvato', e))}
+                    />{' '}
+                    {label}
+                  </label>
+                ))}
+                <span className="hint">Convertiti qui prima del caricamento; il file originale resta dov’è.</span>
+              </div>
+            )}
+          </div>
+        )}
+        {u.plan.media === 'cloud' && <p className="hint">Nel cloud WAV, AIFF e FLAC vanno in MP3 a 320 kbps, convertiti qui prima del caricamento.</p>}
+        {source === 'play' && <p className="hint">Acquistato con Google Play: lo cambi o lo annulli dal Play Store, sul telefono o tablet.</p>}
+        {source === 'stripe' && (
+          <button className="btn align-start" onClick={() => openAccount()}>
+            <Icon name="cloud" size={14} /> Gestisci abbonamento e fatture
+          </button>
+        )}
+        {!superAdmin && source !== 'play' && source !== 'stripe' && (
+          <>
+            <div className="plan-offers">
+              {PAID_PLAN_IDS.map((id) => (
+                <button key={id} className="plan-offer" onClick={() => openAccount(`?plan=${id}&interval=year`)} disabled={u.plan.id === id}>
+                  <b>{PLANS[id].label}</b>
+                  <span>
+                    {formatPrice(PLANS[id].price.month)} / mese · {formatPrice(PLANS[id].price.year)} / anno
+                  </span>
+                  <span className="hint">{PLANS[id].summary}</span>
+                  {PLANS[id].trialDays && !profile.billing?.trialUsed && <span className="hint">Prova gratuita di {PLANS[id].trialDays} giorni</span>}
+                </button>
+              ))}
+            </div>
+            <p className="hint">
+              Il pagamento si apre nel browser, sulla pagina Account di LiveTools web: entra con lo stesso account Google. Il
+              piano vale su computer, web e tablet.
+            </p>
+          </>
+        )}
+      </div>
+    </PrefItem>
   );
 }
 

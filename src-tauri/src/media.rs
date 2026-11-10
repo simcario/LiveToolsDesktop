@@ -295,7 +295,8 @@ static ACTIVE: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
 /// Downloads `url` (a Storage download URL) to the cache; emits "media-progress".
 #[tauri::command]
-pub async fn download_media(app: AppHandle, url: String, path: String) -> Result<String, String> {
+/// `bearer`: access token for files on the owner's Google Drive (paths `drive/…`).
+pub async fn download_media(app: AppHandle, url: String, path: String, bearer: Option<String>) -> Result<String, String> {
     if MOVING.load(Ordering::SeqCst) {
         return Err("Spostamento dei media in corso".into());
     }
@@ -309,7 +310,7 @@ pub async fn download_media(app: AppHandle, url: String, path: String) -> Result
     }
     let res = tauri::async_runtime::spawn_blocking({
         let (app, path, dest) = (app.clone(), path.clone(), dest.clone());
-        move || download(&app, &url, &path, &dest)
+        move || download(&app, &url, bearer.as_deref(), &path, &dest)
     })
     .await
     .map_err(|e| e.to_string())
@@ -318,11 +319,22 @@ pub async fn download_media(app: AppHandle, url: String, path: String) -> Result
     res.map(|_| dest.to_string_lossy().into_owned())
 }
 
-fn download(app: &AppHandle, url: &str, path: &str, dest: &Path) -> Result<(), String> {
+fn download(app: &AppHandle, url: &str, bearer: Option<&str>, path: &str, dest: &Path) -> Result<(), String> {
     if let Some(dir) = dest.parent() {
         fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
-    let resp = ureq::get(url).timeout(Duration::from_secs(30)).call().map_err(|e| e.to_string())?;
+    let mut req = ureq::get(url).timeout(Duration::from_secs(30));
+    if let Some(token) = bearer {
+        req = req.set("Authorization", &format!("Bearer {token}"));
+    }
+    let resp = req.call().map_err(|e| match e {
+        // Google Drive: the file is not visible to this account (someone else's Drive, or deleted).
+        ureq::Error::Status(403 | 404, _) if bearer.is_some() => {
+            "File non raggiungibile su Google Drive: è sul Drive di un altro account o è stato eliminato".to_string()
+        }
+        ureq::Error::Status(401, _) if bearer.is_some() => "Accesso a Google Drive scaduto: ricollega Drive".to_string(),
+        e => e.to_string(),
+    })?;
     let total = resp.header("Content-Length").and_then(|v| v.parse().ok()).unwrap_or(0);
     let part = dest.with_extension("part");
     let mut file = fs::File::create(&part).map_err(|e| e.to_string())?;
@@ -406,8 +418,17 @@ fn header<'a>(request: &'a tauri::ipc::Request<'_>, name: &str) -> Result<&'a st
 
 #[tauri::command]
 pub fn store_media_chunk(app: AppHandle, request: tauri::ipc::Request<'_>) -> Result<(), String> {
-    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
-        return Err("Dati non validi".into());
+    // Android has no raw IPC body (Tauri falls back to postMessage, JSON only):
+    // there the chunk comes as a base64 string.
+    let decoded;
+    let bytes: &[u8] = match request.body() {
+        tauri::ipc::InvokeBody::Raw(bytes) => bytes,
+        tauri::ipc::InvokeBody::Json(serde_json::Value::String(b64)) => {
+            use base64::Engine as _;
+            decoded = base64::engine::general_purpose::STANDARD.decode(b64).map_err(|_| "Dati non validi".to_string())?;
+            &decoded
+        }
+        _ => return Err("Dati non validi".into()),
     };
     let path = url::form_urlencoded::parse(format!("p={}", header(&request, "x-path")?).as_bytes())
         .next()
@@ -442,4 +463,18 @@ pub fn store_media_done(app: AppHandle, path: String, size: u64) -> Result<Strin
     }
     fs::rename(&part, &dest).map_err(|e| e.to_string())?;
     Ok(dest.to_string_lossy().into_owned())
+}
+
+/// Deletes a file of the Free plan (paths `local/…`): it exists only in this
+/// cache, so removing the stem removes the file.
+#[tauri::command]
+pub fn delete_local_media(app: AppHandle, path: String) -> Result<(), String> {
+    if !path.starts_with("local/") {
+        return Err(format!("Non è un file locale: {path}"));
+    }
+    let local = local_path(&app, &path)?;
+    match fs::remove_file(&local) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.to_string()),
+        _ => Ok(()),
+    }
 }

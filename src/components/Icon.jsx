@@ -109,6 +109,13 @@ const PATHS = {
       <path d="M16 21v-3a2 2 0 0 1 2-2h3" />
     </>
   ),
+  globe: (
+    <>
+      <circle cx="12" cy="12" r="10" />
+      <path d="M2 12h20" />
+      <path d="M12 2a15 15 0 0 1 0 20a15 15 0 0 1 0-20z" />
+    </>
+  ),
   info: (
     <>
       <circle cx="12" cy="12" r="10" />

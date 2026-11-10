@@ -110,8 +110,8 @@ export function driveStage(setlist, itemId, user) {
   });
 }
 
-// Permissions from the web app: role given by the super admin ('user' creates
-// setlists and songs, 'viewer' only receives them, '' while pending) and
+// Permissions from the web app: 'user' (everyone who signs in) creates setlists
+// and songs, 'viewer' (set by the super admin) only receives them and
 // administration of the setlist tool (super admin or delegated admin), which
 // also allows creating. Same rule as canCreate('setlist') on the web.
 export function useAccess(user) {
@@ -121,7 +121,7 @@ export function useAccess(user) {
   useEffect(() => {
     if (!user) return undefined;
     const subs = [
-      onSnapshot(doc(db, 'users', user.uid), (s) => setRole(s.data()?.role || ''), () => setRole('')),
+      onSnapshot(doc(db, 'users', user.uid), (s) => setRole(s.data()?.role || 'user'), () => setRole('')),
       onSnapshot(doc(db, 'config', 'app'), (s) => setSuperAdmin(s.data()?.superAdminUid === user.uid), () => setSuperAdmin(false)),
       onSnapshot(doc(db, 'tools', 'setlist'), (s) => setToolAdmin((s.data()?.admins || []).includes(user.uid)), () => setToolAdmin(false)),
     ];
@@ -129,4 +129,21 @@ export function useAccess(user) {
   }, [user]);
   const isAdmin = superAdmin || toolAdmin;
   return { role, isAdmin, canCreate: isAdmin || role === 'user' };
+}
+
+// Plan and usage of the signed-in user (users/{uid}.plan / .usage, counted by the
+// Cloud Functions) and whether the limits are applied yet (config/app.plansEnforced).
+export function useAccount(user) {
+  const [profile, setProfile] = useState(null);
+  const [config, setConfig] = useState({});
+  useEffect(() => {
+    if (!user) return undefined;
+    const subs = [
+      onSnapshot(doc(db, 'users', user.uid), (s) => setProfile(s.data() || {}), () => setProfile({})),
+      onSnapshot(doc(db, 'config', 'app'), (s) => setConfig(s.data() || {}), () => setConfig({})),
+    ];
+    return () => subs.forEach((u) => u());
+  }, [user]);
+  // The super admin has no limits.
+  return { profile, enforced: config.plansEnforced === true, superAdmin: !!user && config.superAdminUid === user.uid };
 }

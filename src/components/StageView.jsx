@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { formatDuration, formatEventDate, isSeparator, PLAYBACK_TYPES } from '../shared/setlists.js';
-import { groupLabel, INSTRUMENTS, regionsOf, rehearsalGroup } from '../shared/media.js';
+import { groupLabel, INSTRUMENTS, isVideoItem, PAD_LEAD_MAX, padLeadOf, regionsOf, rehearsalGroup, VIDEO_FADE_MAX, videoFades } from '../shared/media.js';
 import { groupMixKey } from '../lib/usePlayer';
 import { keyLabel } from '../shared/music.js';
 import { engine, engineStatus, livePosition, useEngineStatus } from '../lib/engine';
@@ -11,6 +11,7 @@ import { useSections } from '../lib/useSections';
 import { getMix, useMix } from '../lib/settings';
 import { baseBpm, MAX_TEMPO_DELTA, MAX_TRANSPOSE, PAD_KEYS, playedKey, setItemFields, songChange, TRANSITIONS, transitionLabel, transitionOf } from '../lib/songChange';
 import Icon from './Icon';
+import { useOutputOpen } from '../lib/outputs';
 import Fader from './Fader';
 import Meter from './Meter';
 import Toolbar, { ToolGroup } from './Toolbar';
@@ -76,6 +77,7 @@ function Clock({ duration }) {
 // The top bar, as the transport of Playback: tempo, time, back to start, play,
 // the song loaded and on the right the commands of the view.
 function TopBar({ item, player, editable, editing, setEditing, setlists, setlistId, onSetlist, onVideoOutput, tools }) {
+  const videoOpen = useOutputOpen('video');
   const fadeTarget = useEngineStatus((s) => s.fadeTarget ?? 1);
   const fade = useEngineStatus((s) => s.fade ?? 1);
   const playing = useEngineStatus((s) => s.playing);
@@ -138,8 +140,13 @@ function TopBar({ item, player, editable, editing, setEditing, setlists, setlist
         <div className="st-top-tools">{tools({ editable, editing, setEditing })}</div>
       ) : (
         <div className="st-top-tools">
-          {onVideoOutput && loaded?.video && isLoaded && (
-            <button className="st-tool" onClick={onVideoOutput} title="Apri l’uscita video su un secondo schermo">
+          {onVideoOutput && (
+            <button
+              className={`st-tool ${videoOpen ? 'is-on' : ''}`}
+              onClick={onVideoOutput}
+              aria-pressed={videoOpen}
+              title={videoOpen ? 'Chiudi l’uscita video (F4)' : 'Apri l’uscita video a schermo intero, sul secondo schermo se c’è (F4)'}
+            >
               <Icon name="monitor" size={18} />
               <span>Video</span>
             </button>
@@ -215,11 +222,56 @@ function TransitionMenu({ item, settings, onPick }) {
       ))}
       <button className={`st-pop-item ${own ? '' : 'is-on'}`} onClick={() => onPick(null)}>
         <Icon name="settings" size={14} />
-        <span>
-          <b>Come l’auto-avanzamento</b>
-          <small>{settings.autoAdvance ? 'Acceso su questo computer: prepara il prossimo' : 'Spento su questo computer: resta nel brano'}</small>
-        </span>
+        {isVideoItem(item) ? (
+          <span>
+            <b>Predefinita</b>
+            <small>Per un video: AutoLink, a fine video parte subito il successivo</small>
+          </span>
+        ) : (
+          <span>
+            <b>Come l’auto-avanzamento</b>
+            <small>{settings.autoAdvance ? 'Acceso su questo computer: prepara il prossimo' : 'Spento su questo computer: resta nel brano'}</small>
+          </span>
+        )}
       </button>
+    </div>
+  );
+}
+
+// A video item: fades of picture and sound, and the pad of the next song's key
+// before the end of the video (a song without intro can start straight away).
+function VideoMenu({ item, next, onChange }) {
+  const fades = videoFades(item);
+  const lead = padLeadOf(item) || 0;
+  const nextKey = next ? playedKey(next) : '';
+  const round = (v) => Math.round(v * 10) / 10;
+  const step = (label, value, unit, set, { min = 0, max, by, off }) => (
+    <div className="st-pop-row">
+      <span>{label}</span>
+      <button className="btn btn-sm btn-icon" onClick={() => set(round(Math.max(min, value - by)))} disabled={value <= min} aria-label={`${label}: meno`}>
+        <Icon name="minus" size={14} />
+      </button>
+      <b className="st-pop-val">{value === 0 && off ? off : `${value} ${unit}`}</b>
+      <button className="btn btn-sm btn-icon" onClick={() => set(round(Math.min(max, value + by)))} disabled={value >= max} aria-label={`${label}: più`}>
+        <Icon name="plus" size={14} />
+      </button>
+    </div>
+  );
+  return (
+    <div className="st-pop-list">
+      <strong className="st-pop-title">{item.title}</strong>
+      {step('Entrata', fades.in, 's', (v) => onChange({ videoFadeIn: v }), { max: VIDEO_FADE_MAX, by: 0.5, off: 'Netta' })}
+      {step('Uscita', fades.out, 's', (v) => onChange({ videoFadeOut: v }), { max: VIDEO_FADE_MAX, by: 0.5, off: 'Netta' })}
+      {step('Pad', lead, 's prima della fine', (v) => onChange({ padLead: v || null }), { max: PAD_LEAD_MAX, by: 1, off: 'No' })}
+      <p className="st-pop-hint">
+        Immagine e suono del video sfumano dal nero e verso il nero.{' '}
+        {next
+          ? nextKey
+            ? `Il pad entra in ${keyLabel(nextKey)}, la tonalità di “${next.title}”, e continua nel brano: spegnilo con PAD.`
+            : `“${next.title}” non ha una tonalità: il pad non saprebbe quale nota dare.`
+          : 'Dopo il video non c’è un brano.'}{' '}
+        Vale per tutta la band.
+      </p>
     </div>
   );
 }
@@ -298,6 +350,10 @@ function SetlistRow({ items, numbers, player, selectedId, liveItemId, onSelect, 
   }, [loadedId]);
   const write = (id, patch) => setItemFields(setlistId, id, patch).catch((e) => notify(`Non salvato: ${e?.message || e}`, true));
   const menuItem = menu && items.find((i) => i.id === menu.id);
+  const songAfter = (id) => {
+    const list = items.filter((i) => !isSeparator(i));
+    return list[list.findIndex((i) => i.id === id) + 1] || null;
+  };
   let prev = null;
   return (
     <nav className="st-tiles" ref={row} aria-label="Scaletta">
@@ -348,6 +404,7 @@ function SetlistRow({ items, numbers, player, selectedId, liveItemId, onSelect, 
               >
                 <span className="st-tile-top">
                   <span className="st-tile-num">{numbers[it.id]}</span>
+                  {isVideoItem(it) && <Icon name="video" size={13} />}
                   {key && <b className={`st-tile-key ${change.semitones ? 'is-changed' : ''}`}>{keyLabel(key)}</b>}
                   {it.id === liveItemId && <span className="tag tag-live">LIVE</span>}
                 </span>
@@ -379,8 +436,8 @@ function SetlistRow({ items, numbers, player, selectedId, liveItemId, onSelect, 
                       anchor: e.currentTarget,
                     })
                   }
-                  title="Tonalità e tempo"
-                  aria-label="Tonalità e tempo"
+                  title={isVideoItem(it) ? 'Dissolvenze e pad del video' : 'Tonalità e tempo'}
+                  aria-label={isVideoItem(it) ? 'Dissolvenze e pad del video' : 'Tonalità e tempo'}
                 >
                   <Icon name="sliders" size={13} />
                 </button>
@@ -400,6 +457,8 @@ function SetlistRow({ items, numbers, player, selectedId, liveItemId, onSelect, 
                 setMenu(null);
               }}
             />
+          ) : isVideoItem(menuItem) ? (
+            <VideoMenu item={menuItem} next={songAfter(menuItem.id)} onChange={(patch) => write(menuItem.id, patch)} />
           ) : (
             <ChangeMenu item={menuItem} onChange={(patch) => write(menuItem.id, patch)} />
           )}
@@ -488,7 +547,7 @@ function drawOverview(canvas, { tracks, peaks, regions, duration, width: w, heig
 
 // The waveform with the sections on it, as in Playback: a touch on a section
 // queues the jump there, the loop icon of the section in progress repeats it.
-function Overview({ loaded, item, sections, index, beats, jump, onSeek, onSection, onLoop, edit, canEdit, settings, update }) {
+function Overview({ loaded, item, sections, index, beats, jump, onSeek, onSection, onLoop, edit, settings, update }) {
   const peaks = usePeaks();
   const [drag, setDrag] = useState(null); // { index, bar } of the marker being dragged
   const canvas = useRef(null);
@@ -574,6 +633,55 @@ function Overview({ loaded, item, sections, index, beats, jump, onSeek, onSectio
     return () => el.removeEventListener('wheel', onWheel);
   }, [update]);
 
+  // Two fingers on the waveform (phone and tablet): zoom around the point between them, which
+  // follows the fingers. The touches of a pinch never move the playhead or a marker.
+  const pinching = useRef(0); // 1 during a pinch, then the time it ended
+  useEffect(() => {
+    const el = scroller.current;
+    let pinch = null;
+    let raf = 0;
+    const span = (ts) => Math.hypot(ts[0].clientX - ts[1].clientX, ts[0].clientY - ts[1].clientY) || 1;
+    const mid = (ts) => (ts[0].clientX + ts[1].clientX) / 2 - el.getBoundingClientRect().left;
+    const start = (e) => {
+      if (e.touches.length !== 2) return;
+      const ax = mid(e.touches);
+      pinch = { d: span(e.touches), zoom: zoomNow.current, f: (el.scrollLeft + ax) / (el.clientWidth * zoomNow.current) };
+      pinching.current = 1;
+    };
+    const move = (e) => {
+      if (!pinch || e.touches.length !== 2) return;
+      e.preventDefault();
+      const next = clampZoom((pinch.zoom * span(e.touches)) / pinch.d);
+      const ax = mid(e.touches);
+      userAt.current = performance.now();
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        if (!pinch) return;
+        const f = pinch.f;
+        anchorX.current = ax;
+        if (next !== zoomNow.current) update({ stageZoom: next });
+        requestAnimationFrame(() => scrollTo(f * el.clientWidth * next - ax));
+      });
+    };
+    const end = (e) => {
+      if (!pinch || e.touches.length >= 2) return;
+      pinch = null;
+      pinching.current = performance.now();
+    };
+    el.addEventListener('touchstart', start, { passive: true });
+    el.addEventListener('touchmove', move, { passive: false });
+    el.addEventListener('touchend', end);
+    el.addEventListener('touchcancel', end);
+    return () => {
+      cancelAnimationFrame(raf);
+      el.removeEventListener('touchstart', start);
+      el.removeEventListener('touchmove', move);
+      el.removeEventListener('touchend', end);
+      el.removeEventListener('touchcancel', end);
+    };
+  }, [update]);
+  const afterPinch = () => pinching.current === 1 || performance.now() - pinching.current < 400;
+
   const scrollRaf = useRef(0);
   useEffect(() => () => cancelAnimationFrame(scrollRaf.current), []);
   const onScroll = () => {
@@ -613,7 +721,7 @@ function Overview({ loaded, item, sections, index, beats, jump, onSeek, onSectio
     return ((e.clientX - r.left) / r.width) * duration;
   };
   const tap = (e) => {
-    if (duration) onSeek(timeAt(e, e.currentTarget));
+    if (duration && !afterPinch()) onSeek(timeAt(e, e.currentTarget));
   };
   // A marker: a touch selects it, a drag moves it from bar to bar.
   const grab = (e, s) => {
@@ -624,6 +732,7 @@ function Overview({ loaded, item, sections, index, beats, jump, onSeek, onSectio
     const from = e.clientX;
     let bar = null;
     const move = (ev) => {
+      if (pinching.current === 1) return;
       if (bar == null && Math.abs(ev.clientX - from) < 4) return;
       userAt.current = performance.now();
       bar = nearestBarIndex(edit.bars, timeAt(ev, box));
@@ -634,6 +743,7 @@ function Overview({ loaded, item, sections, index, beats, jump, onSeek, onSectio
       el.removeEventListener('pointerup', up);
       el.removeEventListener('pointercancel', up);
       setDrag(null);
+      if (afterPinch()) return;
       if (bar == null) edit.onSelect(s.index);
       else edit.onMove(s.index, bar);
     };
@@ -650,7 +760,7 @@ function Overview({ loaded, item, sections, index, beats, jump, onSeek, onSectio
           style={{ width: `${zoom * 100}%` }}
           onClick={tap}
           title={
-            settings.stageGrid ? 'Tocca per spostarti: la testina arriva alla linea della griglia più vicina (Ctrl+rotella: zoom)' : 'Tocca per spostarti: la testina arriva alla battuta più vicina (Ctrl+rotella: zoom)'
+            settings.stageGrid ? 'Tocca per spostarti: la testina arriva alla linea della griglia più vicina (Ctrl+rotella o due dita: zoom)' : 'Tocca per spostarti: la testina arriva alla battuta più vicina (Ctrl+rotella o due dita: zoom)'
           }
         >
           {sections.map((s) => (
@@ -686,7 +796,7 @@ function Overview({ loaded, item, sections, index, beats, jump, onSeek, onSectio
                   className="st-bubble"
                   onClick={(e) => {
                     e.stopPropagation();
-                    onSection(s);
+                    if (!afterPinch()) onSection(s);
                   }}
                   title={edit ? `Scegli ${s.label}` : isQueued ? 'In coda: tocca di nuovo per annullare' : `Salta a ${s.label}${n <= 9 ? ` (${n})` : ''}`}
                 >
@@ -699,7 +809,7 @@ function Overview({ loaded, item, sections, index, beats, jump, onSeek, onSectio
                     className={`st-bubble-loop ${isLoop ? 'is-on' : ''}`}
                     onClick={(e) => {
                       e.stopPropagation();
-                      onLoop(true);
+                      if (!afterPinch()) onLoop(true);
                     }}
                     aria-pressed={isLoop}
                     title={isLoop ? 'Esci dal loop (L)' : 'Loop infinito della sezione (L)'}
@@ -735,19 +845,6 @@ function Overview({ loaded, item, sections, index, beats, jump, onSeek, onSectio
         </div>
       </div>
       {!loaded && <div className="st-ov-empty muted">Carica un brano dalla scaletta: qui compaiono la forma d’onda e le sue sezioni.</div>}
-      {loaded && !sections.length && !edit && (
-        <div className="st-ov-empty muted">
-          “{item?.title}” non ha sezioni:{' '}
-          {canEdit ? (
-            <>
-              creale con <b>Modifica</b>
-            </>
-          ) : (
-            'chi può modificare la scaletta può crearle'
-          )}
-          , serviranno per saltare e mettere in loop.
-        </div>
-      )}
     </div>
   );
 }
@@ -1320,7 +1417,6 @@ export default function StageView({
               }
               onLoop={loop}
               edit={edit}
-              canEdit={sec.editable}
               settings={settings}
               update={update}
             />

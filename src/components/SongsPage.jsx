@@ -15,6 +15,7 @@ import {
 } from '../shared/songs.js';
 import { useAccess } from '../lib/data';
 import { db, storage } from '../lib/firebase';
+import { explainDenied, songLimitError } from '../shared/planGuard.js';
 import Icon from './Icon';
 import Toolbar, { ToolGroup } from './Toolbar';
 import { SongInspector } from './SetlistEditor';
@@ -51,12 +52,17 @@ export default function SongsPage({ user, setlists, setlist, setlistItems, canEd
   const inSetlist = new Set((setlistItems || []).map((it) => it.songId).filter(Boolean));
   const grid = { gridTemplateColumns: '28px minmax(180px, 1fr) 54px 64px 52px 110px 96px' };
 
-  const fail = (e) => notify(`Libreria non aggiornata: ${e.message || e}`, true);
+  const fail = (e) => notify(`Libreria non aggiornata: ${explainDenied(e)}`, true);
 
-  const create = (e) => {
+  const create = async (e) => {
     e.preventDefault();
     const t = title.trim();
     if (!t) return;
+    const limit = await songLimitError(user);
+    if (limit) {
+      notify(limit, true);
+      return;
+    }
     const { id, done } = createSong(user, { title: t });
     done.catch(fail);
     setTitle('');

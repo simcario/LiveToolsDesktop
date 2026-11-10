@@ -1313,11 +1313,30 @@ input[type='range'].slider:hover::-webkit-slider-thumb {
   background: #000;
   display: grid;
   place-items: center;
+  /* One cell as big as the window: a picture or a video never makes it grow (it fits inside, 16:9 or not). */
+  grid-template: 100% / 100%;
+  overflow: hidden;
 }
 .video-window video {
   width: 100%;
   height: 100%;
   object-fit: contain;
+  /* The video of the song and the one of a video item fading out, one over the other. */
+  grid-area: 1 / 1;
+}
+/* Picture of the setlist when there is no video (ScreenImage.jsx). */
+.video-window .video-still {
+  grid-area: 1 / 1;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  object-fit: contain;
+  opacity: 0;
+  transition: opacity 1.2s ease;
+}
+.video-window .video-still.is-on {
+  opacity: 1;
 }
 .video-window .video-empty {
   color: #333;
@@ -2272,6 +2291,16 @@ textarea.se-fill {
   text-align: left;
   cursor: pointer;
 }
+/* Link to the product website, at the foot of the list. */
+.prefs-nav .prefs-site {
+  flex: none;
+  margin-top: auto;
+  color: var(--muted);
+  font-size: 12px;
+}
+.prefs-nav .prefs-site:hover {
+  color: var(--accent-light);
+}
 .prefs-nav button:hover {
   background: var(--surface);
 }
@@ -3054,4 +3083,76 @@ select.lcd-input option {
 }
 .chart-editor.is-wide .chart-legend {
   max-height: 45vh;
+}
+
+/* ---------- Account: plan and usage ---------- */
+.plan-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 460px;
+}
+.plan-name {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 1.1em;
+}
+.usage {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.usage-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.usage-warn .bar-progress > span {
+  background: var(--warn);
+}
+.usage-full .bar-progress > span {
+  background: var(--danger);
+}
+.usage-full .hint {
+  color: var(--danger);
+}
+.plan-offers {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 8px;
+}
+.plan-offer {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-2, transparent);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.plan-offer:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.plan-offer:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.plan-card .align-start {
+  align-self: flex-start;
+}
+.plan-drive {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+.plan-drive .usage-alert {
+  color: var(--danger);
 }

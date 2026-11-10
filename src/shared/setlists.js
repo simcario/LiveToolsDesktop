@@ -104,6 +104,7 @@ export const PLAYBACK_TYPES = {
   sequence: { label: 'Sequenza', hint: 'Multitraccia completa con stem' },
   backing: { label: 'Solo base', hint: 'Base semplice o click' },
   live: { label: 'Live puro', hint: 'Nessun playback: metronomo e patch MIDI' },
+  video: { label: 'Video', hint: 'Solo un video (es. video d’ingresso): si sente il suono del video, poi parte il brano dopo' },
 };
 
 export const BREAK_KINDS = {

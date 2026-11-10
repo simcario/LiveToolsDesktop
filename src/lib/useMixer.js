@@ -49,7 +49,7 @@ export function useMixer({ player, lanes, canEdit: canEditSetlist, setlistId, no
   // downloaded or not played), then the live cue track; values of the song, draft included.
   const index = new Map((loaded?.tracks || []).map((tr, i) => [tr.stem.id, i]));
   const live = loaded?.tracks.find((tr) => tr.stem.live)?.stem;
-  const all = [...stemsOf(song), ...(live ? [{ ...live, gain: sheet.gain, pan: sheet.pan, input: sheet.input, eq: sheet.eq }] : [])];
+  const all = [...stemsOf(song), ...(live ? [{ ...live, gain: sheet.gain, pan: sheet.pan, input: sheet.input, eq: sheet.eq, muted: sheet.muted }] : [])];
   const strips = all.map((stem) => {
     const m = getMix(stem.id);
     return {
@@ -67,7 +67,8 @@ export function useMixer({ player, lanes, canEdit: canEditSetlist, setlistId, no
       eq: eqOf(stem),
       // The channel section changes the sound (badge on the strip).
       channel: channelActive(stem),
-      mute: m.mute ?? !!stem.muted,
+      // The cue track has only the mute of the song (on after the mixdown).
+      mute: stem.live ? !!stem.muted : (m.mute ?? !!stem.muted),
       solo: !!player.solos[stem.id],
       out: !!player.leftOut[rehearsalGroup(stem)],
       route: m.route ? routeValue(m.route) : null,
@@ -148,7 +149,9 @@ export function useMixer({ player, lanes, canEdit: canEditSetlist, setlistId, no
         if (stem) local(stem, { route: a.value ? parseRoute(a.value) : null });
         break;
       case 'mute':
-        if (stem) local(stem, { mute: !(getMix(stem.id).mute ?? !!stem.muted) });
+        if (stem?.live) {
+          if (canEdit) setStem(a.id, { muted: !stem.muted }, stem.muted ? 'Traccia cue riattivata' : 'Traccia cue mutata', false);
+        } else if (stem) local(stem, { mute: !(getMix(stem.id).mute ?? !!stem.muted) });
         break;
       case 'solo':
         if (stem && index.has(stem.id)) player.setTrack(stem, { solo: !player.solos[stem.id] });

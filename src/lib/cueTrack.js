@@ -5,9 +5,10 @@
 import { invoke } from '@tauri-apps/api/core';
 import { gridBeats } from './grid';
 import { sectionTiming } from './sections';
-import { cueTrackOf, deleteMediaFile, mediaTarget, saveStems, stemsOf, uploadMedia } from '../shared/media.js';
-import { db, storage } from './firebase';
+import { cueTrackOf, deleteMediaFile, mediaTarget, saveStems, stemsOf, uploadMediaFile } from '../shared/media.js';
+import { auth, db, storage } from './firebase';
 import { storeLocal } from './mediaCache';
+import { mediaDestination } from '../shared/planGuard.js';
 
 const LABELS = [
   'One!', 'Two!', 'Three!', 'Four!', 'Five!', 'Six!', 'Seven!', 'Eight!', 'Intro', 'Verse one', 'Verse two', 'Verse three',
@@ -143,8 +144,13 @@ export async function renderCueTrack(cues, bars, duration, tail = 3) {
 export async function publishCueTrack(setlistId, item, blob, onProgress) {
   const target = mediaTarget(setlistId, item);
   const file = new File([blob], 'Cues.wav', { type: 'audio/wav' });
-  const media = await uploadMedia(storage, target, file, onProgress).promise;
-  storeLocal(media.path, file);
+  const { store, mp3, device, error } = await mediaDestination(auth.currentUser, target, [file]);
+  if (error) throw new Error(error);
+  const up = uploadMediaFile(storage, target, file, onProgress, { store, mp3, device });
+  const media = await up.promise;
+  const copy = storeLocal(media.path, up.file);
+  // Free plan (store 'local'): this copy is the only one.
+  if (store === 'local' && !(await copy)) throw new Error('Copia della traccia Cues sul disco non riuscita');
   const stems = stemsOf(item);
   const old = stems.filter((s) => s.generated === 'cues');
   const stem = { ...media, name: 'Cues', role: 'guide', instrument: 'other', gain: 0, pan: 0, muted: false, generated: 'cues' };
@@ -161,31 +167,29 @@ function hash(s) {
   return h.toString(36);
 }
 
-// ---------- Live cue track (desktop only) ----------
-// Without the audio file (or when the cues changed after rendering it), the
-// player makes the "Cues" track itself from the cue sheet when it loads the
+// ---------- Live cue track ----------
+// The player makes the cue track itself from the cue sheet when it loads the
 // song: rendered once on this computer, kept in the local media cache and
-// never uploaded. The web app only hears the rendered file.
+// never uploaded. Its mute is the song's (cueTrack.muted, the whole band):
+// the mixdown turns it on, and the "Cues" stem made from it is then heard as
+// any other audio track (the web plays that one too).
 
 /**
- * What the player does with the cues of a song: null when there are none or
- * the "Cues" stem is up to date; otherwise the local track to play and the
- * out-of-date stem to leave out.
+ * What the player does with the cues of a song: null when there are none;
+ * otherwise the local track to play (muted with the cue track).
  */
 export function liveCuePlan(item) {
   const sheet = cueTrackOf(item);
   if (!sheet.cues.length) return null;
-  const rendered = stemsOf(item).find((s) => s.generated === 'cues');
   const key = sheetKey(sheet.cues);
-  if (rendered && sheet.renderedKey === key) return null;
   // Everything the grid depends on: a change makes a new local file.
   const sig = hash(
     // Of the sections only their timing: names and markers leave the cues as they are.
-    JSON.stringify([2, key, item.bpm, item.timeSig, sectionTiming(item), item.grid, item.countInBars, stemsOf(item).map((s) => s.id).sort(), item.regions || null]),
+    // The "Cues" stem leaves the grid as it is (lib/arrange.js firstStart).
+    JSON.stringify([2, key, item.bpm, item.timeSig, sectionTiming(item), item.grid, item.countInBars, stemsOf(item).filter((s) => s.generated !== 'cues').map((s) => s.id).sort(), item.regions || null]),
   );
   return {
-    skip: rendered?.id ?? null,
-    stem: { id: 'cues-live', name: 'Cues (live)', role: 'guide', instrument: 'other', gain: sheet.gain, pan: sheet.pan, input: sheet.input, eq: sheet.eq, muted: false, live: true, path: `local/cues/${item.id}-${sig}.wav` },
+    stem: { id: 'cues-live', name: 'Cues (live)', role: 'guide', instrument: 'other', gain: sheet.gain, pan: sheet.pan, input: sheet.input, eq: sheet.eq, muted: sheet.muted, live: true, path: `local/cues/${item.id}-${sig}.wav` },
     resolution: sheet.resolution,
     cues: sheet.cues,
   };

@@ -58,12 +58,36 @@ pub struct Region {
     /// Muted segment: silent, but kept in its place.
     #[serde(default)]
     pub muted: bool,
+    /// Fade in and out (seconds) at the start and at the end of the region,
+    /// as the clips of a DAW (the sound of a video item).
+    #[serde(default)]
+    pub fade_in: f64,
+    #[serde(default)]
+    pub fade_out: f64,
+}
+
+impl Region {
+    pub fn whole() -> Self {
+        Region { at: 0.0, from: 0.0, len: None, muted: false, fade_in: 0.0, fade_out: 0.0 }
+    }
+
+    /// Level of the fades at `t` seconds of the song, the region ending at `end`.
+    fn fade(&self, t: f64, end: f64) -> f32 {
+        let mut g = 1f64;
+        if self.fade_in > 0.0 {
+            g = g.min((t - self.at) / self.fade_in);
+        }
+        if self.fade_out > 0.0 && end.is_finite() {
+            g = g.min((end - t) / self.fade_out);
+        }
+        g.clamp(0.0, 1.0) as f32
+    }
 }
 
 /// The regions as played: sorted, and the whole file when there are none.
 pub fn normalize(regions: &[Region]) -> Vec<Region> {
     if regions.is_empty() {
-        return vec![Region { at: 0.0, from: 0.0, len: None, muted: false }];
+        return vec![Region::whole()];
     }
     let mut r: Vec<Region> = regions.iter().filter(|r| !r.muted && r.from >= 0.0 && r.len.is_none_or(|l| l > 0.0)).cloned().collect();
     r.sort_by(|a, b| a.at.total_cmp(&b.at));
@@ -185,6 +209,13 @@ fn run(path: &PathBuf, start: f64, dst_rate: u32, regions: &[Region], mut tx: Pr
             let mut frames = (pending.len() / 2) as u64;
             if let Some(e) = end_frame {
                 frames = frames.min(e.saturating_sub(written));
+            }
+            if r.fade_in > 0.0 || r.fade_out > 0.0 {
+                for (i, f) in pending[..frames as usize * 2].chunks_exact_mut(2).enumerate() {
+                    let g = r.fade(start + (written + i as u64) as f64 / rate, end);
+                    f[0] *= g;
+                    f[1] *= g;
+                }
             }
             if !push(&mut tx, &pending[..frames as usize * 2], stop) {
                 return Ok(());

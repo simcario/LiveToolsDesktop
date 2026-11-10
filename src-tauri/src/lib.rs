@@ -232,13 +232,21 @@ pub fn run() {
             media::request_peaks,
             media::store_media_chunk,
             media::store_media_done,
+            media::delete_local_media,
             oauth::google_sign_in,
             bluetooth::bluetooth_devices,
             ndi::ndi_status,
             ndi::ndi_configure,
             ndi::ndi_video_source,
             ndi::ndi_prompter_frame,
+            ndi::ndi_video_still,
         ])
+        // Closing the main window closes the program: video, gobbo and mixer windows too.
+        .on_window_event(|window, event| {
+            if window.label() == "main" && matches!(event, tauri::WindowEvent::Destroyed) {
+                window.app_handle().exit(0);
+            }
+        })
         .run(tauri::generate_context!())
         .expect("errore all'avvio di LiveTools");
 }

@@ -16,6 +16,7 @@
 import { arrayUnion, doc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { deleteObject, getBytes, ref, uploadBytes, uploadBytesResumable } from 'firebase/storage';
 import { newId } from './setlists';
+import { copyDriveFile, deleteDriveFile, driveInner, drivePath, isDrivePath, uploadToDrive } from './drive';
 
 // Role of a stem: decides the output it goes to on the desktop (output matrix).
 export const STEM_ROLES = {
@@ -54,6 +55,11 @@ export const extension = (name) => (/\.([a-z0-9]+)$/i.exec(name || '')?.[1] || '
 export function contentType(file) {
   return file.type || MIME[extension(file.name)] || 'application/octet-stream';
 }
+
+// Uncompressed or lossless audio: converted to MP3 before going to the cloud (mp3.js).
+// MP3, AAC, Ogg… are already small and stay as they are.
+export const LOSSLESS_EXTENSIONS = ['wav', 'aif', 'aiff', 'flac'];
+export const isLossless = (file) => LOSSLESS_EXTENSIONS.includes(extension(file?.name));
 
 export function isAudioFile(file) {
   return contentType(file).startsWith('audio/') || AUDIO_EXTENSIONS.includes(extension(file.name));
@@ -116,6 +122,7 @@ export function guessInstrument(name) {
 // Click and guides are never "an instrument": they go in every rehearsal mix.
 export function instrumentOf(stem) {
   if (stem.role === 'click' || stem.role === 'guide') return null;
+  if (stem.instrument === VIDEO_GROUP) return VIDEO_GROUP;
   return INSTRUMENTS[stem.instrument] ? stem.instrument : guessInstrument(stem.name);
 }
 
@@ -131,11 +138,12 @@ export function partInstrument(part) {
 export const rehearsalGroup = (stem) => (stem.role === 'click' || stem.role === 'guide' ? stem.role : instrumentOf(stem));
 
 // 'metro': the system click of the web rehearsal, synthesised on the grid of the song.
-const GROUP_LABELS = { click: 'Click', metro: 'Click di sistema', guide: 'Guide' };
+const GROUP_LABELS = { click: 'Click', metro: 'Click di sistema', guide: 'Guide', video: 'Video' };
 export const groupLabel = (group) => GROUP_LABELS[group] || INSTRUMENTS[group] || group;
 
 /** Groups of the audible stems of a song: instruments first, then click and guides. */
 export function rehearsalGroups(item) {
+  if (isVideoItem(item)) return videoOf(item) ? [VIDEO_GROUP] : [];
   const present = new Set(stemsOf(item).filter((s) => !s.muted).map(rehearsalGroup));
   // Cues without a "Cues" file: the rehearsal makes them (lib/cue-track.js), in the guides.
   if (present.size && cueTrackOf(item).cues.length) present.add('guide');
@@ -145,12 +153,38 @@ export function rehearsalGroups(item) {
 /** Groups of the web rehearsal: those of the stems plus the system click, next to the audio one. */
 export function rehearsalMixGroups(item) {
   const groups = rehearsalGroups(item);
+  if (isVideoItem(item)) return groups;
   if (groups.length) groups.splice(groups.length - (groups.includes('guide') ? 1 : 0), 0, 'metro');
   return groups;
 }
 
 export const stemsOf = (item) => (Array.isArray(item?.stems) ? item.stems : []);
 export const videoOf = (item) => (item?.video?.path ? item.video : null);
+
+// ---------- Video items ----------
+// A setlist item can be only a video (playback 'video', e.g. the opening video):
+// no stems, its sound is the one of the video file, heard as a track of the
+// group "Video", and it links to the next song (AutoLink unless another
+// transition is chosen). On the item, for the whole band: fade in and out of
+// picture and sound (videoFadeIn / videoFadeOut, seconds) and padLead, the
+// seconds before the end of the video when the pad comes in, in the key of the
+// next song (a song without intro can then start straight away).
+export const VIDEO_GROUP = 'video';
+export const isVideoItem = (item) => item?.playback === 'video';
+export const VIDEO_FADE_MAX = 30;
+export const PAD_LEAD_MAX = 120;
+const seconds = (v, fallback, max) => (v === null || v === undefined || v === '' ? fallback : Math.max(0, Math.min(max, Number(v) || 0)));
+export const videoFades = (item) => ({ in: seconds(item?.videoFadeIn, 0, VIDEO_FADE_MAX), out: seconds(item?.videoFadeOut, 3, VIDEO_FADE_MAX) });
+export const padLeadOf = (item) => (isVideoItem(item) && Number(item?.padLead) > 0 ? Math.min(PAD_LEAD_MAX, Number(item.padLead)) : null);
+// The sound of the video as a track: it plays from the video file itself.
+export const videoAudioStem = (item) => ({ id: 'video-audio', name: 'Audio del video', role: 'main', instrument: VIDEO_GROUP, gain: Number(item?.video?.gain) || 0, pan: 0 });
+/** Level of picture and sound (0..1) at `t` seconds of a video `duration` long, with its fades. */
+export function fadeLevel(t, duration, fades) {
+  let g = 1;
+  if (fades.in > 0) g = Math.min(g, t / fades.in);
+  if (fades.out > 0 && Number.isFinite(duration) && duration > 0) g = Math.min(g, (duration - t) / fades.out);
+  return Math.max(0, Math.min(1, g));
+}
 
 export function formatBytes(n) {
   if (!n) return '0 B';
@@ -165,19 +199,55 @@ export const mediaTarget = (setlistId, item) => (item?.songId ? { songId: item.s
 
 const mediaFolder = (t) => (t.songId ? `songs/${t.songId}/` : `setlists/${t.setlistId}/items/${t.itemId}/`);
 
+// Free plan: the files stay on the device that added them (device.js), under
+// local/<folder of the song>/<id>-<name>. Nothing goes to the network; each app
+// keeps the bytes in its own cache (setLocalFiles) and the other devices only
+// see that the file exists.
+export const LOCAL_PREFIX = 'local/';
+export const isLocalPath = (path) => (path || '').startsWith(LOCAL_PREFIX);
+let localFiles = null;
+/** The app's store of the local files: { remove(path) }. */
+export const setLocalFiles = (impl) => {
+  localFiles = impl;
+};
+const innerPath = (path) => (isLocalPath(path) ? path.slice(LOCAL_PREFIX.length) : driveInner(path));
+
 const mediaDoc = (db, t) => (t.songId ? doc(db, 'songs', t.songId) : doc(db, 'setlists', t.setlistId, 'items', t.itemId));
 
+const safeName = (file) => file.replace(/[^\w.\- ]+/g, '_');
+
 function mediaPath(target, id, file) {
-  const safe = file.replace(/[^\w.\- ]+/g, '_');
-  return `${mediaFolder(target)}${id}-${safe}`;
+  return `${mediaFolder(target)}${id}-${safeName(file)}`;
 }
 
 /**
  * Uploads a file of a song. Resolves with the media descriptor (not yet saved
  * on the song). onProgress receives 0..1; returns { promise, cancel }.
+ * store: 'cloud' (LiveTools Storage), 'drive' (the Google Drive the user
+ * connected, Plus plan: drive.js) or 'local' (only this device, Free plan: the
+ * caller keeps the file in its cache). The choice is mediaDestination in planGuard.js.
  */
-export function uploadMedia(storage, target, file, onProgress) {
+export function uploadMedia(storage, target, file, onProgress, { store = 'cloud', device = null } = {}) {
   const id = newId();
+  if (store === 'local') {
+    onProgress?.(1);
+    const media = { id, name: stemName(file.name), file: file.name, path: LOCAL_PREFIX + mediaPath(target, id, file.name), size: file.size, type: contentType(file), store: 'local', device };
+    return { promise: Promise.resolve(media), cancel: () => {} };
+  }
+  if (store === 'drive') {
+    const type = contentType(file);
+    const up = uploadToDrive(file, { name: file.name, type, properties: { mediaId: id } }, onProgress);
+    const promise = up.promise.then((r) => ({
+      id,
+      name: stemName(file.name),
+      file: file.name,
+      path: drivePath(mediaFolder(target), r.id, safeName(file.name)),
+      size: r.size,
+      type,
+      store: 'drive',
+    }));
+    return { promise, cancel: up.cancel };
+  }
   const path = mediaPath(target, id, file.name);
   const type = contentType(file);
   const task = uploadBytesResumable(ref(storage, path), file, {
@@ -195,8 +265,48 @@ export function uploadMedia(storage, target, file, onProgress) {
   return { promise, cancel: () => task.cancel() };
 }
 
+/**
+ * uploadMedia, converting first a WAV, AIFF or FLAC file to MP3 when `mp3`
+ * (mediaDestination in planGuard.js decides). onProgress(0..1, phase) with phase
+ * 'mp3' while converting and 'upload' after. Returns { promise, cancel, file }:
+ * `file` is the File really uploaded once the promise settles (the MP3, or the
+ * original), for the local cache.
+ */
+export function uploadMediaFile(storage, target, file, onProgress, { store = 'cloud', mp3 = false, device = null } = {}) {
+  if (!mp3 || !isLossless(file)) {
+    const up = uploadMedia(storage, target, file, (p) => onProgress?.(p, 'upload'), { store, device });
+    return { ...up, file };
+  }
+  const abort = new AbortController();
+  let upload = null;
+  const handle = {
+    file,
+    cancel: () => {
+      abort.abort();
+      upload?.cancel();
+    },
+  };
+  onProgress?.(0, 'mp3');
+  handle.promise = import('./mp3')
+    .then(({ toMp3 }) => toMp3(file, (p) => onProgress?.(p, 'mp3'), abort.signal))
+    .then((converted) => {
+      if (abort.signal.aborted) throw Object.assign(new Error('Caricamento annullato'), { code: 'storage/canceled' });
+      handle.file = converted;
+      upload = uploadMedia(storage, target, converted, (p) => onProgress?.(p, 'upload'), { store });
+      return upload.promise;
+    });
+  return handle;
+}
+
 /** Copies a file already in Storage to another owner (same descriptor, new path). */
 export async function copyMediaFile(storage, media, target) {
+  // Only on the device that has it, cached under its path: the same file.
+  if (isLocalPath(media.path)) return { ...media };
+  // On Google Drive: a copy on the same Drive, owned by the new song.
+  if (isDrivePath(media.path)) {
+    const name = media.file || media.name || 'file';
+    return { ...media, path: drivePath(mediaFolder(target), await copyDriveFile(media.path, name), safeName(name)) };
+  }
   const path = mediaPath(target, media.id || newId(), media.file || media.name || 'file');
   const bytes = await getBytes(ref(storage, media.path));
   await uploadBytes(ref(storage, path), bytes, {
@@ -240,6 +350,10 @@ export const cueTrackOf = (song) => ({
   // Channel section (Mixer → click on the track name): input gain dB and EQ, see eq.js.
   input: Number(song?.cueTrack?.input) || 0,
   eq: song?.cueTrack?.eq || null,
+  // Mute of the cue track for the whole band (saved with the song): on after the
+  // mixdown into the "Cues" file, which is then the track heard. Songs rendered
+  // before the mute existed: muted when they have the file.
+  muted: typeof song?.cueTrack?.muted === 'boolean' ? song.cueTrack.muted : stemsOf(song).some((s) => s.generated === 'cues'),
 });
 
 export function saveCueTrack(db, target, cueTrack) {
@@ -264,11 +378,19 @@ export function saveMediaFields(db, target, fields) {
 
 // Duplicated setlists keep pointing at the files of the original: only the
 // song (or item) that uploaded a file may delete it.
-export const ownsMedia = (target, path) => (path || '').startsWith(mediaFolder(target));
+export const ownsMedia = (target, path) => innerPath(path || '').startsWith(mediaFolder(target));
 
 // A file already gone from Storage must not block removing it from the list.
 export async function deleteMediaFile(storage, path, owner) {
   if (owner && !ownsMedia(owner, path)) return;
+  if (isLocalPath(path)) {
+    await localFiles?.remove?.(path);
+    return;
+  }
+  if (isDrivePath(path)) {
+    await deleteDriveFile(path);
+    return;
+  }
   try {
     await deleteObject(ref(storage, path));
   } catch (e) {

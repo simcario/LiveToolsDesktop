@@ -10,6 +10,7 @@ import { gridOf } from '../lib/sync';
 import { getMix, useMix } from '../lib/settings';
 import { toggleMixerWindow } from '../lib/useMixer';
 import Icon from './Icon';
+import { useOutputOpen } from '../lib/outputs';
 import Meter from './Meter';
 import SyncControl from './SyncControl';
 import { CueHeader, cueCellAt, drawCueLane, useCueTrack, useNowCue } from './CueLane';
@@ -406,6 +407,7 @@ function TrackHeader({ row, index, solos, onTrack, selected, onSelect }) {
 // compact (tablet): the title is already in the bar above, grid and view open from ⋯, zoom with two fingers.
 export default function ArrangementView({ player, item, lanes, settings, update, onVideoOutput, onMixer = toggleMixerWindow, canEdit, setlistId, notify, compact = false }) {
   const loaded = player.loaded;
+  const videoOpen = useOutputOpen('video');
   const peaks = usePeaks();
   useMix();
   const scroller = useRef(null);
@@ -453,7 +455,8 @@ export default function ArrangementView({ player, item, lanes, settings, update,
   if (loaded?.video) rows.push({ kind: 'video', name: loaded.video.name, offset: loaded.video.offset, duration: loaded.duration, color: ROLE_COLORS.video, onOutput: onVideoOutput });
   loaded?.tracks.forEach(
     (t, i) =>
-      // The audio of the cues is mixed from the cue track's header.
+      // The live track of the cues is mixed from the cue track's header; the
+      // "Cues" file of the mixdown is an audio track as the others.
       !(cue.exists && i === cue.audioIndex) &&
       rows.push({
         kind: 'audio',
@@ -523,7 +526,7 @@ export default function ArrangementView({ player, item, lanes, settings, update,
     if (canvas.current) {
       const warp = warpOn ? { grid, onsets, refStemId: refTrack?.stem.id, drag } : null;
       const byG = cueDrag ? new Map(cue.shifted(cueDrag).map((c) => [c.g, c.label])) : cueMove ? new Map(cue.moved(cueMove.from, cueMove.to).map((c) => [c.g, c.label])) : cue.byG;
-      const cueDraw = { bars: cue.bars, byG, status: cue.busy || cue.status, hover: cueDrag ? null : cueMove ? cueMove.to : cueHover, nowG: nowCue };
+      const cueDraw = { bars: cue.bars, byG, muted: cue.muted, status: cue.busy || cue.status, hover: cueDrag ? null : cueMove ? cueMove.to : cueHover, nowG: nowCue };
       draw(canvas.current, { width: view.width, height, scroll: view.scroll, pps, t0, tempo, rows, peaks, duration, warp, cue: cueDraw, sections: drawnSections });
     }
   });
@@ -1362,9 +1365,9 @@ export default function ArrangementView({ player, item, lanes, settings, update,
             </button>
           )}
         </ToolGroup>
-        {loaded.video && onVideoOutput && (
+        {onVideoOutput && (
           <ToolGroup id="output" label="Uscite">
-            <button className="btn btn-sm" onClick={onVideoOutput}>
+            <button className={`btn btn-sm ${videoOpen ? 'is-on' : ''}`} onClick={onVideoOutput} aria-pressed={videoOpen} title={videoOpen ? 'Chiudi l’uscita video (F4)' : 'Apri l’uscita video (F4)'}>
               <Icon name="monitor" size={14} /> Uscita video
             </button>
           </ToolGroup>

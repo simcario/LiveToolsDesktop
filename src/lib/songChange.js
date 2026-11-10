@@ -4,6 +4,7 @@
 import { doc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { transposeKey } from '../shared/music.js';
 import { db } from './firebase';
+import { isVideoItem } from '../shared/media.js';
 
 const PITCH = { C: 0, 'B#': 0, 'C#': 1, Db: 1, D: 2, 'D#': 3, Eb: 3, E: 4, Fb: 4, F: 5, 'E#': 5, 'F#': 6, Gb: 6, G: 7, 'G#': 8, Ab: 8, A: 9, 'A#': 10, Bb: 10, B: 11, Cb: 11 };
 export const PAD_KEYS = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
@@ -45,8 +46,10 @@ export const TRANSITIONS = [
 ];
 export const transitionLabel = (mode) => TRANSITIONS.find((t) => t[0] === mode)?.[1] || mode;
 
-// Without a transition of its own a song follows the auto-advance of this computer.
-export const transitionOf = (item, settings) => (TRANSITIONS.some((t) => t[0] === item?.transition) ? item.transition : settings.autoAdvance ? 'cue' : 'stay');
+// Without a transition of its own a song follows the auto-advance of this computer;
+// a video item goes straight on into the next song (AutoLink).
+export const defaultTransition = (item, settings) => (isVideoItem(item) ? 'autolink' : settings.autoAdvance ? 'cue' : 'stay');
+export const transitionOf = (item, settings) => (TRANSITIONS.some((t) => t[0] === item?.transition) ? item.transition : defaultTransition(item, settings));
 export const isLinked = (mode) => mode === 'autolink' || mode === 'overlap' || mode === 'crossfade';
 
 const XFADE = 5;

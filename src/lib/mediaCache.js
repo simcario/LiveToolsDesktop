@@ -5,7 +5,12 @@ import { useSyncExternalStore } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getDownloadURL, ref } from 'firebase/storage';
-import { stemsOf, videoOf } from '../shared/media.js';
+import { isLocalPath, setLocalFiles, stemsOf, videoOf } from '../shared/media.js';
+import { driveMediaUrl, driveToken, isDrivePath } from '../shared/drive.js';
+
+// Files of the Free plan (local/…): only in this cache, nothing to download.
+setLocalFiles({ remove: (path) => invoke('delete_local_media', { path }).then(() => set(path, { ready: false, local: null })) });
+export const LOCAL_MISSING = 'File solo sul dispositivo che lo ha aggiunto: qui non c’è.';
 import { scoreOf } from '../shared/score.js';
 import { storage } from './firebase';
 
@@ -62,6 +67,18 @@ function pump() {
   }
 }
 
+// Plus plan: the file is on the Google Drive the owner connected (shared/drive.js);
+// Rust downloads it with the access token. One retry with a new token.
+async function fromDrive(path) {
+  const url = driveMediaUrl(path);
+  try {
+    return await invoke('download_media', { url, path, bearer: (await driveToken()).accessToken });
+  } catch (e) {
+    if (!/scaduto/.test(String(e))) throw e;
+    return invoke('download_media', { url, path, bearer: (await driveToken({ fresh: true })).accessToken });
+  }
+}
+
 /** Downloads one file if missing; resolves with its local path (or null). */
 export function ensureFile(entry) {
   const cur = state[entry.path];
@@ -71,8 +88,8 @@ export function ensureFile(entry) {
     queue.push(async () => {
       set(entry.path, { downloading: true, error: null, received: 0, total: entry.size || 0 });
       try {
-        const url = await getDownloadURL(ref(storage, entry.path));
-        const local = await invoke('download_media', { url, path: entry.path });
+        if (isLocalPath(entry.path)) throw new Error(LOCAL_MISSING);
+        const local = isDrivePath(entry.path) ? await fromDrive(entry.path) : await invoke('download_media', { url: await getDownloadURL(ref(storage, entry.path)), path: entry.path });
         set(entry.path, { local, ready: true, downloading: false, promise: null });
         resolve(local);
       } catch (e) {
@@ -104,6 +121,18 @@ export function downloadProgress(files, cache = state) {
 
 const CHUNK = 8 * 1024 * 1024;
 
+// Android's IPC carries JSON only (no raw body): chunks go as base64, smaller.
+const ANDROID = /android/i.test(navigator.userAgent);
+const CHUNK_SIZE = ANDROID ? 2 * 1024 * 1024 : CHUNK;
+
+const base64Of = (blob) =>
+  new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).slice(String(r.result).indexOf(',') + 1));
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(blob);
+  });
+
 /**
  * Copies a file uploaded from this computer into the cache under its storage
  * path, so it is ready to play without downloading it back.
@@ -119,9 +148,10 @@ async function copyLocal(path, file) {
   try {
     let offset = 0;
     do {
-      const bytes = new Uint8Array(await file.slice(offset, offset + CHUNK).arrayBuffer());
-      await invoke('store_media_chunk', bytes, { headers: { 'x-path': encodeURIComponent(path), 'x-offset': String(offset) } });
-      offset += bytes.length;
+      const part = file.slice(offset, offset + CHUNK_SIZE);
+      const body = ANDROID ? await base64Of(part) : new Uint8Array(await part.arrayBuffer());
+      await invoke('store_media_chunk', body, { headers: { 'x-path': encodeURIComponent(path), 'x-offset': String(offset) } });
+      offset += part.size;
       set(path, { received: offset });
     } while (offset < file.size);
     const local = await invoke('store_media_done', { path, size: file.size });

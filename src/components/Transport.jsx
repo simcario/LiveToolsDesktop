@@ -250,7 +250,7 @@ export default function Transport({ user, item, player, settings, update, canDri
           <Icon name="settings" size={14} />
         </button>
       </ToolGroup>
-      <ToolGroup id="app" label="App" locked>
+      <ToolGroup id="app" label="App" locked corner>
         <button className="btn btn-ghost btn-icon" onClick={onHelp} title="Manuale (F1)" aria-label="Manuale">
           <Icon name="help" size={16} />
         </button>

@@ -15,6 +15,13 @@ const files = [
   ['src/lib/score.js', 'score.js'],
   ['src/lib/chartSheet.js', 'chartSheet.js'],
   ['src/lib/eq.js', 'eq.js'],
+  ['src/lib/plans.js', 'plans.js'],
+  ['src/lib/drive.js', 'drive.js'],
+  ['src/lib/planGuard.js', 'planGuard.js'],
+  ['src/lib/device.js', 'device.js'],
+  ['src/lib/mp3.js', 'mp3.js'],
+  ['src/lib/mp3encode.js', 'mp3encode.js'],
+  ['src/lib/mp3.worker.js', 'mp3.worker.js'],
 ];
 // Imports of web modules that live elsewhere here.
 const REWRITES = [["from './firebase'", "from '../lib/firebase'"]];

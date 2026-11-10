@@ -26,6 +26,15 @@ export default function PrompterWindow() {
     const w = getCurrentWindow();
     await w.setFullscreen(!(await w.isFullscreen()));
   };
+  // Esc back to a window, F6 (as in the main window) switches the gobbo off.
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === 'Escape') getCurrentWindow().setFullscreen(false).catch(() => {});
+      if (e.key === 'F6') getCurrentWindow().close().catch(() => {});
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   return (
     <div className="prompter-window" onDoubleClick={toggleFullscreen} style={{ cursor: source ? 'none' : 'default' }}>

@@ -5,6 +5,25 @@ versioni [SemVer](https://semver.org/lang/it/). Procedura di rilascio: [docs/REL
 
 ## [Non rilasciato]
 
+### Piani e account
+- Niente più attesa di abilitazione: chi entra con Google usa subito l'app con il piano Free.
+- **Impostazioni › Account**: piano in corso (Free, Plus, Pro) con scadenza, brani della libreria rispetto al limite
+  e, nel Pro, spazio usato nel cloud; barra gialla all'80% e rossa al limite.
+- Con i limiti attivi l'app avvisa prima di scrivere: oltre i 10 brani del Free non se ne creano di nuovi, e tracce,
+  video e Mixdown delle cue vanno nel cloud solo con il Pro del proprietario del brano (entro 25 GB). Gli spartiti
+  fino a 20 MB restano per tutti. I rifiuti del server ora indicano di controllare ruolo e piano.
+- Abbonamento dal computer: in **Impostazioni › Account** i pulsanti Plus e Pro aprono nel browser il pagamento
+  (Stripe) di LiveTools web; con un abbonamento attivo, **Gestisci abbonamento e fatture**. Mostra da dove arriva
+  il piano e la data di rinnovo o di fine.
+- **Google Drive (Plus)**: tracce, video e Mixdown delle cue vanno sul Google Drive scelto dall'utente (qualsiasi
+  account Google, collegato dalla pagina Account del web) e si scaricano da lì come gli altri file.
+
+### Mixdown della traccia cue
+- Pulsante **Mixdown** nella traccia cue: le cue diventano la traccia audio "Cues", visibile nell'Arrangement come
+  le altre tracce e ascoltabile anche dal web.
+- Finito il mixdown la traccia cue si muta per tutta la band e la traccia audio è attiva. Il muto della traccia cue
+  (M nell'intestazione e nel Mixer) è salvato con il brano e vale su tutti i computer e sul web.
+
 ### Fader da mixer
 - I fader della vista Palco hanno un cappuccio rigato con la linea nel colore della striscia (bianco per il master) e una scala in dB da +6 a ∞ accanto alla guida.
 
@@ -24,6 +43,7 @@ versioni [SemVer](https://semver.org/lang/it/). Procedura di rilascio: [docs/REL
   Bluetooth collegati, prova del pedale e apprendimento dei tasti.
 
 ### Vista Palco
+- Un brano senza sezioni non mostra più l’avviso sulla forma d’onda.
 - La griglia **Session** è sostituita dalla vista **Palco**, per suonare dal vivo: comandi grandi, panoramica del brano,
   sezioni, mixer del brano caricato e scaletta nella stessa schermata. Toccare la scaletta non interrompe il brano in
   corso.

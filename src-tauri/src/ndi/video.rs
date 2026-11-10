@@ -101,6 +101,10 @@ impl Decoder {
         }
     }
 
+    pub fn duration(&self) -> f64 {
+        self.duration
+    }
+
     /// The frame on screen at `t` seconds of the video: before the start the
     /// first one, after the end the last one (like the paused video window).
     pub fn frame_at(&mut self, t: f64) -> Option<&Frame> {

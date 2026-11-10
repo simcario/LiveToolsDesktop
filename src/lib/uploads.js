@@ -2,12 +2,13 @@
 // fields as the web app). Uploads keep going while moving between songs and
 // pages, and each file is also copied into the local cache.
 import { useSyncExternalStore } from 'react';
-import { addStem, deleteMediaFile, mediaTarget, saveScore, saveVideo, uploadMedia, videoOf } from '../shared/media.js';
+import { addStem, deleteMediaFile, mediaTarget, saveScore, saveVideo, uploadMediaFile, videoOf } from '../shared/media.js';
 import { scoreOf } from '../shared/score.js';
-import { db, storage } from './firebase';
+import { auth, db, storage } from './firebase';
+import { explainDenied, mediaDestination } from '../shared/planGuard.js';
 import { storeLocal } from './mediaCache';
 
-// [{ key, itemId, kind: 'stems' | 'video' | 'score', name, progress 0..1, cancel }]
+// [{ key, itemId, kind: 'stems' | 'video' | 'score', name, progress 0..1, phase: 'mp3' | 'upload', cancel }]
 let uploads = [];
 const listeners = new Set();
 const emit = (next) => {
@@ -28,15 +29,32 @@ export function useUploads() {
 }
 
 /** onDone(text) for the history, onError(text) for the status bar. */
-export function startUploads({ setlistId, item, kind, files, onDone, onError }) {
+export async function startUploads({ setlistId, item, kind, files, onDone, onError }) {
+  const target = mediaTarget(setlistId, item);
+  // LiveTools cloud or the owner's Google Drive, within the plan (planGuard.js).
+  let dest;
+  try {
+    dest = await mediaDestination(auth.currentUser, target, files);
+  } catch (e) {
+    onError(`Caricamento non avviato: ${explainDenied(e)}`);
+    return;
+  }
+  const { store, mp3, device, error: limit } = dest;
+  if (limit) {
+    onError(limit);
+    return;
+  }
   files.forEach((file) => {
     const key = `${item.id}-${file.name}-${Date.now()}-${Math.random()}`;
-    const target = mediaTarget(setlistId, item);
-    const { promise, cancel } = uploadMedia(storage, target, file, (progress) => patch(key, { progress }));
+    // WAV, AIFF and FLAC become MP3 here first (mp3.js); the original stays where it is on disk.
+    const up = uploadMediaFile(storage, target, file, (progress, phase) => patch(key, { progress, phase }), { store, mp3, device });
+    const { promise, cancel } = up;
     emit([...uploads, { key, itemId: item.id, kind, name: file.name, progress: 0, cancel }]);
     promise
       .then(async (media) => {
-        storeLocal(media.path, file);
+        // Free plan (store 'local'): this copy is the only one, wait for it.
+        const copy = storeLocal(media.path, up.file);
+        if (store === 'local' && !(await copy)) throw new Error('copia sul disco non riuscita');
         if (kind === 'stems') {
           await addStem(db, target, media);
           onDone(`Aggiunta la traccia “${media.name}” a “${item.title}”`);
@@ -53,7 +71,7 @@ export function startUploads({ setlistId, item, kind, files, onDone, onError }) 
         }
       })
       .catch((e) => {
-        if (e?.code !== 'storage/canceled') onError(`${file.name}: ${e.message}`);
+        if (e?.code !== 'storage/canceled') onError(`${file.name}: ${explainDenied(e)}`);
       })
       .finally(() => drop(key));
   });

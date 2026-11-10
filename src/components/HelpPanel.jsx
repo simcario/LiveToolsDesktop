@@ -5,6 +5,7 @@ import { marked } from 'marked';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import manual from '../../docs/MANUALE.md?raw';
 import Icon from './Icon';
+import { openSite, SITE_LABEL } from '../lib/site';
 
 const slug = (text, i) =>
   `h${i}-${text
@@ -85,6 +86,10 @@ export default function HelpPanel({ onClose }) {
               </button>
             ))}
             {!shown.length && <p className="hint">Nessun capitolo trovato.</p>}
+            <button className="prefs-site" onClick={() => openSite()} title={`Guide e novità su ${SITE_LABEL}`}>
+              <Icon name="globe" size={14} />
+              {SITE_LABEL}
+            </button>
           </nav>
           <div className="prefs-main help-doc" ref={body} onScroll={onScroll} onClick={onClick} dangerouslySetInnerHTML={{ __html: html }} />
         </div>
