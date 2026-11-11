@@ -1,0 +1,408 @@
+/* Shared with LiveTools Mobile (mobile/scripts/sync-desktop.mjs copies this file): edit it here. */
+
+/* Transizioni page of the Palco: the setlist on a timeline (components/TransitionsView.jsx). */
+.tr {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  background: var(--bg);
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+.tr-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elev);
+}
+.tr-title {
+  font-size: 15px;
+}
+.tr-transport {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.tr-transport .st-play {
+  width: 44px;
+  height: 44px;
+}
+.tr-now {
+  min-width: 0;
+  font-size: 13px;
+}
+.tr-top .btn.is-on {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent-light);
+}
+
+/* The timeline: the canvas is as wide as the window, the clips and handles scroll over it. */
+.tr-stage {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+}
+.tr-stage canvas {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.tr-scroll {
+  position: absolute;
+  inset: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  touch-action: pan-x;
+}
+.tr-track {
+  position: relative;
+  height: 100%;
+}
+.tr-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  text-align: center;
+}
+
+.tr-clip {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 4px;
+  cursor: pointer;
+  touch-action: pan-x;
+}
+.tr-clip.can-move {
+  cursor: grab;
+}
+.tr-clip.can-move:active {
+  cursor: grabbing;
+}
+.tr-clip-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 8px;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--text);
+  background: color-mix(in srgb, var(--clip) 30%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--clip) 45%, transparent);
+}
+.tr-clip.is-on .tr-clip-head {
+  background: color-mix(in srgb, var(--clip) 48%, transparent);
+}
+.tr-clip.is-playing .tr-clip-head::after {
+  content: '';
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin-left: auto;
+  border-radius: 50%;
+  background: var(--yes);
+  box-shadow: 0 0 6px var(--yes);
+}
+.tr-num {
+  flex: none;
+  min-width: 18px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.35);
+  font-size: 10px;
+  text-align: center;
+}
+.tr-key {
+  flex: none;
+  color: var(--accent-light);
+}
+.tr-bpm {
+  flex: none;
+  color: var(--muted);
+  font-weight: 500;
+}
+.tr-dl {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--warn);
+  cursor: pointer;
+}
+.tr-secs {
+  position: relative;
+  flex: none;
+  height: 20px;
+}
+.tr-sec {
+  position: absolute;
+  top: 2px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  padding: 0 5px;
+  border: 0;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--sec) 32%, transparent);
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  min-width: 0;
+}
+.tr-sec:hover {
+  background: color-mix(in srgb, var(--sec) 55%, transparent);
+}
+
+/* The circle of a transition, between the two lanes. */
+.tr-link {
+  position: absolute;
+  z-index: 3;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 12px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: var(--shadow-lg);
+}
+.tr-link-cue {
+  color: var(--accent-light);
+}
+.tr-link-autolink,
+.tr-link-overlap,
+.tr-link-crossfade {
+  color: var(--cyan);
+  border-color: color-mix(in srgb, var(--cyan) 50%, transparent);
+}
+.tr-link.is-on {
+  background: var(--cyan-strong);
+  border-color: var(--cyan-strong);
+  color: #031417;
+}
+.tr-link-cue.is-on,
+.tr-link-stay.is-on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+.tr-link.is-armed:not(.is-on) {
+  box-shadow: 0 0 0 2px var(--cyan-strong);
+}
+
+/* Handles: start of the song after (an edge), fades (a square on the volume line). */
+.tr-handle {
+  position: absolute;
+  z-index: 4;
+  touch-action: none;
+}
+.tr-trim {
+  width: 16px;
+  margin-left: -8px;
+  cursor: ew-resize;
+}
+.tr-trim::before {
+  content: '';
+  position: absolute;
+  left: 6px;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  border-radius: 2px;
+  background: var(--accent);
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.6);
+}
+.tr-fade {
+  width: 22px;
+  height: 22px;
+  margin: -11px 0 0 -11px;
+  cursor: ew-resize;
+}
+.tr-fade::before {
+  content: '';
+  position: absolute;
+  inset: 5px;
+  border-radius: 2px;
+  border: 2px solid #031417;
+  background: var(--cyan);
+}
+.tr-fade.is-out::before {
+  background: #f8fafc;
+}
+.tr-head {
+  position: absolute;
+  z-index: 5;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--accent-light);
+  box-shadow: 0 0 6px rgba(251, 191, 36, 0.7);
+  pointer-events: none;
+}
+
+/* The panel of the transition chosen. */
+.tr-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-elev);
+}
+.tr-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.tr-pair {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 40%;
+  font-size: 14px;
+}
+.tr-types {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.tr-type {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 11px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.tr-type:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+.tr-type.is-on {
+  border-color: var(--cyan-strong);
+  background: var(--cyan-soft);
+  color: var(--cyan);
+}
+.tr-type:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.tr-panel-body {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.tr-step {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.tr-step-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 320px;
+}
+.tr-step-ctl {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.tr-step-val {
+  min-width: 132px;
+  text-align: center;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.tr-chips {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.tr-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: var(--sec, var(--muted));
+}
+.tr-try {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.tr-hint {
+  margin: 0;
+  font-size: 12px;
+  max-width: 520px;
+}
+
+/* Phone in landscape: lower bars, the panel scrolls sideways. */
+@media (max-height: 520px) {
+  .tr-top {
+    padding: 4px 8px;
+    gap: 6px;
+  }
+  .tr-title,
+  .tr-now {
+    display: none;
+  }
+  .tr-transport .st-play {
+    width: 36px;
+    height: 36px;
+  }
+  .tr-panel {
+    padding: 6px 8px;
+    gap: 6px;
+  }
+  .tr-panel-body {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+  }
+  .tr-type span {
+    display: none;
+  }
+  .tr-step-val {
+    min-width: 100px;
+  }
+}

@@ -1,0 +1,78 @@
+/* MIDI learn (components/MidiLearnBar.jsx, lib/midiLearn.js): shared with LiveTools Mobile. */
+
+.midi-learn-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 14px;
+  z-index: 2000;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100vw - 24px);
+  padding: 8px 10px 8px 12px;
+  border: 1px solid var(--cyan-strong, #06b6d4);
+  border-radius: 10px;
+  background: var(--surface-2, #1e293b);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  color: var(--text, #f8fafc);
+  font-size: 12px;
+}
+.mlb-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--cyan-strong, #06b6d4);
+  color: #031016;
+  font-weight: 700;
+}
+.mlb-text {
+  min-width: 0;
+  color: var(--text-2, #cbd5e1);
+}
+.mlb-text b {
+  color: var(--text, #f8fafc);
+}
+.mlb-count {
+  flex: none;
+  color: var(--faint, #64748b);
+  white-space: nowrap;
+}
+
+/* Controls that can be assigned, while learning. */
+body.midi-learning [data-midi] {
+  position: relative;
+  /* Inside the control: the rows of tiles and the mixer clip what goes outside. */
+  outline: 2px solid rgba(34, 211, 238, 0.55);
+  outline-offset: -2px;
+  cursor: crosshair !important;
+}
+body.midi-learning [data-midi]:hover {
+  outline-color: var(--cyan, #22d3ee);
+}
+body.midi-learning [data-midi].midi-chosen {
+  outline: 3px solid var(--accent, #f59e0b);
+  outline-offset: -3px;
+  background-color: rgba(245, 158, 11, 0.18);
+}
+body.midi-learning [data-midi] * {
+  cursor: crosshair !important;
+}
+/* The message assigned, on the control. */
+body.midi-learning [data-midi][data-midi-key]::after {
+  content: attr(data-midi-key);
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  z-index: 5;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--cyan, #22d3ee);
+  color: #031016;
+  font: 700 9px/1.3 system-ui, sans-serif;
+  white-space: nowrap;
+  pointer-events: none;
+}

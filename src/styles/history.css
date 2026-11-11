@@ -1,0 +1,123 @@
+/* Storico e analisi della scaletta (components/HistoryModal.jsx), desktop and tablet. */
+.hist-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.04);
+  align-self: flex-start;
+}
+.hist-tabs button {
+  padding: 5px 14px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  opacity: 0.7;
+}
+.hist-tabs button.is-on {
+  background: var(--accent-soft);
+  color: var(--accent-light);
+  opacity: 1;
+}
+.hist-start {
+  align-self: flex-start;
+}
+.hist-timeline,
+.hist-versions,
+.hist-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.hist-timeline li {
+  display: flex;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+.hist-timeline li > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.hist-dot {
+  width: 8px;
+  height: 8px;
+  margin-top: 5px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--accent);
+}
+.hist-versions li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+.hist-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.hist-stats h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+.hist-genre-bar {
+  display: flex;
+  height: 14px;
+  border-radius: 7px;
+  overflow: hidden;
+}
+.hist-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-top: 8px;
+  font-size: 13px;
+}
+.hist-legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.hist-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+.hist-tiles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.hist-tiles > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+}
+.hist-tiles span {
+  font-size: 11px;
+  opacity: 0.7;
+}
+.hist-tiles strong {
+  font: 700 18px var(--font-mono, monospace);
+}
+.hist-tiles .is-warn {
+  color: var(--warn);
+}
+.hist-tiles .is-cyan {
+  color: var(--cyan);
+}

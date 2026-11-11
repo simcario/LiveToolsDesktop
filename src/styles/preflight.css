@@ -1,0 +1,92 @@
+/* Controllo pre-concerto (components/PreflightModal.jsx) */
+.preflight-light {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+}
+.preflight-light strong {
+  font-size: 15px;
+}
+.preflight-lamp {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--faint);
+}
+.preflight-light.is-ok .preflight-lamp {
+  background: var(--yes);
+  box-shadow: 0 0 14px rgba(34, 197, 94, 0.55);
+}
+.preflight-light.is-warn .preflight-lamp {
+  background: var(--warn);
+  box-shadow: 0 0 14px rgba(251, 191, 36, 0.5);
+}
+.preflight-light.is-error .preflight-lamp {
+  background: var(--danger);
+  box-shadow: 0 0 14px rgba(244, 63, 94, 0.55);
+}
+.preflight-light.is-error {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+}
+.preflight-progress {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+  overflow: hidden;
+}
+.preflight-progress span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.3s;
+}
+.preflight-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.preflight-list li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 2px;
+  border-bottom: 1px solid var(--border);
+}
+.preflight-list li:last-child {
+  border-bottom: 0;
+}
+.preflight-list li.is-skip {
+  opacity: 0.55;
+}
+.preflight-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.preflight-list .dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--faint);
+}
+.preflight-list .dot.ok {
+  background: var(--yes);
+}
+.preflight-list .dot.warn {
+  background: var(--warn);
+}
+.preflight-list .dot.err {
+  background: var(--danger);
+}
