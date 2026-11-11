@@ -239,6 +239,14 @@ const PATHS = {
   'chevron-down': <path d="m6 9 6 6 6-6" />,
   'chevron-left': <path d="m15 18-6-6 6-6" />,
   'chevron-right': <path d="m9 18 6-6-6-6" />,
+  // Volume automation (Arrangement tool): a line through points.
+  automation: (
+    <>
+      <path d="M3 17l5-7 5 4 8-9" />
+      <circle cx="8" cy="10" r="1.6" fill="currentColor" />
+      <circle cx="13" cy="14" r="1.6" fill="currentColor" />
+    </>
+  ),
   wand: (
     <>
       <path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72" />
@@ -261,6 +269,14 @@ const PATHS = {
       <path d="M14 2v2" />
       <path d="M16 8a1 1 0 0 1 1 1v8a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V9a1 1 0 0 1 1-1h14a4 4 0 1 1 0 8h-1" />
       <path d="M6 2v2" />
+    </>
+  ),
+  users: (
+    <>
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
     </>
   ),
   mic: (

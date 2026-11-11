@@ -34,9 +34,11 @@ export const SONG_FIELDS = [
   'chartUrl',
   'midi',
   'sections',
+  // Tempo changes inside the song (desktop Arrangement), see tempo-map.js.
+  'tempoChanges',
 ];
 
-const LIST_FIELDS = ['midi', 'sections'];
+const LIST_FIELDS = ['midi', 'sections', 'tempoChanges'];
 
 export function songFields(source) {
   return Object.fromEntries(SONG_FIELDS.map((k) => [k, source?.[k] ?? (LIST_FIELDS.includes(k) ? [] : null)]));

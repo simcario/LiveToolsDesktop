@@ -1,15 +1,16 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { formatDuration, formatEventDate, isSeparator, PLAYBACK_TYPES } from '../shared/setlists.js';
-import { groupLabel, INSTRUMENTS, isVideoItem, PAD_LEAD_MAX, padLeadOf, regionsOf, rehearsalGroup, VIDEO_FADE_MAX, videoFades } from '../shared/media.js';
+import { groupLabel, INSTRUMENTS, isVideoItem, PAD_FADE_MAX, PAD_HOLD_MAX, PAD_LEAD_MAX, padHoldOf, padLeadOf, regionsOf, rehearsalGroup, VIDEO_FADE_MAX, videoFades } from '../shared/media.js';
 import { groupMixKey } from '../lib/usePlayer';
 import { keyLabel } from '../shared/music.js';
-import { engine, engineStatus, livePosition, useEngineStatus } from '../lib/engine';
+import { animateWhilePlaying, engine, engineStatus, livePosition, useEngineStatus } from '../lib/engine';
 import { laneColor } from '../lib/lanes';
 import { downloadProgress, itemCacheState, mediaOf, useMediaCache, usePeaks } from '../lib/mediaCache';
 import { GRID_RESOLUTIONS, gridLines, jumpTime, jumpToSection, JUMP_QUANTS, nearestBarIndex, nearestLine, SECTION_NAMES, sectionIndexAt } from '../lib/sections';
 import { useSections } from '../lib/useSections';
 import { getMix, useMix } from '../lib/settings';
-import { baseBpm, MAX_TEMPO_DELTA, MAX_TRANSPOSE, PAD_KEYS, playedKey, setItemFields, songChange, TRANSITIONS, transitionLabel, transitionOf } from '../lib/songChange';
+import { baseBpm, LINK_RESET, MAX_TEMPO_DELTA, MAX_TRANSPOSE, PAD_KEYS, playedKey, setItemFields, songChange, TRANSITIONS, transitionLabel, transitionOf } from '../lib/songChange';
+import TransitionsView from './TransitionsView';
 import Icon from './Icon';
 import { useOutputOpen } from '../lib/outputs';
 import Fader from './Fader';
@@ -97,10 +98,10 @@ function TopBar({ item, player, editable, editing, setEditing, setlists, setlist
         <Leds />
       </div>
       <Clock duration={loaded?.duration} />
-      <button className="st-round st-back" onClick={() => engine.locate(0)} disabled={!isLoaded || playing} title="Torna all’inizio (a brano fermo)" aria-label="Torna all’inizio">
+      <button className="st-round st-back" onClick={() => engine.locate(0)} disabled={!isLoaded || playing} title="Torna all’inizio (a brano fermo)" aria-label="Torna all’inizio" data-midi="stage.back">
         <Icon name="skip-back" size={20} />
       </button>
-      <button className={`st-play ${playing ? (waiting ? 'is-wait' : 'is-on') : ''}`} onClick={() => player.toggle(item)} disabled={!item} title="Play / Stop (Spazio)" aria-label={playing ? 'Stop' : 'Play'}>
+      <button className={`st-play ${playing ? (waiting ? 'is-wait' : 'is-on') : ''}`} onClick={() => player.toggle(item)} disabled={!item} title="Play / Stop (Spazio)" aria-label={playing ? 'Stop' : 'Play'} data-midi="transport.play" data-midi-name="Play / Stop">
         <Icon name={playing ? 'stop' : 'play'} size={30} />
       </button>
       <button
@@ -109,6 +110,8 @@ function TopBar({ item, player, editable, editing, setEditing, setlists, setlist
         disabled={!playing}
         title={fadeTarget < 0.5 ? 'Riporta dentro le tracce (F)' : 'Sfuma le tracce: click e pad restano (F)'}
         aria-label="Fade delle tracce"
+        data-midi="stage.fade"
+        data-midi-name="Fade"
         style={{ '--fade': fade }}
       >
         <span>{fadeTarget < 0.5 ? 'IN' : 'FADE'}</span>
@@ -119,6 +122,8 @@ function TopBar({ item, player, editable, editing, setEditing, setlists, setlist
         title={player.padKey == null ? 'Pad: il brano non ha una tonalità (sceglila nel mixer)' : `Pad in ${PAD_KEYS[player.padKey]} (P)`}
         aria-pressed={player.padOn}
         aria-label="Pad"
+        data-midi="pad.toggle"
+        data-midi-name="Pad acceso / spento"
       >
         <span>PAD</span>
       </button>
@@ -243,6 +248,7 @@ function TransitionMenu({ item, settings, onPick }) {
 function VideoMenu({ item, next, onChange }) {
   const fades = videoFades(item);
   const lead = padLeadOf(item) || 0;
+  const hold = padHoldOf(item);
   const nextKey = next ? playedKey(next) : '';
   const round = (v) => Math.round(v * 10) / 10;
   const step = (label, value, unit, set, { min = 0, max, by, off }) => (
@@ -263,11 +269,15 @@ function VideoMenu({ item, next, onChange }) {
       {step('Entrata', fades.in, 's', (v) => onChange({ videoFadeIn: v }), { max: VIDEO_FADE_MAX, by: 0.5, off: 'Netta' })}
       {step('Uscita', fades.out, 's', (v) => onChange({ videoFadeOut: v }), { max: VIDEO_FADE_MAX, by: 0.5, off: 'Netta' })}
       {step('Pad', lead, 's prima della fine', (v) => onChange({ padLead: v || null }), { max: PAD_LEAD_MAX, by: 1, off: 'No' })}
+      {lead > 0 && step('Nel brano', hold?.hold || 0, 's poi sfuma', (v) => onChange({ padHold: v || null }), { max: PAD_HOLD_MAX, by: 1, off: 'Fino a PAD' })}
+      {hold && step('Sfumatura', hold.fadeOut, 's', (v) => onChange({ padFadeOut: v }), { min: 0.5, max: PAD_FADE_MAX, by: 0.5 })}
       <p className="st-pop-hint">
         Immagine e suono del video sfumano dal nero e verso il nero.{' '}
         {next
           ? nextKey
-            ? `Il pad entra in ${keyLabel(nextKey)}, la tonalità di “${next.title}”, e continua nel brano: spegnilo con PAD.`
+            ? `Il pad entra in ${keyLabel(nextKey)}, la tonalità di “${next.title}”, e continua nel brano: ${
+                hold ? `dopo ${hold.hold} s sfuma in ${hold.fadeOut} s (PAD lo spegne prima).` : 'spegnilo con PAD.'
+              }`
             : `“${next.title}” non ha una tonalità: il pad non saprebbe quale nota dare.`
           : 'Dopo il video non c’è un brano.'}{' '}
         Vale per tutta la band.
@@ -400,6 +410,9 @@ function SetlistRow({ items, numbers, player, selectedId, liveItemId, onSelect, 
               <button
                 className="st-tile-main"
                 onClick={() => tapTile(it, isLoaded)}
+                data-midi={`song.${numbers[it.id]}`}
+                data-midi-name={`Carica il brano ${numbers[it.id]}`}
+                data-midi-press="double"
                 title={playing && !isLoaded ? 'Il brano in corso continua: ferma per caricare questo' : `Doppio clic per caricare${st === 'partial' || st === 'error' ? ' (i file vengono scaricati)' : ''}`}
               >
                 <span className="st-tile-top">
@@ -453,7 +466,7 @@ function SetlistRow({ items, numbers, player, selectedId, liveItemId, onSelect, 
               item={menuItem}
               settings={settings}
               onPick={(k) => {
-                write(menuItem.id, { transition: k });
+                write(menuItem.id, { transition: k, ...LINK_RESET });
                 setMenu(null);
               }}
             />
@@ -692,27 +705,40 @@ function Overview({ loaded, item, sections, index, beats, jump, onSeek, onSectio
     scrollRaf.current = requestAnimationFrame(() => paint.current());
   };
 
+  // Playhead and played part moved with transforms (no layout, no repaint of the waveform:
+  // on a tablet that was half a core), and only when they change.
   useEffect(() => {
-    let raf;
+    let shown = '';
     const tick = () => {
-      raf = requestAnimationFrame(tick);
       const st = engineStatus();
       const d = st.duration || duration;
       const pos = livePosition();
       const pct = d ? Math.max(0, Math.min(100, (pos / d) * 100)) : 0;
       // Zoomed in, the playhead stays in the window; at rest it moves it only if it goes out.
       const el = scroller.current;
-      if (el && el.scrollWidth > el.clientWidth && pos !== lastPos.current && performance.now() - userAt.current > FOLLOW_PAUSE) {
-        const px = (pct / 100) * el.scrollWidth;
+      if (!el) return;
+      const width = el.scrollWidth;
+      if (width > el.clientWidth && pos !== lastPos.current && performance.now() - userAt.current > FOLLOW_PAUSE) {
+        const px = (pct / 100) * width;
         const rel = px - el.scrollLeft;
         if (rel < 0 || rel > el.clientWidth * (st.playing ? 0.85 : 1)) scrollTo(px - el.clientWidth * 0.15);
       }
       lastPos.current = pos;
-      if (head.current) head.current.style.left = `${pct}%`;
-      if (played.current) played.current.style.width = `${pct}%`;
+      const x = Math.round((pct / 100) * width * 2) / 2;
+      const key = `${x}/${width}`;
+      if (key === shown) return;
+      shown = key;
+      if (head.current) head.current.style.transform = `translateX(${x}px)`;
+      if (played.current) played.current.style.transform = `scaleX(${pct / 100})`;
     };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+    // Only while playing; at rest when a status comes or the waveform changes size (zoom, window).
+    const anim = animateWhilePlaying(tick);
+    const ro = new ResizeObserver(anim.kick);
+    if (scroller.current?.firstElementChild) ro.observe(scroller.current.firstElementChild);
+    return () => {
+      ro.disconnect();
+      anim.stop();
+    };
   }, [duration]);
 
   const pct = (t) => `${duration ? (t / duration) * 100 : 0}%`;
@@ -794,6 +820,8 @@ function Overview({ loaded, item, sections, index, beats, jump, onSeek, onSectio
               >
                 <button
                   className="st-bubble"
+                  data-midi={edit ? undefined : `section.${n}`}
+                  data-midi-name={`Salta alla sezione ${n}`}
                   onClick={(e) => {
                     e.stopPropagation();
                     if (!afterPinch()) onSection(s);
@@ -814,6 +842,8 @@ function Overview({ loaded, item, sections, index, beats, jump, onSeek, onSectio
                     aria-pressed={isLoop}
                     title={isLoop ? 'Esci dal loop (L)' : 'Loop infinito della sezione (L)'}
                     aria-label="Loop della sezione"
+                    data-midi="loop.infinite"
+                    data-midi-name="Loop ∞ della sezione"
                   >
                     <Icon name="repeat" size={13} />
                   </button>
@@ -1018,6 +1048,11 @@ function WaveBar({ sections, index, settings, update, tools }) {
     return (
       <div className="st-wavebar">
         <strong className="st-now">Modifica sezioni</strong>
+        {tools.openTransitions && (
+          <button className="btn btn-sm" onClick={tools.openTransitions} title="I brani della scaletta su una linea del tempo: sposta, scegli e regola le transizioni">
+            <Icon name="merge" size={14} /> Transizioni
+          </button>
+        )}
         <span className="grow" />
         <ZoomControls settings={settings} update={update} />
         <GridControls settings={settings} update={update} />
@@ -1077,13 +1112,13 @@ function GroupStrip({ group, color, indexes, names, solo, out, player }) {
     <div className={`st-strip ${out ? 'is-muted' : ''}`} style={{ '--sec': color }}>
       <span className="m-db">{dbText(gain)}</span>
       <div className="st-fader-row">
-        <Fader value={gain} onChange={(gainDb) => player.setGroup(group, { gainDb })} onReset={() => player.setGroup(group, { gainDb: 0 })} title={`Volume ${label} (doppio clic: 0 dB)`} />
+        <Fader value={gain} onChange={(gainDb) => player.setGroup(group, { gainDb })} onReset={() => player.setGroup(group, { gainDb: 0 })} title={`Volume ${label} (doppio clic: 0 dB)`} midi={`group.${group}.volume`} midiName={`Volume ${label}`} />
         <Meter track={indexes} />
       </div>
-      <button className={`st-solo ${solo ? 'is-on' : ''}`} onClick={() => player.setGroup(group, { solo: !solo })} aria-pressed={solo} title="Solo">
+      <button className={`st-solo ${solo ? 'is-on' : ''}`} onClick={() => player.setGroup(group, { solo: !solo })} aria-pressed={solo} title="Solo" data-midi={`group.${group}.solo`} data-midi-name={`Solo ${label}`}>
         S
       </button>
-      <button className="st-name" onClick={() => player.toggleGroup(group)} aria-pressed={out} title={`${out ? 'Rimetti nel mix' : 'Togli dal mix'} · ${names.join(', ')}`}>
+      <button className="st-name" onClick={() => player.toggleGroup(group)} aria-pressed={out} data-midi={`group.${group}.out`} data-midi-name={`${label} dentro / fuori dal mix`} title={`${out ? 'Rimetti nel mix' : 'Togli dal mix'} · ${names.join(', ')}`}>
         <span className="ellipsis">{label}</span>
         {indexes.length > 1 && <span className="st-strip-count">{indexes.length}</span>}
       </button>
@@ -1113,15 +1148,15 @@ function Console({ sections, index, jump, onLoop }) {
   const once = !jump.repeat && cur && same(jump.to, cur.start) && same(jump.at, cur.end);
   return (
     <div className="st-console">
-      <button className={`st-cbtn ${once ? 'is-on' : ''}`} onClick={() => onLoop(false)} disabled={!cur && !once} aria-pressed={!!once} title="Ripete una volta la sezione in corso">
+      <button className={`st-cbtn ${once ? 'is-on' : ''}`} onClick={() => onLoop(false)} disabled={!cur && !once} aria-pressed={!!once} title="Ripete una volta la sezione in corso" data-midi="loop.once" data-midi-name="Loop una volta">
         <Icon name="repeat" size={18} />
         <span>Loop</span>
       </button>
-      <button className={`st-cbtn ${infinite ? 'is-on' : ''}`} onClick={() => onLoop(true)} disabled={!cur && !infinite} aria-pressed={infinite} title="Ripete la sezione in corso finché non lo premi di nuovo (L)">
+      <button className={`st-cbtn ${infinite ? 'is-on' : ''}`} onClick={() => onLoop(true)} disabled={!cur && !infinite} aria-pressed={infinite} title="Ripete la sezione in corso finché non lo premi di nuovo (L)" data-midi="loop.infinite" data-midi-name="Loop ∞ della sezione">
         <Icon name="repeat" size={18} />
         <span>Loop ∞</span>
       </button>
-      <button className="st-cbtn" onClick={() => engine.cancelJump()} disabled={jump.at == null} title="Annulla il salto in coda o esce dal loop (Esc)">
+      <button className="st-cbtn" onClick={() => engine.cancelJump()} disabled={jump.at == null} title="Annulla il salto in coda o esce dal loop (Esc)" data-midi="loop.cancel" data-midi-name="Annulla salto o loop">
         <Icon name="x" size={18} />
         <span>Annulla</span>
       </button>
@@ -1138,7 +1173,8 @@ function PadStrip({ player, settings, update }) {
     <div className={`st-strip st-strip-fixed st-padstrip ${player.padOn ? '' : 'is-muted'}`} style={{ '--sec': '#a78bfa' }}>
       <span className="m-db">{dbText(pad.gainDb)}</span>
       <div className="st-fader-row">
-        <Fader value={pad.gainDb} onChange={(gainDb) => set({ gainDb })} onReset={() => set({ gainDb: -10 })} title="Volume pad (doppio clic: -10 dB)" />
+        <Fader value={pad.gainDb} onChange={(gainDb) => set({ gainDb })} onReset={() => set({ gainDb: -10 })} title="Volume pad (doppio clic: -10 dB)" midi="pad.volume" midiName="Volume pad" />
+        <Meter pad />
       </div>
       <select
         className="st-pad-key"
@@ -1161,7 +1197,7 @@ function PadStrip({ player, settings, update }) {
           </option>
         ))}
       </select>
-      <button className="st-name" onClick={player.togglePad} aria-pressed={player.padOn} title={player.padOn ? 'Spegni il pad (P)' : 'Accendi il pad (P)'}>
+      <button className="st-name" onClick={player.togglePad} aria-pressed={player.padOn} data-midi="pad.toggle" data-midi-name="Pad acceso / spento" title={player.padOn ? 'Spegni il pad (P)' : 'Accendi il pad (P)'}>
         <span className="ellipsis">Pad</span>
       </button>
     </div>
@@ -1179,7 +1215,7 @@ function Mixer({ loaded, lanes, player, settings, update, children }) {
       <div className="st-strip st-strip-fixed st-master" style={{ '--sec': '#f4f4f5' }}>
         <span className="m-db">{dbText(settings.masterDb)}</span>
         <div className="st-fader-row">
-          <Fader value={settings.masterDb} onChange={(masterDb) => update({ masterDb })} onReset={() => update({ masterDb: 0 })} title="Master tracce (doppio clic: 0 dB)" light scale={channels <= 2} />
+          <Fader value={settings.masterDb} onChange={(masterDb) => update({ masterDb })} onReset={() => update({ masterDb: 0 })} title="Master tracce (doppio clic: 0 dB)" light scale={channels <= 2} midi="master.volume" midiName="Volume master" />
           <span className="meter" style={{ gap: 3 }}>
             {Array.from({ length: Math.min(8, channels) }, (_, i) => (
               <Meter key={i} output={i} />
@@ -1192,10 +1228,10 @@ function Mixer({ loaded, lanes, player, settings, update, children }) {
       <div className={`st-strip st-strip-fixed ${click.enabled ? '' : 'is-muted'}`} style={{ '--sec': '#06b6d4' }}>
         <span className="m-db">{dbText(click.gainDb)}</span>
         <div className="st-fader-row">
-          <Fader value={click.gainDb} onChange={(gainDb) => update({ click: { ...click, gainDb } })} onReset={() => update({ click: { ...click, gainDb: -6 } })} title="Volume click" />
+          <Fader value={click.gainDb} onChange={(gainDb) => update({ click: { ...click, gainDb } })} onReset={() => update({ click: { ...click, gainDb: -6 } })} title="Volume click" midi="click.volume" midiName="Volume click" />
         </div>
         <span className="st-solo is-blank" />
-        <button className="st-name" onClick={() => update({ click: { ...click, enabled: !click.enabled } })} aria-pressed={!click.enabled} title="Click acceso / spento (C)">
+        <button className="st-name" onClick={() => update({ click: { ...click, enabled: !click.enabled } })} aria-pressed={!click.enabled} title="Click acceso / spento (C)" data-midi="transport.click" data-midi-name="Click">
           <span className="ellipsis">Metronomo</span>
         </button>
       </div>
@@ -1269,6 +1305,7 @@ export default function StageView({
   const editing = wantEdit && editable;
   const [marker, setMarker] = useState(null); // index of the selected section
   const [fresh, setFresh] = useState(false); // the selected marker was just added: name it
+  const [transitions, setTransitions] = useState(false); // the Transizioni page is open
   useEffect(() => {
     setEditing(false);
     setMarker(null);
@@ -1297,7 +1334,7 @@ export default function StageView({
   const keys = useRef(null);
   keys.current = { tapSection, loop, sections, editing, goHistory, player };
   useEffect(() => {
-    if (!active) return undefined;
+    if (!active || transitions) return undefined;
     const onKey = (e) => {
       if (e.altKey || e.target.closest?.('input, select, textarea')) return;
       const k = keys.current;
@@ -1326,7 +1363,7 @@ export default function StageView({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [active]);
+  }, [active, transitions]);
 
   const tools = !editable
     ? null
@@ -1348,6 +1385,7 @@ export default function StageView({
           }
         },
         save: sec.save,
+        openTransitions: canEdit && items.filter((i) => !isSeparator(i)).length > 1 ? () => setTransitions(true) : null,
         discard: () => {
           if (sec.discard()) setMarker(null);
         },
@@ -1425,6 +1463,9 @@ export default function StageView({
             <Console sections={sections} index={index} jump={jump} onLoop={loop} />
           </Mixer>
         </>
+      )}
+      {transitions && (
+        <TransitionsView items={items} numbers={numbers} player={player} beats={beats} settings={settings} setlistId={setlistId} canEdit={canEdit} notify={notify} onClose={() => setTransitions(false)} />
       )}
     </div>
   );

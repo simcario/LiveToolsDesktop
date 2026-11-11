@@ -14,9 +14,10 @@ const FADER_LABELS = {
   '-60': '∞',
 };
 
-export default function Fader({ value, onChange, onReset, title, light = false, scale = true }) {
+// midi: id for MIDI learn (lib/midiLearn.js), a CC moves the fader from -60 to +6 dB.
+export default function Fader({ value, onChange, onReset, title, light = false, scale = true, midi, midiName }) {
   return (
-    <span className={`fader-wrap ${scale ? 'has-scale' : ''}`}>
+    <span className={`fader-wrap ${scale ? 'has-scale' : ''}`} data-midi={midi} data-midi-name={midiName}>
       <span className="fader-scale" aria-hidden="true">
         {FADER_TICKS.map((db) => (
           <i key={db} className={db === 0 ? 'is-zero' : undefined} style={{ '--p': (db + 60) / 66 }} data-l={scale ? FADER_LABELS[db] : undefined} />

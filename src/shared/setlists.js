@@ -1,4 +1,5 @@
 import { serverTimestamp } from 'firebase/firestore';
+import { cleanPatch, formatCc, patchHasData } from './midi-patch';
 
 export const COLUMN_TYPES = {
   checkbox: 'Sì / No',
@@ -269,14 +270,13 @@ export function itemDraft(item) {
     chart: item.chart || '',
     lyrics: item.lyrics || '',
     chartUrl: item.chartUrl || '',
-    midi: (item.midi || []).map((p) => ({ ...p })),
+    midi: (item.midi || []).map((p) => ({ ...p, cc: formatCc(p.cc), sysex: p.sysex || '' })),
     sections: (item.sections || []).map((s) => ({ ...s })),
     values: { ...(item.values || {}) },
   };
 }
 
 export function itemFromDraft(d, item) {
-  const num = (v) => (String(v).trim() === '' ? null : Number(v));
   return {
     title: d.title.trim() || item.title,
     artist: d.artist.trim() || null,
@@ -292,16 +292,7 @@ export function itemFromDraft(d, item) {
     chart: d.chart.trim() ? d.chart : null,
     lyrics: d.lyrics.trim() ? d.lyrics : null,
     chartUrl: d.chartUrl.trim() || null,
-    midi: d.midi
-      .filter((p) => p.label || p.program)
-      .map((p) => ({
-        label: (p.label || '').trim(),
-        name: (p.name || '').trim(),
-        channel: num(p.channel) ?? 1,
-        program: num(p.program),
-        bankMsb: num(p.bankMsb),
-        bankLsb: num(p.bankLsb),
-      })),
+    midi: d.midi.filter(patchHasData).map(cleanPatch),
     sections: d.sections
       .filter((s) => s.bars && (s.bpm || s.timeSig))
       .map((s) => ({ label: (s.label || '').trim(), bars: Number(s.bars) || 1, bpm: Number(s.bpm) || null, timeSig: s.timeSig || null, ...(s.gap ? { gap: true } : {}) })),

@@ -4,7 +4,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { emit, listen } from '@tauri-apps/api/event';
 import { convertFileSrc } from '@tauri-apps/api/core';
-import { cueTrackOf, isVideoItem, padLeadOf, regionsOf, rehearsalGroup, stemsOf, videoAudioStem, videoFades, videoOf } from '../shared/media.js';
+import { automationOf, cueTrackOf, isVideoItem, padHoldOf, padLeadOf, regionsOf, rehearsalGroup, stemsOf, videoAudioStem, videoFades, videoOf } from '../shared/media.js';
+import { tempoSections } from '../shared/tempoMap.js';
+import { writeMix } from './songMix';
 import { isSeparator } from '../shared/setlists.js';
 import { eqOf, inputOf } from '../shared/eq.js';
 import { dbToGain, engine, engineStatus, onSongEnded, onStretchProgress, subscribeStatus } from './engine';
@@ -17,16 +19,24 @@ import { clickVoice, getMix, setMix } from './settings';
 import { GRID_KEY } from './arrange';
 import { analyze, getSyncChoice, rangeKey, resolveSource, setSyncChoice, syncSpec } from './sync';
 import { beatMapOf, publishBeatMap } from './beatMap';
+import { midiTargeted, sendSongMidi } from './midi';
 import { isLinked, keepsPitch, keyPitch, playedKey, songChange, transitionOf, transitionPlan } from './songChange';
 
 function routeOf(stem, settings) {
   return getMix(stem.id).route || settings.outputs[stem.role || 'main'] || settings.outputs.main;
 }
 
-// Rehearsal: groups (instrument, click, guide) left out of the mix in this
-// session, on top of the mute of each track.
-// The cue track has only the mute of the song (cueTrack.muted, the whole band).
-const isMuted = (stem, leftOut) => (stem.live ? !!stem.muted : (getMix(stem.id).mute ?? !!stem.muted)) || !!leftOut?.[rehearsalGroup(stem)];
+// The mix of the live performance is saved with the song by who can edit it (draft,
+// "Salva"): volume and pan (Mixer), mute of the tracks (stems[].muted), automation.
+// The others keep their own track mutes on this computer, as before.
+const editableSong = (item, canEdit) => !!item && !!canEdit && item.songEditable !== false;
+
+// Mix context of a song: { local } (local = the track mutes of this computer), out = groups left out.
+const mixOf = (song, canEdit) => ({ local: !editableSong(song, canEdit) });
+
+// Rehearsal: groups (instrument, click, guide) left out of the mix in this session, and
+// their volumes (Palco mixer), stay personal: each musician shapes their own listening.
+const isMuted = (stem, out, local) => (stem.live || !local ? !!stem.muted : (getMix(stem.id).mute ?? !!stem.muted)) || !!out?.[rehearsalGroup(stem)];
 
 // Volume of a rehearsal group (Palco mixer), on this computer: added to that of each of its tracks.
 export const groupMixKey = (group) => `group:${group}`;
@@ -35,7 +45,8 @@ const groupGain = (stem) => getMix(groupMixKey(rehearsalGroup(stem))).gainDb || 
 // the same on every computer and on the web. Mute, solo and the output stay local.
 const ownGain = (stem) => Number(stem.gain) || 0;
 
-function trackMix(stem, settings, solo, leftOut) {
+// mix: { local, out } (see mixOf; out = groups left out in this session).
+function trackMix(stem, settings, solo, mix) {
   const route = routeOf(stem, settings);
   return {
     gainDb: ownGain(stem) + groupGain(stem),
@@ -43,10 +54,12 @@ function trackMix(stem, settings, solo, leftOut) {
     // Channel section (Mixer → click on the track name), saved with the song too.
     inputDb: inputOf(stem),
     eq: eqOf(stem),
-    mute: isMuted(stem, leftOut),
+    mute: isMuted(stem, mix?.out, mix?.local),
     solo: !!solo,
     outStart: route.start,
     outMode: route.mode,
+    // Volume automation drawn in the Arrangement ([] clears it in the engine).
+    auto: automationOf(stem).map((p) => [p.t, p.db]),
   };
 }
 
@@ -81,12 +94,14 @@ function videoLength(src) {
   });
 }
 
+// The sections for the tempo map, cut by the tempo changes of the song (shared/tempoMap.js) when it has any.
 const sectionSpecs = (item) =>
-  (item.sections || []).map((s) => ({
+  (tempoSections(item) || item.sections || []).map((s) => ({
     label: s.label || null,
     bars: num(s.bars),
     bpm: num(s.bpm),
     timeSig: s.timeSig || null,
+    ramp: s.ramp || null,
   }));
 
 function songSpec(item, tracks, settings) {
@@ -127,7 +142,8 @@ const refRegions = (item, sync) => {
   return kept?.stemId === sync.source.id ? kept.regions : all[sync.source.id] || null;
 };
 
-export function usePlayer({ user, setlist, items, settings, canDrive, canEdit, notify }) {
+// lanLive: the song on stage from the local network (lib/stageNet.js), ahead of setlist.live while connected.
+export function usePlayer({ user, setlist, items, settings, canDrive, canEdit, notify, lanLive = null }) {
   const [loaded, setLoaded] = useState(null); // { itemId, duration, tempo, tracks: [{ stem, local, info, error }], video }
   const [busy, setBusy] = useState(null);
   const [downloading, setDownloading] = useState(null); // files of the song being loaded, not on disk yet
@@ -138,14 +154,23 @@ export function usePlayer({ user, setlist, items, settings, canDrive, canEdit, n
   const queued = useRef(null);
   const queueToken = useRef(0);
   const [padOn, setPadOn] = useState(false);
+  // Pad of a video item that ends in the next song (padHold): { from, into, hold, fadeOut },
+  // and the release of that fade out while it goes.
+  const padHold = useRef(null);
+  const [padRelease, setPadRelease] = useState(null);
   const ctx = useRef({});
-  ctx.current = { setlist, items, settings, canDrive, user, loaded, solos, leftOut };
+  const midiSent = useRef(null); // song whose patches went out last
+  const songNow = items.find((i) => i.id === loaded?.itemId) || null;
+  ctx.current = { setlist, items, settings, canDrive, canEdit, user, loaded, solos, leftOut };
+  // Mix context of a song (the loaded one or the next).
+  const mixFor = (item) => ({ ...mixOf(item, ctx.current.canEdit), out: ctx.current.leftOut });
 
   // Everything a song needs before the engine: files on disk, grid, live cues,
   // stems in another key or tempo. `send(spec)` gives it to the engine (load or
   // queue as the next song); null when `alive()` turns false on the way.
   const prepare = useCallback(async (item, { send, alive, ui }) => {
-    const { settings: st, leftOut: out } = ctx.current;
+    const { settings: st } = ctx.current;
+    const mix = mixFor(item);
     // The cue sheet is played from a local track (muted with the cue track).
     const cuePlan = liveCuePlan(item);
     const stems = stemsOf(item);
@@ -165,7 +190,7 @@ export function usePlayer({ user, setlist, items, settings, canDrive, canEdit, n
     const missing = stems.length - available.length;
     const placed = regionsOf(item);
     const change = songChange(item);
-    const specOf = ({ stem, local }) => ({ id: stem.id, path: local, name: stem.name, regions: placed[stem.id] || [], ...trackMix(stem, st, false, out) });
+    const specOf = ({ stem, local }) => ({ id: stem.id, path: local, name: stem.name, regions: placed[stem.id] || [], ...trackMix(stem, st, false, mix) });
     const spec = { ...songSpec(item, available.map(specOf), st), rate: change.rate };
     const sync = await analyzeSource(item, available, getSyncChoice(item.id), ui.setBusy);
     if (!alive()) return null;
@@ -250,6 +275,12 @@ export function usePlayer({ user, setlist, items, settings, canDrive, canEdit, n
       requestPeaks(state.tracks.map((a) => a.local));
       if (missing) notify(`${missing} tracce di “${item.title}” non disponibili (offline o non scaricate)`, true);
       else if (!state.sync.error) notify(null);
+      // Patch changes of the song for the keyboards (Impostazioni › MIDI), once per song: the same
+      // song loaded again (key, tempo or cues changed) does not reset the sounds while it plays.
+      if (midiSent.current !== item.id) {
+        midiSent.current = item.id;
+        if (st.midi.auto && midiTargeted(st.midi)) sendSongMidi(item, st.midi).catch((e) => notify(`MIDI: ${e.message}`, true));
+      }
       if (st.driveStage && drive && sl && sl.live?.itemId !== item.id) {
         driveStage(sl, item.id, u).catch((e) => notify(`Guida la band: ${e.message}`, true));
       }
@@ -399,8 +430,7 @@ export function usePlayer({ user, setlist, items, settings, canDrive, canEdit, n
         const local = (await liveCueLocal(want.plan).catch(() => null)) || (await makeLiveCues(want.plan, l.tempo, l.duration));
         if (run !== cueRun.current || ctx.current.loaded?.itemId !== item.id || !local) return;
         const res = await engine.replaceTrack(cur.stem.id, want.stem.id, local);
-        const { settings: st, leftOut: out } = ctx.current;
-        engine.setTrack(want.stem.id, trackMix(want.stem, st, false, out));
+        engine.setTrack(want.stem.id, trackMix(want.stem, ctx.current.settings, false, mixFor(item)));
         setLoaded((c) =>
           c?.itemId === item.id
             ? { ...c, cueKey: cueKeyOf(item), tracks: c.tracks.map((tr, i) => (i === idx ? { stem: want.stem, local, info: res.info, error: null } : tr)) }
@@ -413,32 +443,51 @@ export function usePlayer({ user, setlist, items, settings, canDrive, canEdit, n
     })();
   }, [cueKey, load, notify]);
 
-  // Mix of the song changed (Mixer, undo, "Scarta", "Ripristina volumi", another
-  // computer): volume, pan, group, mute of the song and channel section (gain, EQ) of the loaded tracks follow at once.
-  const mixSong = items.find((i) => i.id === loaded?.itemId);
+  // Mix of the song changed (Mixer, Arrangement, Palco, undo, "Scarta", "Ripristina volumi", another
+  // computer): volume, pan, group, mute, automation of the song, channel section (gain, EQ) and
+  // the groups of the loaded tracks follow at once.
+  const mixSong = songNow;
   const mixSheet = cueTrackOf(mixSong);
   const mixJson = mixSong
-    ? JSON.stringify([stemsOf(mixSong).map((s) => [s.id, s.gain, s.pan, s.role, s.instrument, s.input, s.eq, !!s.muted]), mixSheet.gain, mixSheet.pan, mixSheet.input, mixSheet.eq, mixSheet.muted])
+    ? JSON.stringify([
+        stemsOf(mixSong).map((s) => [s.id, s.gain, s.pan, s.role, s.instrument, s.input, s.eq, !!s.muted, s.auto]),
+        mixSheet.gain,
+        mixSheet.pan,
+        mixSheet.input,
+        mixSheet.eq,
+        mixSheet.muted,
+        editableSong(mixSong, canEdit),
+      ])
     : null;
+  const applied = useRef(new Map()); // stem id → mix sent to the engine (JSON)
   useEffect(() => {
     const l = ctx.current.loaded;
     const item = l && ctx.current.items.find((i) => i.id === l.itemId);
     if (!item) return;
     const byId = new Map(stemsOf(item).map((s) => [s.id, s]));
     const sheet = cueTrackOf(item);
+    const mix = mixFor(item);
     const next = new Map();
     l.tracks.forEach(({ stem }) => {
       const src = stem.live ? { gain: sheet.gain, pan: sheet.pan, input: sheet.input, eq: sheet.eq, role: stem.role, instrument: stem.instrument, muted: sheet.muted } : byId.get(stem.id);
       if (!src) return;
-      const now = { ...stem, gain: Number(src.gain) || 0, pan: Number(src.pan) || 0, input: src.input, eq: src.eq, role: src.role, instrument: src.instrument, muted: !!src.muted };
-      if (['gain', 'pan', 'role', 'instrument', 'muted'].every((k) => now[k] === stem[k]) && now.input === stem.input && JSON.stringify(now.eq) === JSON.stringify(stem.eq)) return;
-      next.set(stem.id, now);
-      const { settings: st, leftOut: out, solos: so } = ctx.current;
-      engine.setTrack(stem.id, trackMix(now, st, !!so[stem.id], out));
+      const now = { ...stem, gain: Number(src.gain) || 0, pan: Number(src.pan) || 0, input: src.input, eq: src.eq, role: src.role, instrument: src.instrument, muted: !!src.muted, auto: src.auto };
+      const same =
+        ['gain', 'pan', 'role', 'instrument', 'muted'].every((k) => now[k] === stem[k]) &&
+        now.input === stem.input &&
+        JSON.stringify(now.eq) === JSON.stringify(stem.eq) &&
+        JSON.stringify(now.auto) === JSON.stringify(stem.auto);
+      if (!same) next.set(stem.id, now);
+      const sent = trackMix(now, ctx.current.settings, !!ctx.current.solos[stem.id], mix);
+      const key = JSON.stringify(sent);
+      if (same && applied.current.get(stem.id) === key) return;
+      applied.current.set(stem.id, key);
+      engine.setTrack(stem.id, sent);
     });
     if (next.size) {
       setLoaded((c) => (c?.itemId === l.itemId ? { ...c, tracks: c.tracks.map((tr) => (next.has(tr.stem.id) ? { ...tr, stem: next.get(tr.stem.id) } : tr)) } : c));
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mixJson]);
 
   const songs = items.filter((i) => !isSeparator(i));
@@ -476,13 +525,20 @@ export function usePlayer({ user, setlist, items, settings, canDrive, canEdit, n
     [load],
   );
 
-  // Local part of a track's mix: mute, solo, output. Volume and pan go through the song (Mixer).
+  // Mute of a track: with the song for who can edit it (draft), else on this computer as solo and output.
+  // Volume and pan go through the song (Mixer).
   const setTrack = useCallback((stem, patch) => {
-    const { solo, ...persist } = patch;
+    const { solo, mute, ...persist } = patch;
+    const { loaded: l, items: its, canEdit: ce } = ctx.current;
+    const song = its.find((i) => i.id === l?.itemId);
+    if (mute !== undefined && !stem.live && editableSong(song, ce) && stemsOf(song).some((s) => s.id === stem.id)) {
+      // Into the draft: the mix effect above sends it to the engine.
+      writeMix(song, { stems: stemsOf(song).map((s) => (s.id === stem.id ? { ...s, muted: !!mute } : s)) }, `${mute ? 'Mutata' : 'Riattivata'} “${stem.name}”`);
+    } else if (mute !== undefined) persist.mute = mute;
     if (Object.keys(persist).length) setMix(stem.id, persist);
     if (solo !== undefined) setSolos((s) => ({ ...s, [stem.id]: solo }));
     const mix = {};
-    if (patch.mute !== undefined) mix.mute = patch.mute || !!ctx.current.leftOut[rehearsalGroup(stem)];
+    if (persist.mute !== undefined) mix.mute = persist.mute || !!ctx.current.leftOut[rehearsalGroup(stem)];
     if (solo !== undefined) mix.solo = solo;
     if ('route' in patch) {
       // null = back to the output of the stem's role.
@@ -501,10 +557,10 @@ export function usePlayer({ user, setlist, items, settings, canDrive, canEdit, n
     });
   }, [settings.outputs, loaded]);
 
-  // Rehearsal: a group in or out of the mix, for every song of the session.
+  // Rehearsal: a group in or out of the mix, for every song of the session (personal, never saved with the song).
   const toggleGroup = useCallback((group) => setLeftOut((o) => ({ ...o, [group]: !o[group] })), []);
 
-  // Palco mixer: volume of a group (kept, for every song) or solo of all its tracks.
+  // Palco mixer: volume of a group (kept on this computer, for every song) or solo of all its tracks.
   const setGroup = useCallback((group, patch) => {
     const tracks = (ctx.current.loaded?.tracks || []).filter(({ stem }) => rehearsalGroup(stem) === group);
     if (patch.gainDb !== undefined) {
@@ -517,7 +573,9 @@ export function usePlayer({ user, setlist, items, settings, canDrive, canEdit, n
     }
   }, []);
   useEffect(() => {
-    loaded?.tracks.forEach(({ stem }) => engine.setTrack(stem.id, { mute: isMuted(stem, leftOut) }));
+    const local = !editableSong(songNow, canEdit);
+    loaded?.tracks.forEach(({ stem }) => engine.setTrack(stem.id, { mute: isMuted(stem, leftOut, local) }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leftOut, loaded]);
 
   // Click: metronome on its own output (left out with the click group in rehearsal).
@@ -579,9 +637,18 @@ export function usePlayer({ user, setlist, items, settings, canDrive, canEdit, n
         const { loaded: l, items: its, settings: st } = ctx.current;
         const item = its.find((i) => i.id === l?.itemId);
         const mode = transitionOf(item, st);
-        if (mode === 'cue' || isLinked(mode)) step(1);
+        if (mode === 'cue') {
+          // Prepara il prossimo: loaded where the transition says it starts.
+          const list = its.filter((i) => !isSeparator(i));
+          const next = list[list.findIndex((x) => x.id === item?.id) + 1];
+          const from = Math.max(0, Number(item?.linkStart) || 0);
+          if (next)
+            load(next).then(() => {
+              if (from && ctx.current.loaded?.itemId === next.id) engine.locate(from);
+            });
+        } else if (isLinked(mode)) step(1);
       }),
-    [step],
+    [step, load],
   );
 
   // The song after the one loaded, and how to get there.
@@ -591,23 +658,35 @@ export function usePlayer({ user, setlist, items, settings, canDrive, canEdit, n
   const loadedSong = loadedIndex >= 0 ? songList[loadedIndex] : null;
   const linkMode = loadedSong ? transitionOf(loadedSong, settings) : null;
   const nextKey = nextSong && isLinked(linkMode) ? `${loaded.itemId}>${nextSong.id}:${linkMode}:${loaded.duration}:${nextSong.updatedAt?.seconds ?? ''}` : null;
+  // The fine tuning of the transition (Transizioni page): changing it only moves the
+  // next song in the engine, without preparing it again.
+  const planOf = (l, next) => {
+    const from = ctx.current.items.find((i) => i.id === l.itemId);
+    return transitionPlan(from, transitionOf(from, ctx.current.settings), l.duration, l.tempo, next, l.rate || 1);
+  };
+  const planJson = nextKey ? JSON.stringify(planOf(loaded, nextSong)) : null;
+  const lastSent = useRef(null); // { token, spec } of the next song in the engine
 
   // AutoLink, overlap and crossfade: the next song is prepared and waits in the
   // engine, which starts it at the frame of the transition without gaps.
   useEffect(() => {
     const t = ++queueToken.current;
     queued.current = null;
+    lastSent.current = null;
     if (!nextKey) {
       engine.cancelNext().catch(() => {});
       return undefined;
     }
     const l = ctx.current.loaded;
     const next = ctx.current.items.find((i) => i.id === nextSong.id);
-    const plan = transitionPlan(linkMode, l.duration, l.tempo, next);
     const alive = () => t === queueToken.current && ctx.current.loaded?.itemId === l.itemId;
     const quiet = { setBusy: () => {}, setDownloading: () => {} };
     // A stale preparation must not reach the engine after a newer one.
-    const send = (spec) => (alive() ? engine.queueNext(spec, plan) : Promise.reject(new Error('superata')));
+    const send = (spec) => {
+      if (!alive()) return Promise.reject(new Error('superata'));
+      lastSent.current = { token: t, spec, next };
+      return engine.queueNext(spec, planOf(l, next));
+    };
     prepare(next, { send, alive, ui: quiet })
       .then((prepared) => {
         if (prepared && alive()) queued.current = { itemId: next.id, item: next, prepared };
@@ -619,6 +698,15 @@ export function usePlayer({ user, setlist, items, settings, canDrive, canEdit, n
     // The key holds what matters: the song, the next one and the transition.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nextKey, prepare, notify]);
+
+  // Offset, fades or start changed: the same next song, queued again with the new plan.
+  useEffect(() => {
+    const sent = lastSent.current;
+    const l = ctx.current.loaded;
+    if (!planJson || !sent || sent.token !== queueToken.current || !l || !queued.current) return;
+    if (engineStatus().next?.songId !== sent.next.id) return; // already taken over
+    engine.queueNext(sent.spec, JSON.parse(planJson)).catch((e) => notify(`Transizione non aggiornata: ${e?.message || e}`, true));
+  }, [planJson, notify]);
 
   // The engine changed song: the next one is now the song in the player.
   useEffect(
@@ -660,9 +748,16 @@ export function usePlayer({ user, setlist, items, settings, canDrive, canEdit, n
   useEffect(() => {
     const r = settings.outputs.pad || settings.outputs.main;
     engine
-      .setPad({ enabled: padOn && padKey != null && r.mode !== 'off', key: padKey ?? 0, gain: dbToGain(settings.pad.gainDb), outStart: r.start, mono: r.mode !== 'stereo' })
+      .setPad({
+        enabled: padOn && padKey != null && r.mode !== 'off',
+        key: padKey ?? 0,
+        gain: dbToGain(settings.pad.gainDb),
+        outStart: r.start,
+        mono: r.mode !== 'stereo',
+        ...(!padOn && padRelease ? { release: padRelease } : {}),
+      })
       .catch(() => {});
-  }, [padOn, padKey, settings.pad.gainDb, settings.outputs.pad, settings.outputs.main]);
+  }, [padOn, padKey, padRelease, settings.pad.gainDb, settings.outputs.pad, settings.outputs.main]);
 
   // "Start pad with song": the pad comes in when a song starts.
   useEffect(() => {
@@ -685,8 +780,26 @@ export function usePlayer({ user, setlist, items, settings, canDrive, canEdit, n
         if (lead == null || !s.playing || s.songId !== item.id || padFired.current === item.id) return;
         if (s.position >= l.duration - lead) {
           padFired.current = item.id;
+          const hold = padHoldOf(item);
+          padHold.current = hold && { from: item.id, into: null, ...hold };
+          setPadRelease(null);
           setPadOn(true);
         }
+      }),
+    [],
+  );
+  // padHold: after `hold` seconds of the song after the video the pad fades out
+  // in `fadeOut` seconds (a longer release in the engine), then the release is back to normal.
+  useEffect(
+    () =>
+      subscribeStatus((s) => {
+        const h = padHold.current;
+        if (!h || !s.playing || !s.songId || s.songId === h.from) return;
+        if (!h.into) h.into = s.songId;
+        if (s.songId !== h.into || s.position < h.hold) return;
+        padHold.current = null;
+        setPadRelease(h.fadeOut);
+        setPadOn(false);
       }),
     [],
   );
@@ -703,7 +816,7 @@ export function usePlayer({ user, setlist, items, settings, canDrive, canEdit, n
   }, []);
 
   // Palco Sync: follow the song chosen by the band's master.
-  const liveItemId = setlist?.live?.itemId;
+  const liveItemId = lanLive?.itemId || setlist?.live?.itemId;
   useEffect(() => {
     if (!settings.followStage || !liveItemId || engineStatus().playing) return;
     if (ctx.current.loaded?.itemId === liveItemId) return;
@@ -778,9 +891,16 @@ export function usePlayer({ user, setlist, items, settings, canDrive, canEdit, n
     leftOut,
     toggleGroup,
     setGroup,
+    // The track mutes are saved with the song (draft) rather than on this computer.
+    mixSaved: editableSong(songNow, canEdit),
     padOn,
     padKey,
-    togglePad: () => setPadOn((v) => !v),
+    togglePad: () => {
+      // By hand: no fade out planned any more, and the normal release.
+      padHold.current = null;
+      setPadRelease(null);
+      setPadOn((v) => !v);
+    },
     toggleFade,
     nextSong,
     linkMode,
@@ -795,6 +915,8 @@ export function usePlayer({ user, setlist, items, settings, canDrive, canEdit, n
     previewGrid,
     saveGrid,
     applyRegions,
+    // The patches of the song in the player, sent now (Impostazioni › MIDI, “Invia ora”).
+    sendMidi: () => sendSongMidi(loadedItem, ctx.current.settings.midi),
     stop: () => engine.stop(),
     locate: (seconds) => engine.locate(seconds),
   };

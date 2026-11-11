@@ -35,7 +35,7 @@ export function CuePicker({ cell, rect, current, beatsInBar, onPick, onCount, on
         </strong>
         <span className="grow" />
         {current && (
-          <button className="btn btn-sm btn-ghost" onClick={onClear} title="Togli la cue da questo quadratino">
+          <button className="btn btn-sm btn-ghost" onClick={() => confirm(`Togliere la cue “${current}” da questo quadratino?`) && onClear()} title="Togli la cue da questo quadratino">
             <Icon name="trash" size={12} /> Togli
           </button>
         )}

@@ -5,6 +5,79 @@ versioni [SemVer](https://semver.org/lang/it/). Procedura di rilascio: [docs/REL
 
 ## [Non rilasciato]
 
+### Più leggero (benchmark del 2026-11-11)
+- **Uscite NDI**: un'uscita accesa non comprime più 30 immagini Full HD al secondo quando nessuno la riceve
+  (aspetta un ricevitore). Da fermo l'app passa da circa 16% a 1% di un core.
+- **Stato del motore**: 30 aggiornamenti al secondo solo mentre qualcosa suona o si muove; da fermo solo quando
+  cambia qualcosa (più uno ogni ~0,25 s per le finestre appena aperte).
+- **Palco, Arrangement, Gobbo, Transizioni**: testina e parte suonata si muovono con trasformazioni grafiche (niente
+  ricalcolo della pagina) e solo mentre il brano suona; i meter idem. Palco in riproduzione: da circa 65% a 30% di
+  un core sul portatile di prova, sul tablet da 148% a 113%.
+- **Schede audio a caldo**: l'elenco delle uscite si chiede di nuovo al sistema solo quando cambia l'elenco dei
+  dispositivi (prima ~0,6 s ogni secondo sul thread che apre la scheda, con webcam e microfoni virtuali installati).
+- Manuale e sito: requisiti minimi e consigliati di computer e tablet, con le misure.
+
+### Computer di riserva
+- **Impostazioni › Rete locale › Computer di riserva**: un secondo computer con *Segui palco* suona insieme a chi
+  guida sulla rete di palco — stesso brano, play, stop e salti — e si riallinea da solo. Se il principale sparisce
+  mentre suona, la riserva continua, avvisa e (se permesso) prende la *Guida* della band. Badge **RISERVA** su
+  *Segui palco*.
+- Chi guida manda in rete anche lo stato del trasporto (play, stop, posizione), una volta al secondo mentre suona.
+- La riserva segue subito i salti di chi guida e impara da sola quanto ci mette a ripartire, così resta entro poche decine di millisecondi.
+
+### Rete locale di palco: correzioni
+- Se la finestra si ricarica mentre è collegata, ritrova subito chi guida (prima restava su *Cerco chi guida…*).
+- Chi guida resta sulla stessa porta quando cambia nome, ruolo o scaletta: chi aveva scritto l'indirizzo a mano non lo perde più.
+- "Collegato" solo quando chi guida risponde davvero, non appena si apre il collegamento.
+- Lo stesso account su computer e tablet compare su due righe nell'elenco della band (*Tu, altro dispositivo*).
+
+### Palco Sync: chi è collegato
+- Pulsante con le persone nella barra *Band*: quanti della band hanno aperta la scaletta e, con un clic, l'elenco
+  con ruolo, dispositivo, collegamento (rete di palco o internet) e ritardo; **Invia ping** per chi guida.
+- Il computer ora compare nell'elenco *Palco Sync* dell'app web e risponde al ping di chi guida.
+- Con *Segui palco* o *Guida* accesi, avviso quando qualcuno si scollega.
+
+### Storico e analisi
+- Pagina **Scaletta** › **Storico e analisi**, come sull'app web: modifiche, versioni da ripristinare (e *Salva
+  versione ora*), ripartizione dei generi e durata stimata/effettiva del set.
+
+### Cambi di metro nel brano
+- Nella finestra di un cambio della corsia **Click · Tempo** c'è anche il **Metro**: da quella battuta il brano può
+  passare per esempio da 4/4 a 6/8. Con i BPM vuoti cambia solo il metro. Click, count-in, griglia e cue seguono, sul
+  computer, sul tablet e nel metronomo web; la bandierina mostra tempo e metro.
+
+### Controllo pre-concerto
+- **F7** (o il pulsante ✓ in alto a destra) apre il *Controllo pre-concerto*: un semaforo verde, giallo o rosso e
+  una riga per ogni cosa che può mancare sul palco — file della scaletta scaricati, scheda audio scelta collegata e
+  uscite di click/guide/pad/monitor esistenti, dropout, spazio su disco, uscite MIDI dei brani, pedale dello
+  spartito, uscita video, modifiche non salvate, internet e rete di palco. Accanto a ogni problema il pulsante che lo
+  risolve (*Scarica tutto*, *Audio & uscite*, *MIDI*, *Pedale*, *Apri uscita video*); si aggiorna da solo durante i
+  download.
+
+### Rete locale di palco
+- Computer e tablet della band sulla stessa rete Wi-Fi si passano il brano direttamente, anche senza internet:
+  chi ha **Guida** lo annuncia in rete, chi ha **Segui palco** lo trova da solo e carica subito il brano.
+- Badge **LAN** su Segui palco e su Guida, con chi è collegato e il ritardo; **Impostazioni › Rete locale** con
+  l'elenco della band, il ruolo sul palco e l'indirizzo di chi guida da scrivere a mano se il router blocca la ricerca.
+
+### MIDI
+- Il programma manda da solo le patch MIDI dei brani: quando un brano diventa quello nel player (caricato, scelto nel
+  Palco o preso da una transizione) partono Bank Select e Program Change, finora inviati solo dall'app web. Lo stesso
+  brano ricaricato non le rimanda.
+- Nella scheda **MIDI** del brano anche **Control Change** (`7=100, 91=40`) e **SysEx** in esadecimale, con l'errore
+  scritto sotto la riga se un valore non va bene.
+- **MIDI learn** (Ctrl+M o il pulsante con la nota): si clicca un controllo (play, brani, sezioni, loop, fade,
+  pad, click, viste, fader del mixer) e si preme un tasto o si muove un fader del controller. Le assegnazioni e gli
+  ingressi ascoltati sono in Impostazioni › MIDI.
+- Nuova sezione **Impostazioni › MIDI**: uscita (anche rtpMIDI), cambio patch automatico, uscita diversa per ogni
+  strumento oppure *Non inviare da questo computer*, pulsante **Invia ora**.
+
+### Scheda audio
+- Nella finestra della scheda audio la casella **Rileva le schede audio collegate e scollegate** accende o spegne
+  avvisi e cambi automatici di scheda.
+- Collegando una scheda audio a programma aperto si apre **Audio & uscite** con l'avviso *Nuova scheda audio collegata* e il pulsante **Usa questa scheda**.
+- Se la scheda in uso si scollega il brano si ferma e l'audio passa da solo all'uscita predefinita di sistema; prima il programma smetteva di rispondere.
+
 ### Piani e account
 - Niente più attesa di abilitazione: chi entra con Google usa subito l'app con il piano Free.
 - **Impostazioni › Account**: piano in corso (Free, Plus, Pro) con scadenza, brani della libreria rispetto al limite

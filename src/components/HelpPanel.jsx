@@ -16,8 +16,19 @@ const slug = (text, i) =>
 // Plain text of a heading (no **bold**, `code`, links).
 const plain = (text) => text.replace(/[*_`]/g, '').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1');
 
+// Screenshots of the manual (docs/img), bundled too: `img/x.png` in the
+// Markdown becomes the URL Vite gives the file.
+const images = Object.fromEntries(
+  Object.entries(import.meta.glob('../../docs/img/*.{png,jpg,webp}', { eager: true, query: '?url', import: 'default' })).map(([path, url]) => [
+    `img/${path.split('/').pop()}`,
+    url,
+  ]),
+);
+
 // Index: chapters (##) and sections (###); the title (#) is not listed.
-const html = marked.parse(manual);
+const html = marked
+  .parse(manual)
+  .replace(/<img src="([^"]+)"/g, (m, src) => `<img loading="lazy" src="${images[src] || src}"`);
 const headings = marked
   .lexer(manual)
   .filter((t) => t.type === 'heading' && t.depth >= 2 && t.depth <= 3)
@@ -27,6 +38,19 @@ export default function HelpPanel({ onClose }) {
   const body = useRef(null);
   const [current, setCurrent] = useState(headings[0]?.id);
   const [query, setQuery] = useState('');
+  const [zoom, setZoom] = useState(null); // screenshot shown at full size
+
+  // Esc closes the enlarged screenshot before the manual.
+  useEffect(() => {
+    if (!zoom) return;
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      setZoom(null);
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [zoom]);
   const q = query.trim().toLowerCase();
   const shown = useMemo(() => (q ? headings.filter((h) => h.text.toLowerCase().includes(q)) : headings), [q]);
 
@@ -52,6 +76,7 @@ export default function HelpPanel({ onClose }) {
 
   // Web links open in the browser; links to developer files are not followed.
   const onClick = (e) => {
+    if (e.target.tagName === 'IMG') return setZoom({ src: e.target.src, alt: e.target.alt });
     const a = e.target.closest('a');
     if (!a) return;
     e.preventDefault();
@@ -94,6 +119,11 @@ export default function HelpPanel({ onClose }) {
           <div className="prefs-main help-doc" ref={body} onScroll={onScroll} onClick={onClick} dangerouslySetInnerHTML={{ __html: html }} />
         </div>
       </div>
+      {zoom && (
+        <button className="help-zoom" onClick={() => setZoom(null)} title="Chiudi (Esc)">
+          <img src={zoom.src} alt={zoom.alt} />
+        </button>
+      )}
     </div>
   );
 }

@@ -64,6 +64,7 @@ pub struct Runtime {
     send_create: unsafe extern "C" fn(*const SendCreate) -> *mut c_void,
     send_destroy: unsafe extern "C" fn(*mut c_void),
     send_video: unsafe extern "C" fn(*mut c_void, *const VideoFrameV2),
+    send_get_no_connections: unsafe extern "C" fn(*mut c_void, u32) -> i32,
 }
 
 fn candidates() -> Vec<std::path::PathBuf> {
@@ -128,10 +129,11 @@ impl Runtime {
             let send_create = symbol(&lib, b"NDIlib_send_create\0")?;
             let send_destroy = symbol(&lib, b"NDIlib_send_destroy\0")?;
             let send_video = symbol(&lib, b"NDIlib_send_send_video_v2\0")?;
+            let send_get_no_connections = symbol(&lib, b"NDIlib_send_get_no_connections\0")?;
             if !initialize() {
                 return Err("NDI non supportato da questo processore".into());
             }
-            Ok(Arc::new(Runtime { _lib: lib, destroy, send_create, send_destroy, send_video }))
+            Ok(Arc::new(Runtime { _lib: lib, destroy, send_create, send_destroy, send_video, send_get_no_connections }))
         }
     }
 }
@@ -162,6 +164,13 @@ impl Sender {
             return Err(format!("NDI: impossibile creare l’uscita “{}”", name.to_string_lossy()));
         }
         Ok(Sender { rt, instance, _name: name })
+    }
+
+    /// True when someone receives this source; with nobody, waits up to `wait_ms` for one.
+    /// The loops send frames only then: a Full HD frame compressed 30 times a second
+    /// costs a tenth of a core even when nobody looks at it.
+    pub fn has_receivers(&self, wait_ms: u32) -> bool {
+        unsafe { (self.rt.send_get_no_connections)(self.instance, wait_ms) > 0 }
     }
 
     pub fn send(&self, f: &Frame) {

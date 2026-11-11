@@ -186,7 +186,7 @@ export function liveCuePlan(item) {
   const sig = hash(
     // Of the sections only their timing: names and markers leave the cues as they are.
     // The "Cues" stem leaves the grid as it is (lib/arrange.js firstStart).
-    JSON.stringify([2, key, item.bpm, item.timeSig, sectionTiming(item), item.grid, item.countInBars, stemsOf(item).filter((s) => s.generated !== 'cues').map((s) => s.id).sort(), item.regions || null]),
+    JSON.stringify([2, key, item.bpm, item.timeSig, sectionTiming(item), item.tempoChanges?.length ? item.tempoChanges : null, item.grid, item.countInBars, stemsOf(item).filter((s) => s.generated !== 'cues').map((s) => s.id).sort(), item.regions || null]),
   );
   return {
     stem: { id: 'cues-live', name: 'Cues (live)', role: 'guide', instrument: 'other', gain: sheet.gain, pan: sheet.pan, input: sheet.input, eq: sheet.eq, muted: sheet.muted, live: true, path: `local/cues/${item.id}-${sig}.wav` },
@@ -206,8 +206,15 @@ export async function makeLiveCues(plan, tempo, duration) {
   // No tail: the song's length includes this track, and remaking it after an
   // edit must not make the song longer each time.
   const blob = await renderCueTrack(plan.cues, cueBars(tempo, duration, plan.resolution), duration, 0);
-  return storeLocal(plan.stem.path, new File([blob], 'Cues.wav', { type: 'audio/wav' }));
+  const local = await storeLocal(plan.stem.path, new File([blob], 'Cues.wav', { type: 'audio/wav' }));
+  // The tracks of the previous cue sheets are not needed any more.
+  const id = plan.stem.path.match(/^local\/cues\/(.+)-[^-]+\.wav$/)?.[1];
+  if (id) deleteLiveCues(id, plan.stem.path).catch((e) => console.warn(e));
+  return local;
 }
+
+/** Deletes from this computer the live cue tracks of a song (all of them, or all but `keep`). */
+export const deleteLiveCues = (id, keep = null) => invoke('delete_live_cues', { id, keep });
 
 /** Back to the live track: the rendered "Cues" stem leaves the song and Storage. */
 export async function removeRenderedCues(setlistId, item) {

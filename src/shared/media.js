@@ -168,7 +168,9 @@ export const videoOf = (item) => (item?.video?.path ? item.video : null);
 // transition is chosen). On the item, for the whole band: fade in and out of
 // picture and sound (videoFadeIn / videoFadeOut, seconds) and padLead, the
 // seconds before the end of the video when the pad comes in, in the key of the
-// next song (a song without intro can then start straight away).
+// next song (a song without intro can then start straight away). padHold: the
+// seconds the pad goes on into the next song before fading out in padFadeOut
+// seconds (none: it goes on until PAD turns it off).
 export const VIDEO_GROUP = 'video';
 export const isVideoItem = (item) => item?.playback === 'video';
 export const VIDEO_FADE_MAX = 30;
@@ -176,6 +178,13 @@ export const PAD_LEAD_MAX = 120;
 const seconds = (v, fallback, max) => (v === null || v === undefined || v === '' ? fallback : Math.max(0, Math.min(max, Number(v) || 0)));
 export const videoFades = (item) => ({ in: seconds(item?.videoFadeIn, 0, VIDEO_FADE_MAX), out: seconds(item?.videoFadeOut, 3, VIDEO_FADE_MAX) });
 export const padLeadOf = (item) => (isVideoItem(item) && Number(item?.padLead) > 0 ? Math.min(PAD_LEAD_MAX, Number(item.padLead)) : null);
+export const PAD_HOLD_MAX = 300;
+export const PAD_FADE_MAX = 30;
+/** How the pad of a video item ends in the next song: { hold, fadeOut } seconds, or null (it goes on). */
+export const padHoldOf = (item) =>
+  padLeadOf(item) != null && Number(item?.padHold) > 0
+    ? { hold: Math.min(PAD_HOLD_MAX, Number(item.padHold)), fadeOut: Math.max(0.5, seconds(item?.padFadeOut, 4, PAD_FADE_MAX)) }
+    : null;
 // The sound of the video as a track: it plays from the video file itself.
 export const videoAudioStem = (item) => ({ id: 'video-audio', name: 'Audio del video', role: 'main', instrument: VIDEO_GROUP, gain: Number(item?.video?.gain) || 0, pan: 0 });
 /** Level of picture and sound (0..1) at `t` seconds of a video `duration` long, with its fades. */
@@ -206,7 +215,10 @@ const mediaFolder = (t) => (t.songId ? `songs/${t.songId}/` : `setlists/${t.setl
 export const LOCAL_PREFIX = 'local/';
 export const isLocalPath = (path) => (path || '').startsWith(LOCAL_PREFIX);
 let localFiles = null;
-/** The app's store of the local files: { remove(path) }. */
+/**
+ * The app's store of the files on this device: { remove(path) } deletes a
+ * local/… file, { evict(path) } the copy of a cloud file downloaded here.
+ */
 export const setLocalFiles = (impl) => {
   localFiles = impl;
 };
@@ -371,6 +383,48 @@ export function saveRegions(db, target, regions) {
   return updateDoc(mediaDoc(db, target), { regions, updatedAt: serverTimestamp() });
 }
 
+// Volume automation of a stem (desktop Arrangement, "Automazione" tool):
+// stems[].auto = [{ t, db }] = seconds of the song and level in dB on top of
+// the fader (0 = as the fader, AUTO_MIN_DB = silent); a straight line in dB
+// between two points, the first and the last hold before and after them.
+// Missing or [] = no automation. The desktop engine and the web rehearsal play it the same way.
+export const AUTO_MIN_DB = -60;
+export const AUTO_MAX_DB = 6;
+
+export function automationOf(stem) {
+  return (Array.isArray(stem?.auto) ? stem.auto : [])
+    .filter((p) => Number.isFinite(p?.t) && Number.isFinite(p?.db))
+    .map((p) => ({ t: Math.max(0, p.t), db: Math.max(AUTO_MIN_DB, Math.min(AUTO_MAX_DB, p.db)) }))
+    .sort((a, b) => a.t - b.t);
+}
+
+/** Level of the automation at second t (dB, 0 without automation). */
+export function automationDb(points, t) {
+  if (!points?.length) return 0;
+  if (t <= points[0].t) return points[0].db;
+  const last = points[points.length - 1];
+  if (t >= last.t) return last.db;
+  let lo = 0;
+  let hi = points.length - 1;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (points[mid].t <= t) lo = mid;
+    else hi = mid;
+  }
+  const a = points[lo];
+  const b = points[hi];
+  return b.t > a.t ? a.db + ((b.db - a.db) * (t - a.t)) / (b.t - a.t) : b.db;
+}
+
+/** Linear gain of the automation at second t (1 without automation). */
+export const automationGain = (points, t) => {
+  const db = automationDb(points, t);
+  return db <= AUTO_MIN_DB ? 0 : 10 ** (db / 20);
+};
+
+/** Points after second `t` moved by `delta` seconds (bars inserted, start of the song moved). */
+export const shiftAutomation = (points, t, delta) => (points || []).map((p) => (p.t >= t ? { ...p, t: Math.max(0, Math.round((p.t + delta) * 1e4) / 1e4) } : p));
+
 /** Fields of the song's media document, saved together (one write). */
 export function saveMediaFields(db, target, fields) {
   return updateDoc(mediaDoc(db, target), { ...fields, updatedAt: serverTimestamp() });
@@ -381,6 +435,8 @@ export function saveMediaFields(db, target, fields) {
 export const ownsMedia = (target, path) => innerPath(path || '').startsWith(mediaFolder(target));
 
 // A file already gone from Storage must not block removing it from the list.
+// The file goes from the cloud (Storage or Drive) and from this device: the
+// copy downloaded to play offline and the data made from it (peaks, analysis).
 export async function deleteMediaFile(storage, path, owner) {
   if (owner && !ownsMedia(owner, path)) return;
   if (isLocalPath(path)) {
@@ -389,13 +445,14 @@ export async function deleteMediaFile(storage, path, owner) {
   }
   if (isDrivePath(path)) {
     await deleteDriveFile(path);
-    return;
+  } else {
+    try {
+      await deleteObject(ref(storage, path));
+    } catch (e) {
+      if (e?.code !== 'storage/object-not-found') throw e;
+    }
   }
-  try {
-    await deleteObject(ref(storage, path));
-  } catch (e) {
-    if (e?.code !== 'storage/object-not-found') throw e;
-  }
+  await localFiles?.evict?.(path);
 }
 
 export const mediaPaths = (song) =>
@@ -405,7 +462,10 @@ export const mediaPaths = (song) =>
 export function deletionNote(target, paths) {
   const owned = paths.filter((p) => ownsMedia(target, p)).length;
   const everywhere = target.songId ? ' e da tutte le scalette che usano il brano' : '';
-  const gone = owned === 1 ? `Il file viene eliminato definitivamente dallo storage cloud${everywhere}.` : `I ${owned} file vengono eliminati definitivamente dallo storage cloud${everywhere}.`;
+  const gone =
+    owned === 1
+      ? `Il file viene eliminato definitivamente dallo storage cloud e da questo dispositivo${everywhere}.`
+      : `I ${owned} file vengono eliminati definitivamente dallo storage cloud e da questo dispositivo${everywhere}.`;
   const kept = paths.length - owned;
   return [owned > 0 && gone, kept > 0 && `${kept === 1 ? 'Un file resta' : `${kept} file restano`} nello storage perché ${kept === 1 ? 'appartiene' : 'appartengono'} alla scaletta da cui questa è stata duplicata.`]
     .filter(Boolean)

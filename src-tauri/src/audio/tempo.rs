@@ -17,6 +17,19 @@ pub struct SectionSpec {
     pub bars: Option<f64>,
     pub bpm: Option<f64>,
     pub time_sig: Option<String>,
+    /// Part of a gradual tempo change (rallentando / accelerando, see the web tempo-map.js).
+    #[serde(default)]
+    pub ramp: Option<RampSpec>,
+}
+
+/// A section on a ramp: it goes from `start` to `end` (0..1) of a change from
+/// `from` (None: the song's tempo) to `to`, the tempo moving click by click.
+#[derive(Clone, Copy, Debug, Deserialize)]
+pub struct RampSpec {
+    pub from: Option<f64>,
+    pub to: f64,
+    pub start: f64,
+    pub end: f64,
 }
 
 /// How the grid is lined up with the audio.
@@ -103,6 +116,18 @@ struct Plan {
     bpm: f64,
     sig: String,
     label: String,
+    /// (from, to, start, end) of a ramp, `from` already resolved.
+    ramp: Option<(f64, f64, f64, f64)>,
+}
+
+impl Plan {
+    /// Tempo of click k of n on the ramp, in the middle of the click.
+    fn bpm_at(&self, k: u32, n: u32) -> f64 {
+        match self.ramp {
+            Some((from, to, a, b)) => from + (to - from) * (a + (b - a) * (k as f64 + 0.5) / n.max(1) as f64),
+            None => self.bpm,
+        }
+    }
 }
 
 fn plan(bpm: Option<f64>, time_sig: Option<&str>, sections: &[SectionSpec]) -> Vec<Plan> {
@@ -110,18 +135,29 @@ fn plan(bpm: Option<f64>, time_sig: Option<&str>, sections: &[SectionSpec]) -> V
     let base_sig = time_sig.filter(|s| !s.trim().is_empty()).unwrap_or("4/4").to_string();
     let mut plan: Vec<Plan> = sections
         .iter()
-        .filter(|s| s.bpm.unwrap_or(0.0) > 0.0 || s.time_sig.as_deref().is_some_and(|t| !t.is_empty()))
-        .map(|s| Plan {
-            bars: Some(s.bars.unwrap_or(1.0).max(1.0) as u32),
-            bpm: s.bpm.filter(|b| *b > 0.0).unwrap_or(base_bpm),
-            sig: s.time_sig.clone().filter(|t| !t.is_empty()).unwrap_or_else(|| base_sig.clone()),
-            label: s.label.clone().unwrap_or_default(),
+        .filter(|s| s.bpm.unwrap_or(0.0) > 0.0 || s.time_sig.as_deref().is_some_and(|t| !t.is_empty()) || s.ramp.is_some())
+        .map(|s| {
+            let ramp = s.ramp.filter(|r| r.to > 0.0).map(|r| {
+                let from = r.from.filter(|b| *b > 0.0).unwrap_or(base_bpm);
+                (from, r.to, r.start.clamp(0.0, 1.0), r.end.clamp(0.0, 1.0))
+            });
+            Plan {
+                bars: Some(s.bars.unwrap_or(1.0).max(1.0) as u32),
+                bpm: ramp.map_or_else(|| s.bpm.filter(|b| *b > 0.0).unwrap_or(base_bpm), |r| r.0),
+                sig: s.time_sig.clone().filter(|t| !t.is_empty()).unwrap_or_else(|| base_sig.clone()),
+                label: s.label.clone().unwrap_or_default(),
+                ramp,
+            }
         })
         .collect();
     if plan.is_empty() {
-        plan.push(Plan { bars: None, bpm: base_bpm, sig: base_sig, label: String::new() });
+        plan.push(Plan { bars: None, bpm: base_bpm, sig: base_sig, label: String::new(), ramp: None });
     }
     if let Some(last) = plan.last_mut() {
+        // The last one goes on for ever: at the tempo its ramp reaches.
+        if let Some((_, to, _, _)) = last.ramp.take() {
+            last.bpm = to;
+        }
         last.bars = None;
     }
     plan
@@ -159,6 +195,33 @@ impl TempoMap {
         let mut t = origin;
         let mut bar = 1i64;
         for p in &plan {
+            if let (Some(_), Some(b)) = (p.ramp, p.bars) {
+                // A ramp: one segment per click, each at its tempo.
+                let compound = is_compound(&p.sig);
+                let (beats, _) = parse_sig(&p.sig);
+                let n = beats * b;
+                for k in 0..n {
+                    let bpm = p.bpm_at(k, n);
+                    let beat = if compound { 60.0 / bpm / 3.0 } else { 60.0 / bpm };
+                    segments.push(Segment {
+                        start: t,
+                        beat,
+                        beats,
+                        compound,
+                        bars: None,
+                        bpm,
+                        time_sig: p.sig.clone(),
+                        label: if k == 0 { p.label.clone() } else { String::new() },
+                        first_bar: bar + (k / beats) as i64,
+                        first_beat: k % beats,
+                        clicks: Some(1),
+                        count_in: false,
+                    });
+                    t += beat;
+                }
+                bar += b as i64;
+                continue;
+            }
             let seg = segment(p, t, bar, false, p.bars);
             if let Some(b) = p.bars {
                 t += seg.beat * seg.beats as f64 * b as f64;
@@ -226,7 +289,7 @@ impl TempoMap {
         if let Some(last) = segments.last_mut() {
             last.bars = None;
         }
-        let first = Plan { bars: None, bpm: segments[0].bpm, sig: sig.clone(), label: String::new() };
+        let first = Plan { bars: None, bpm: segments[0].bpm, sig: sig.clone(), label: String::new(), ramp: None };
         let origin = beats[0];
         let mut map = Self::with_count_in(segments, &first, count_in_bars, origin);
         // Same unit as the click track (not eighths), whatever the time signature.
@@ -323,7 +386,7 @@ impl TempoMap {
                 }
             })
             .collect();
-        let first = Plan { bars: None, bpm: segments[0].bpm, sig, label: String::new() };
+        let first = Plan { bars: None, bpm: segments[0].bpm, sig, label: String::new(), ramp: None };
         let origin = segments[0].start;
         Self::with_count_in(segments, &first, count_in_bars, origin)
     }
@@ -462,10 +525,36 @@ mod tests {
     use super::*;
 
     #[test]
+    fn ramps_go_click_by_click() {
+        // 2 bars at 120, then a rallentando over 2 bars down to 60, then 60.
+        let sig = || Some("4/4".to_string());
+        let sections = vec![
+            SectionSpec { label: Some("A".into()), bars: Some(2.0), bpm: None, time_sig: sig(), ramp: None },
+            SectionSpec { label: None, bars: Some(2.0), bpm: None, time_sig: sig(), ramp: Some(RampSpec { from: None, to: 60.0, start: 0.0, end: 1.0 }) },
+            SectionSpec { label: None, bars: None, bpm: Some(60.0), time_sig: sig(), ramp: None },
+        ];
+        let map = TempoMap::build(Some(120.0), Some("4/4"), 0, &sections);
+        // A, 8 clicks of the ramp, the last part.
+        assert_eq!(map.segments.len(), 10);
+        let ramp = &map.segments[1..9];
+        assert!(ramp.windows(2).all(|w| w[1].bpm < w[0].bpm && (w[1].start - w[0].start - w[0].beat).abs() < 1e-9));
+        assert!(ramp[0].bpm < 120.0 && ramp[7].bpm > 60.0);
+        assert_eq!((ramp[5].first_bar, ramp[5].first_beat), (4, 1));
+        let end = ramp[7].start + ramp[7].beat;
+        assert!((map.segments[9].start - end).abs() < 1e-9);
+        assert_eq!(map.position(end), (5, 1, 4));
+        assert_eq!(map.position(end + 1.0), (5, 2, 4));
+        // Every click of the ramp sounds once.
+        let mut clicks = 0;
+        map.frames(1000).clicks_in(4000, (end * 1000.0) as i64, 1, |_, _, _| clicks += 1);
+        assert_eq!(clicks, 8);
+    }
+
+    #[test]
     fn count_in_and_sections() {
         let sections = vec![
-            SectionSpec { label: Some("Intro".into()), bars: Some(2.0), bpm: Some(120.0), time_sig: Some("4/4".into()) },
-            SectionSpec { label: Some("Strofa".into()), bars: Some(4.0), bpm: Some(60.0), time_sig: Some("3/4".into()) },
+            SectionSpec { label: Some("Intro".into()), bars: Some(2.0), bpm: Some(120.0), time_sig: Some("4/4".into()), ramp: None },
+            SectionSpec { label: Some("Strofa".into()), bars: Some(4.0), bpm: Some(60.0), time_sig: Some("3/4".into()), ramp: None },
         ];
         let map = TempoMap::build(Some(120.0), Some("4/4"), 1, &sections);
         assert_eq!(map.segments.len(), 3);
@@ -489,7 +578,7 @@ mod tests {
     #[test]
     fn markers_keep_the_grid() {
         // Sections made on the waveform: the song's metre, no tempo of their own.
-        let marker = |label: &str, bars: f64| SectionSpec { label: Some(label.into()), bars: Some(bars), bpm: None, time_sig: Some("4/4".into()) };
+        let marker = |label: &str, bars: f64| SectionSpec { label: Some(label.into()), bars: Some(bars), bpm: None, time_sig: Some("4/4".into()), ramp: None };
         let sections = vec![marker("Intro", 2.0), marker("Strofa", 4.0), marker("Rit", 4.0)];
         let plain = TempoMap::build_at(Some(120.5), Some("4/4"), 1, &[], 1.0);
         let map = TempoMap::build_at(Some(120.5), Some("4/4"), 1, &sections, 1.0);

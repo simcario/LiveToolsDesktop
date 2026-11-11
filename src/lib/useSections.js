@@ -67,7 +67,11 @@ export function useSections({ player, setlistId, canEdit, notify, quant }) {
       return res && commit(res.sections, 'Sezione spostata') ? res.index : null;
     },
     rename: (index, label) => commit(renameMarker(song, index, label), `Sezione rinominata in “${label}”`),
-    remove: (index) => commit(removeMarker(song, index), 'Sezione eliminata'),
+    remove: (index) => {
+      const label = sections.find((s) => s.index === index)?.label;
+      if (!confirm(`Eliminare la sezione${label ? ` “${label}”` : ''}? La sezione prima prende le sue battute.`)) return false;
+      return commit(removeMarker(song, index), 'Sezione eliminata');
+    },
     go: (s) => jumpToSection(s, quant, beats, sections),
     /** Undo (dir -1) or redo (dir 1) of the last edit of the song, whatever view it was made in. */
     travel: async (dir) => {

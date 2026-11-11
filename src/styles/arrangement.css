@@ -369,3 +369,42 @@
 .arr-unsaved {
   color: var(--warn);
 }
+
+/* ---------- Tempo change editor (lane Click · Tempo) ---------- */
+.arr-tempo-pop {
+  position: absolute;
+  z-index: 30;
+  transform: translateY(-100%);
+  width: 230px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface-2);
+  box-shadow: var(--shadow-lg);
+  cursor: default;
+}
+.arr-tempo-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 12px;
+}
+.arr-tempo-pop label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.arr-tempo-pop select.se-tiny {
+  width: auto;
+}
+.arr-tempo-pop p {
+  margin: 0;
+}
+.arr-tempo-pop .btn {
+  align-self: flex-start;
+}

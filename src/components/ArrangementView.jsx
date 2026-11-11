@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { engineStatus, livePosition, useEngineStatus } from '../lib/engine';
+import { animateWhilePlaying, engineStatus, livePosition, useEngineStatus } from '../lib/engine';
 import { gridBeats, moveAnchor, nearestOnset, removeAnchor, shiftAnchors, tapBpm } from '../lib/grid';
 import { laneColor, ROLE_COLORS } from '../lib/lanes';
 import { usePeaks } from '../lib/mediaCache';
@@ -19,8 +19,15 @@ import InsertBarsModal from './InsertBarsModal';
 import { closeLeadingGap, leadToAudio, cutAt, keepGrid, moveSegment, removeSegment, segmentEnd, segmentIndexAt, snapToBeat, stemRegions, toggleSegmentMute, trimSegment } from '../lib/arrange';
 import { clearHistory, recordStep, travel, useHistory } from '../lib/arrangeHistory';
 import { discardDraft, editDraft, saveDraft, useDrafts } from '../lib/drafts';
-import { regionsOf, stemsOf } from '../shared/media.js';
+import { AUTO_MAX_DB, AUTO_MIN_DB, automationDb, automationOf, regionsOf, stemsOf } from '../shared/media.js';
+import { TIME_SIGNATURES } from '../shared/setlists.js';
+import { cleanTempoChanges, MAX_BPM, MAX_RAMP, MIN_BPM, tempoChangesOf } from '../shared/tempoMap.js';
+import { writeMix } from '../lib/songMix';
 import Toolbar, { ToolGroup } from './Toolbar';
+import { normalizePrompter, slideColor, slideName } from '../lib/prompter';
+
+// The gobbo moved by `delta` seconds, all its changes together.
+const shiftPrompter = (p, delta) => ({ ...p, cues: (p.cues || []).map((c) => ({ ...c, t: Math.round((c.t + delta) * 1000) / 1000 })) });
 
 // Bar numbers on top, then the lane of the sections (Cubase's marker track).
 const MARK_Y = 30;
@@ -39,12 +46,27 @@ const TOOLS = [
   ['cut', 'scissors', 'Taglia dove clicchi', '3', 'crosshair'],
   ['mute', 'x', 'Muta / riattiva un segmento', '4', 'pointer'],
   ['erase', 'eraser', 'Elimina un segmento', '5', 'not-allowed'],
+  ['auto', 'automation', 'Automazione del volume: clic aggiunge un punto, trascina per spostarlo, doppio clic o Alt+clic lo toglie', '6', 'crosshair'],
 ];
+
+// Volume automation drawn in the lane of a track, under the strip with the name: the
+// height is a fader's (0 dB at about 4/5, +6 dB on top, silence at the bottom).
+const AUTO_TOP = 19;
+const AUTO_H = LANE_H - AUTO_TOP - 4;
+const autoY = (db, y) => y + AUTO_TOP + (1 - (db <= AUTO_MIN_DB ? 0 : Math.cbrt(10 ** (db / 20) / 2))) * AUTO_H;
+function autoDbAt(py, y) {
+  const p = Math.max(0, Math.min(1, 1 - (py - y - AUTO_TOP) / AUTO_H));
+  const g = 2 * p ** 3;
+  return g <= 0.001 ? AUTO_MIN_DB : Math.max(AUTO_MIN_DB, Math.min(AUTO_MAX_DB, Math.round(20 * Math.log10(g) * 10) / 10));
+}
+const dbLabel = (db) => (db <= AUTO_MIN_DB ? '−∞ dB' : `${db > 0 ? '+' : ''}${db.toFixed(1).replace('.', ',')} dB`);
+const AUTO_HIT = 7; // px around a point that grab it
+const TEMPO_HIT = 8; // px around a tempo change that grab it
 
 const fmtTime = (t) => `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, '0')}`;
 const gapText = ({ gap }) => (gap > 0 ? `tolti ${gap.toFixed(1)} s vuoti all’inizio` : 'battuta 1 riportata all’inizio, con le sue cue');
 
-function draw(canvas, { width, height, scroll, pps, t0, tempo, rows, peaks, duration, warp, cue, sections }) {
+function draw(canvas, { width, height, scroll, pps, t0, tempo, rows, peaks, duration, warp, cue, sections, tempoLane, autoTool }) {
   const dpr = window.devicePixelRatio || 1;
   if (canvas.width !== Math.round(width * dpr) || canvas.height !== Math.round(height * dpr)) {
     canvas.width = Math.round(width * dpr);
@@ -144,12 +166,17 @@ function draw(canvas, { width, height, scroll, pps, t0, tempo, rows, peaks, dura
       drawCueLane(ctx, { y, h: LANE_H, width, x, ...cue });
       return;
     }
+    if (r.kind === 'prompter') {
+      drawPrompterLane(ctx, { y, width, x, duration, ...r });
+      return;
+    }
     if (r.kind === 'click') {
       ctx.fillStyle = 'rgba(6,182,212,0.6)';
       beats.forEach((b) => {
         const h = b.inBar === 0 ? LANE_H - 18 : (LANE_H - 18) * 0.45;
         ctx.fillRect(Math.round(x(b.t)), y + LANE_H - 9 - h, 2, h);
       });
+      drawTempoLane(ctx, { y, width, x, beats, ...tempoLane });
       return;
     }
     // Audio: one clip per region (moved, or cut by inserted bars); video: one clip at its offset.
@@ -206,9 +233,125 @@ function draw(canvas, { width, height, scroll, pps, t0, tempo, rows, peaks, dura
         }
       }
     });
+    if (r.kind === 'audio' && r.auto && (r.auto.length || (autoTool && !r.stem.live))) drawAutomation(ctx, { y, width, tStart, pps, x, points: r.auto, active: autoTool });
   });
 
   if (warp) drawWarp(ctx, { width, height, x, tStart, tEnd, rows, warp });
+}
+
+// Volume automation of a track: the line over its clips, its points with the Automazione tool.
+function drawAutomation(ctx, { y, width, tStart, pps, x, points, active }) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, y + 1, width, LANE_H - 2);
+  ctx.clip();
+  ctx.strokeStyle = active ? '#fbbf24' : 'rgba(251,191,36,0.6)';
+  ctx.lineWidth = active ? 1.5 : 1;
+  ctx.beginPath();
+  for (let px = 0; px <= width; px += 2) {
+    const py = autoY(automationDb(points, tStart + px / pps), y);
+    if (px === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+  if (active) {
+    ctx.fillStyle = '#fbbf24';
+    ctx.strokeStyle = '#0b0f17';
+    ctx.lineWidth = 1;
+    points.forEach((p) => {
+      const px = x(p.t);
+      if (px < -6 || px > width + 6) return;
+      ctx.beginPath();
+      ctx.rect(Math.round(px) - 3.5, Math.round(autoY(p.db, y)) - 3.5, 7, 7);
+      ctx.fill();
+      ctx.stroke();
+    });
+  }
+  ctx.restore();
+}
+
+// Tempo changes in the lane of the click (Cubase's tempo track): the tempo as a line,
+// a flag on each change with its BPM (and the bars of a gradual change).
+function drawTempoLane(ctx, { y, width, x, beats, marks = [], range = [60, 180], open, drag }) {
+  if (!marks.length && !drag) return;
+  const [lo, hi] = range;
+  const top = y + 20;
+  const h = LANE_H - 32;
+  const yOf = (bpm) => top + h - ((bpm - lo) / Math.max(1, hi - lo)) * h;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, y + 1, width, LANE_H - 2);
+  ctx.clip();
+  ctx.strokeStyle = 'rgba(248,250,252,0.7)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  beats
+    .filter((b) => !b.seg.countIn)
+    .forEach((b, i) => {
+      const py = yOf(b.seg.bpm);
+      if (i === 0) ctx.moveTo(x(b.t), py);
+      else ctx.lineTo(x(b.t), py);
+    });
+  ctx.stroke();
+  ctx.lineWidth = 1;
+  ctx.font = '700 10px Inter, sans-serif';
+  [...marks, ...(drag ? [drag] : [])].forEach((m) => {
+    if (m.t == null) return;
+    const mx = Math.round(x(m.t)) + 0.5;
+    if (mx < -80 || mx > width + 10) return;
+    const color = m === drag ? '#fbbf24' : open === m.bar ? '#f8fafc' : '#f59e0b';
+    if (m.ramp && m.tEnd != null) {
+      ctx.fillStyle = 'rgba(245,158,11,0.16)';
+      ctx.fillRect(mx, y + 3, x(m.tEnd) - mx, LANE_H - 6);
+    }
+    ctx.strokeStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(mx, y + 3);
+    ctx.lineTo(mx, y + LANE_H - 3);
+    ctx.stroke();
+    const text = [m.bpm ? `♩ ${m.bpm}${m.ramp ? ` · ${m.ramp} bt` : ''}` : null, m.timeSig].filter(Boolean).join(' · ');
+    const w = ctx.measureText(text).width + 10;
+    ctx.fillStyle = color;
+    ctx.fillRect(mx, y + 3, w, 14);
+    ctx.fillStyle = '#0b0f17';
+    ctx.fillText(text, mx + 5, y + 10.5);
+  });
+  ctx.restore();
+}
+
+// Gobbo: one block per slide change, in the colour of the slide, up to the next change.
+function drawPrompterLane(ctx, { y, width, x, duration, data, delta, dragging }) {
+  const cues = data.cues;
+  ctx.font = '700 10px Inter, sans-serif';
+  cues.forEach((c, i) => {
+    if (c.slide == null) return;
+    const a = c.t + delta;
+    const b = (cues[i + 1]?.t ?? Math.max(duration, c.t + 4)) + delta;
+    const cx = Math.round(x(a));
+    const cw = Math.round(x(b)) - cx;
+    if (cx > width || cx + cw < 0 || cw <= 0) return;
+    const color = slideColor(data.slides, c.slide) || '#94a3b8';
+    ctx.fillStyle = `${color}38`;
+    ctx.fillRect(cx, y + 3, cw, LANE_H - 6);
+    ctx.fillStyle = color;
+    ctx.fillRect(cx, y + 3, Math.min(cw, 3), LANE_H - 6);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(cx, y + 3, cw, LANE_H - 6);
+    ctx.clip();
+    ctx.fillStyle = '#f8fafc';
+    ctx.fillText(slideName(data.slides, c.slide), Math.max(cx, 0) + 7, y + 16);
+    const text = (data.slides.find((sl) => sl.id === c.slide)?.text || '').split('\n')[0];
+    ctx.font = '500 10px Inter, sans-serif';
+    ctx.fillStyle = 'rgba(248,250,252,0.6)';
+    ctx.fillText(text, Math.max(cx, 0) + 7, y + 31);
+    ctx.font = '700 10px Inter, sans-serif';
+    ctx.restore();
+  });
+  if (dragging) {
+    ctx.strokeStyle = '#fbbf24';
+    ctx.strokeRect(0.5, y + 2.5, width - 1, LANE_H - 5);
+  }
 }
 
 // Grid editing: analysis range, transients of the reference track, anchors.
@@ -348,14 +491,112 @@ function GridBar({ grid, tempo, onChange }) {
   );
 }
 
+// A tempo change of the lane Click · Tempo: its BPM, at once or gradually over some bars, remove.
+const RAMPS = [0, 1, 2, 4, 8, 16];
+// A change of tempo, of metre or both from a bar (shared/tempoMap.js): BPM empty = the tempo goes on as it is.
+function TempoEditor({ mark, left, top, editable, ignored, onBpm, onRamp, onSig, onRemove, onClose }) {
+  const shown = mark.bpm ? String(mark.bpm) : '';
+  const [bpm, setBpm] = useState(shown);
+  useEffect(() => setBpm(shown), [shown]);
+  const apply = () => {
+    const text = bpm.trim();
+    // Empty: only the metre changes here (when there is one to keep).
+    if (!text) {
+      if (mark.bpm && mark.timeSig) onBpm(null);
+      else setBpm(shown);
+      return;
+    }
+    const v = Math.round(Number(text.replace(',', '.')) * 100) / 100;
+    if (v >= MIN_BPM && v <= MAX_BPM && v !== mark.bpm) onBpm(v);
+    else setBpm(shown);
+  };
+  const sigs = [...new Set([...TIME_SIGNATURES, ...(mark.timeSig ? [mark.timeSig] : [])])];
+  const ramps = [...new Set([...RAMPS, mark.ramp])].filter((n) => n <= MAX_RAMP).sort((a, b) => a - b);
+  return (
+    <div
+      className="arr-tempo-pop"
+      style={{ left, top }}
+      onPointerDown={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === 'Escape') onClose();
+      }}
+    >
+      <div className="arr-tempo-head">
+        <strong>Cambio · battuta {mark.bar}</strong>
+        <button className="toggle" onClick={onClose} aria-label="Chiudi">
+          <Icon name="x" size={10} />
+        </button>
+      </div>
+      <label className="small">
+        BPM
+        <input
+          className="input se-tiny"
+          value={bpm}
+          placeholder="uguale"
+          inputMode="decimal"
+          disabled={!editable}
+          onChange={(e) => setBpm(e.target.value)}
+          onBlur={apply}
+          onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+        />
+      </label>
+      <label className="small">
+        Arriva
+        <select className="input se-tiny" value={mark.ramp} disabled={!editable || !mark.bpm} onChange={(e) => onRamp(Number(e.target.value))}>
+          {ramps.map((n) => (
+            <option key={n} value={n}>
+              {n ? `gradualmente in ${n} ${n === 1 ? 'battuta' : 'battute'}` : 'subito'}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="small">
+        Metro
+        <select
+          className="input se-tiny"
+          value={mark.timeSig || ''}
+          disabled={!editable}
+          onChange={(e) => {
+            const v = e.target.value || null;
+            // Neither tempo nor metre left: nothing would change here.
+            if (!v && !mark.bpm) return;
+            onSig(v);
+          }}
+        >
+          <option value="">{mark.bpm ? 'uguale' : '—'}</option>
+          {sigs.map((x) => (
+            <option key={x} value={x}>
+              {x}
+            </option>
+          ))}
+        </select>
+      </label>
+      {ignored && <p className="small faint">La griglia segue la traccia click o gli ancoraggi a mano: finché c’è, questo cambio non si sente.</p>}
+      {editable && (
+        <button className="btn btn-sm btn-ghost" onClick={onRemove}>
+          <Icon name="trash" size={12} /> Togli
+        </button>
+      )}
+    </div>
+  );
+}
+
 // Volume, pan and destination of the tracks are in the Mixer (Dettaglio → Mixer, F3).
-function TrackHeader({ row, index, solos, onTrack, selected, onSelect }) {
+// saved: the mute of the tracks is the song's (who can edit it), not this computer's.
+function TrackHeader({ row, index, solos, onTrack, selected, onSelect, saved }) {
   if (row.kind === 'click') {
     return (
       <div className="t-header" style={{ '--lane-color': ROLE_COLORS.click }}>
         <span className="t-color" />
         <span className="t-name">Click · Tempo</span>
         <span className="t-btns">
+          {row.onAddTempo && (
+            <button className="toggle" onClick={row.onAddTempo} title="Cambio di tempo o di metro alla battuta della testina (doppio clic sulla corsia: nel punto scelto)" aria-label="Aggiungi un cambio di tempo">
+              <Icon name="plus" size={11} />
+            </button>
+          )}
           <button className={`toggle ${row.enabled ? 'is-on' : ''}`} onClick={row.onToggle}>
             On
           </button>
@@ -381,7 +622,7 @@ function TrackHeader({ row, index, solos, onTrack, selected, onSelect }) {
     );
   }
   const { stem } = row;
-  const mute = getMix(stem.id).mute ?? !!stem.muted;
+  const mute = saved ? !!stem.muted : (getMix(stem.id).mute ?? !!stem.muted);
   return (
     <div className={`t-header ${selected ? 'is-selected' : ''}`} style={{ '--lane-color': row.color }} onMouseDown={onSelect} title="Clic: seleziona la traccia (Ctrl+E taglia nel punto del cursore)">
       <span className="t-color" />
@@ -389,7 +630,11 @@ function TrackHeader({ row, index, solos, onTrack, selected, onSelect }) {
         {stem.name}
       </span>
       <span className="t-btns">
-        <button className={`toggle mute ${mute ? 'is-on' : ''}`} onClick={() => onTrack(stem, { mute: !mute })}>
+        <button
+          className={`toggle mute ${mute ? 'is-on' : ''}`}
+          onClick={() => onTrack(stem, { mute: !mute })}
+          title={saved ? 'Muta la traccia nel brano (per tutta la band, con “Salva”)' : 'Muta la traccia su questo dispositivo'}
+        >
           M
         </button>
         <button className={`toggle solo ${solos[stem.id] ? 'is-on' : ''}`} onClick={() => onTrack(stem, { solo: !solos[stem.id] })}>
@@ -437,6 +682,10 @@ export default function ArrangementView({ player, item, lanes, settings, update,
   const [barsOpen, setBarsOpen] = useState(false); // "Aggiungi → Battute" dialog
   const [clipDrag, setClipDrag] = useState(null); // { stemId, index, delta } moving a segment, { stemId, index, edge, t } trimming it
   const [selection, setSelection] = useState(null); // { stemId, index: segment or null }
+  const [prompterDrag, setPrompterDrag] = useState(null); // seconds the gobbo is moved by while dragging
+  const [autoDrag, setAutoDrag] = useState(null); // { stemId, points } of the automation being edited
+  const [tempoEdit, setTempoEdit] = useState(null); // bar of the tempo change open in its editor
+  const [tempoDrag, setTempoDrag] = useState(null); // { from, bar } of a tempo change being moved
   const snap = settings.snapGrid !== false;
   const song = player.loadedItem;
   const history = useHistory(song?.id);
@@ -450,6 +699,42 @@ export default function ArrangementView({ player, item, lanes, settings, update,
   const dirty = !!useDrafts()[song?.id];
   const [saving, setSaving] = useState(false);
   const tool = TOOLS.some(([k]) => k === settings.arrTool) ? settings.arrTool : 'select';
+  const songStems = new Map(stemsOf(song).map((s) => [s.id, s]));
+  const mixSaved = !!player.mixSaved;
+
+  const sec = useSections({ player, setlistId, canEdit, notify, quant: settings.jumpQuant });
+  const { sections } = sec;
+  // ---------- Tempo changes (lane Click · Tempo) ----------
+  const tempoChanges = tempoChangesOf(song);
+  const barTime = (n) => sec.bars.find((b) => b.bar === n)?.t ?? null;
+  const tempoMarks = tempoChanges.map((c) => ({ ...c, t: barTime(c.bar), tEnd: c.ramp ? barTime(c.bar + c.ramp) : null }));
+  const tempoBpms = (tempo?.segments || []).filter((sg) => !sg.countIn).map((sg) => sg.bpm);
+  const tempoRange = tempoBpms.length ? [Math.min(...tempoBpms) - 5, Math.max(...tempoBpms) + 5] : [60, 180];
+  // The grid follows the audio beat by beat (click stem) or the anchors set by hand: the changes have no effect.
+  const tempoIgnored = !!(gridOf(song).anchors.length || (loaded?.sync?.analysis?.mode === 'click' && !gridOf(song).bpm));
+  const commitTempo = (list, label) => {
+    if (!song || !canEditSong) return;
+    const next = cleanTempoChanges(list);
+    const value = next.length ? next : null;
+    editDraft(song.id, { item: { tempoChanges: value } });
+    recordStep(song.id, { label, before: { media: {}, item: { tempoChanges: song.tempoChanges ?? null } }, after: { media: {}, item: { tempoChanges: value } } });
+    notify(`${label}${tempoIgnored ? ' · la griglia segue la traccia click o gli ancoraggi: il cambio non si sente finché c’è' : ' · “Salva” per tenerlo'}`);
+  };
+  // A new change on the bar nearest to t, at the tempo the song has there.
+  const addTempoAt = (t) => {
+    if (!canEditSong || !sec.bars.length) return;
+    const i = nearestBarIndex(sec.bars, t);
+    const b = sec.bars[Math.max(1, i)];
+    if (!b) return;
+    if (tempoChanges.some((c) => c.bar === b.bar)) {
+      setTempoEdit(b.bar);
+      return;
+    }
+    const bpm = Math.round(b.seg.bpm);
+    commitTempo([...tempoChanges, { bar: b.bar, bpm, ramp: 0 }], `Cambio di tempo alla battuta ${b.bar}`);
+    setTempoEdit(b.bar);
+  };
+  const tempoMarkAt = (t) => tempoMarks.find((m) => m.t != null && Math.abs(m.t - t) <= TEMPO_HIT / pps);
 
   const rows = [];
   if (loaded?.video) rows.push({ kind: 'video', name: loaded.video.name, offset: loaded.video.offset, duration: loaded.duration, color: ROLE_COLORS.video, onOutput: onVideoOutput });
@@ -466,7 +751,8 @@ export default function ArrangementView({ player, item, lanes, settings, update,
         local: t.local,
         duration: t.info?.duration,
         color: laneColor(lanes, t.stem),
-        muted: getMix(t.stem.id).mute ?? !!t.stem.muted,
+        muted: mixSaved ? !!t.stem.muted : (getMix(t.stem.id).mute ?? !!t.stem.muted),
+        auto: t.stem.live ? [] : autoDrag?.stemId === t.stem.id ? autoDrag.points : automationOf(songStems.get(t.stem.id)),
         regions: t.stem.live
           ? stemRegions(null, '')
           : clipDrag?.stemId === t.stem.id
@@ -479,19 +765,21 @@ export default function ArrangementView({ player, item, lanes, settings, update,
       }),
   );
   if (loaded && cue.exists) rows.push({ kind: 'cue' });
+  // Gobbo: its changes as one track, moved together when the song changed (a longer intro…).
+  const prompter = normalizePrompter(song?.prompter);
+  if (loaded && prompter.cues.length) rows.push({ kind: 'prompter', data: prompter, delta: prompterDrag ?? 0, dragging: prompterDrag != null });
   if (loaded) {
     const seg = tempo?.segments?.find((s) => !s.countIn);
     rows.push({
       kind: 'click',
       enabled: settings.click.enabled,
       onToggle: () => update({ click: { ...settings.click, enabled: !settings.click.enabled } }),
-      info: seg ? `${Math.round(seg.bpm * 100) / 100} BPM · ${seg.timeSig}` : '',
+      onAddTempo: canEditSong ? () => addTempoAt(Math.max(0, engineStatus().position)) : null,
+      info: seg ? `${Math.round(seg.bpm * 100) / 100} BPM · ${seg.timeSig}${tempoChanges.length ? ` · ${tempoChanges.length === 1 ? '1 cambio' : `${tempoChanges.length} cambi`}` : ''}` : '',
     });
   }
   const height = RULER_H + rows.length * LANE_H;
 
-  const sec = useSections({ player, setlistId, canEdit, notify, quant: settings.jumpQuant });
-  const { sections } = sec;
   const [secDrag, setSecDrag] = useState(null); // { index, bar } of the section being moved
   const [secName, setSecName] = useState(null); // index of the section being renamed
   // As they are drawn: the one being moved already in its new place.
@@ -527,14 +815,19 @@ export default function ArrangementView({ player, item, lanes, settings, update,
       const warp = warpOn ? { grid, onsets, refStemId: refTrack?.stem.id, drag } : null;
       const byG = cueDrag ? new Map(cue.shifted(cueDrag).map((c) => [c.g, c.label])) : cueMove ? new Map(cue.moved(cueMove.from, cueMove.to).map((c) => [c.g, c.label])) : cue.byG;
       const cueDraw = { bars: cue.bars, byG, muted: cue.muted, status: cue.busy || cue.status, hover: cueDrag ? null : cueMove ? cueMove.to : cueHover, nowG: nowCue };
-      draw(canvas.current, { width: view.width, height, scroll: view.scroll, pps, t0, tempo, rows, peaks, duration, warp, cue: cueDraw, sections: drawnSections });
+      const moving = tempoDrag && { ...tempoMarks.find((m) => m.bar === tempoDrag.from), bar: tempoDrag.bar, t: barTime(tempoDrag.bar), tEnd: null };
+      const tempoLane = { marks: tempoMarks.filter((m) => m.bar !== tempoDrag?.from), range: tempoRange, open: tempoEdit, drag: moving };
+      draw(canvas.current, { width: view.width, height, scroll: view.scroll, pps, t0, tempo, rows, peaks, duration, warp, cue: cueDraw, sections: drawnSections, tempoLane, autoTool: tool === 'auto' });
     }
   });
 
   // The draft is dropped once the song (or the stored grid) changes.
   const storedGrid = JSON.stringify(player.loadedItem?.grid ?? null);
   useEffect(() => setDraft(null), [storedGrid, loaded?.itemId]);
-  useEffect(() => setSelection(null), [loaded?.itemId]);
+  useEffect(() => {
+    setSelection(null);
+    setTempoEdit(null);
+  }, [loaded?.itemId]);
 
   // Ins: a new section at the playhead, as a marker in Cubase.
   const addSectionKey = useRef();
@@ -731,7 +1024,18 @@ export default function ArrangementView({ player, item, lanes, settings, update,
     setSelection({ stemId: selectedStem.id, index: res.index });
   };
 
+  // Volume automation of a track: into the song's draft (mix of the live performance), undoable, heard at once.
+  const commitAuto = (stem, points, label) => {
+    if (!song || !canEditSong) return;
+    const clean = points.map((pt) => ({ t: Math.round(Math.max(0, pt.t) * 1e4) / 1e4, db: Math.round(pt.db * 10) / 10 })).sort((a, b) => a.t - b.t);
+    writeMix(song, { stems: stemsOf(song).map((x) => (x.id === stem.id ? { ...x, auto: clean.length ? clean : null } : x)) }, label);
+    notify(`${label} · “Salva” per tenerla`);
+  };
   const deleteSelected = () => {
+    if (tool === 'auto' && canEditSong && selectedStem) {
+      if (automationOf(selectedStem).length && confirm(`Togliere tutta l’automazione del volume di “${selectedStem.name}”?`)) commitAuto(selectedStem, [], `Automazione di “${selectedStem.name}” tolta`);
+      return;
+    }
     if (!canEditSong || !selectedStem || selection.index == null) return;
     commitRegions(selectedStem, removeSegment(stemRegions(song, selectedStem.id), selection.index), `Eliminato un segmento di “${selectedStem.name}”`);
     setSelection({ stemId: selectedStem.id, index: null });
@@ -745,6 +1049,26 @@ export default function ArrangementView({ player, item, lanes, settings, update,
     commitRegions(selectedStem, toggleSegmentMute(regions, selection.index), `${muted ? 'Mutato' : 'Riattivato'} un segmento di “${selectedStem.name}”`);
   };
   muteKey.current = muteSelected;
+
+  // Gobbo moved as a whole: how it was made stays, only where it falls changes. Into the draft, undoable.
+  const movePrompter = (delta) => {
+    if (!canEditSong || !song?.prompter || Math.abs(delta) < 1e-3) return;
+    const first = normalizePrompter(song.prompter).cues[0]?.t ?? 0;
+    const d = Math.max(-first, delta);
+    if (Math.abs(d) < 1e-3) return;
+    const next = shiftPrompter(song.prompter, d);
+    const label = `Gobbo spostato ${d > 0 ? 'avanti' : 'indietro'} di ${Math.abs(d).toFixed(2).replace('.', ',')} s`;
+    editDraft(song.id, { item: { prompter: next } });
+    recordStep(song.id, { label, before: { media: {}, item: { prompter: song.prompter } }, after: { media: {}, item: { prompter: next } } });
+    notify(`${label}. “Salva” per tenerlo`);
+  };
+  // A beat (Shift: a bar) of the grid where the gobbo starts.
+  const prompterStep = (dir, bar) => {
+    const first = normalizePrompter(song?.prompter).cues[0]?.t ?? 0;
+    const seg = tempo?.segments?.find((s) => !s.countIn);
+    const beat = seg?.beat || 0.5;
+    movePrompter(Math.max(-first, dir * (bar ? beat * (seg?.beats || 4) : beat)));
+  };
   toolKey.current = (k) => update({ arrTool: k });
   const historyKeys = useRef();
   historyKeys.current = goHistory;
@@ -847,7 +1171,8 @@ export default function ArrangementView({ player, item, lanes, settings, update,
     const onEdge = trimmable(row) && !!edgeAt(row, pt);
     const toolCursor = TOOLS.find(([k]) => k === tool)[4];
     const cueCursor = tool === 'move' || (tool !== 'erase' && hit && cue.byG.has(hit.cell.g)) ? 'grab' : tool === 'erase' ? 'not-allowed' : 'pointer';
-    e.currentTarget.style.cursor = hit ? cueCursor : onEdge ? 'ew-resize' : onSegment && (canEditSong || tool === 'select') ? toolCursor : '';
+    const special = row?.kind === 'click' && tempoMarkAt(pt) ? (canEditSong ? 'ew-resize' : 'pointer') : tool === 'auto' && row?.kind === 'audio' && !row.stem.live && canEditSong ? 'crosshair' : null;
+    e.currentTarget.style.cursor = special || (hit ? cueCursor : onEdge ? 'ew-resize' : onSegment && (canEditSong || tool === 'select') ? toolCursor : row?.kind === 'prompter' && canEditSong ? 'grab' : '');
     const g = tool === 'move' ? null : (hit?.cell.g ?? null);
     if (g !== cueHover) setCueHover(g);
   };
@@ -941,6 +1266,139 @@ export default function ArrangementView({ player, item, lanes, settings, update,
     // moves (on the beats with "Griglia", Shift = the other way), scissors
     // cut where clicked, X mutes / unmutes, eraser deletes.
     const row = rows[Math.floor((e.clientY - rect.top - RULER_H) / LANE_H)];
+    // Lane Click · Tempo: a change is dragged to another bar, a touch on it opens its editor.
+    if (row?.kind === 'click' && !warpOn) {
+      const m = tempoMarkAt(t);
+      if (m) {
+        e.preventDefault();
+        if (!canEditSong) {
+          setTempoEdit(m.bar);
+          return;
+        }
+        const el = e.currentTarget;
+        el.setPointerCapture(e.pointerId);
+        const x0 = e.clientX;
+        let bar = null;
+        const move = (ev) => {
+          if (bar == null && Math.abs(ev.clientX - x0) < 4) return;
+          const b = sec.bars[Math.max(1, nearestBarIndex(sec.bars, (ev.clientX - rect.left) / pps + t0))]?.bar;
+          if (b == null || (b !== m.bar && tempoChanges.some((c) => c.bar === b))) return;
+          bar = b;
+          setTempoDrag({ from: m.bar, bar });
+        };
+        const up = () => {
+          el.removeEventListener('pointermove', move);
+          el.removeEventListener('pointerup', up);
+          el.removeEventListener('pointercancel', up);
+          setTempoDrag(null);
+          if (bar == null || bar === m.bar) {
+            setTempoEdit(m.bar);
+            return;
+          }
+          commitTempo(
+            tempoChanges.map((c) => (c.bar === m.bar ? { ...c, bar } : c)),
+            `Cambio di tempo spostato alla battuta ${bar}`,
+          );
+          setTempoEdit(bar);
+        };
+        el.addEventListener('pointermove', move);
+        el.addEventListener('pointerup', up);
+        el.addEventListener('pointercancel', up);
+        return;
+      }
+      setTempoEdit(null);
+    }
+    // Automazione: a click adds a point (snapped to the beats with Griglia, Shift = the other
+    // way) and drags it; a point is dragged in time and level; Alt+click removes it.
+    if (tool === 'auto' && row?.kind === 'audio' && !row.stem.live && !warpOn) {
+      const stem = row.stem;
+      setSelection({ stemId: stem.id, index: null });
+      if (!canEditSong) {
+        notify('Solo chi può modificare il brano può disegnare l’automazione', true);
+        return;
+      }
+      const y0 = RULER_H + rows.indexOf(row) * LANE_H;
+      const px = e.clientX - rect.left;
+      const py = e.clientY - rect.top;
+      const pts = row.auto;
+      const hit = pts.findIndex((pt) => Math.abs((pt.t - t0) * pps - px) <= AUTO_HIT && Math.abs(autoY(pt.db, y0) - py) <= AUTO_HIT);
+      if (e.altKey) {
+        if (hit >= 0) commitAuto(stem, pts.filter((_, i) => i !== hit), `Tolto un punto dell’automazione di “${stem.name}”`);
+        return;
+      }
+      const snapT = (tt, ev) => Math.max(0, snap !== ev.shiftKey && tempo ? snapToBeat(tempo, tt) : tt);
+      const added = hit < 0;
+      let list = pts;
+      let index = hit;
+      if (added) {
+        const pt = { t: snapT(t, e), db: autoDbAt(py, y0) };
+        list = [...pts, pt].sort((a, b) => a.t - b.t);
+        index = list.indexOf(pt);
+      }
+      e.preventDefault();
+      const el = e.currentTarget;
+      el.setPointerCapture(e.pointerId);
+      const x0 = e.clientX;
+      const yy0 = e.clientY;
+      let moved = false;
+      setAutoDrag({ stemId: stem.id, points: list });
+      const move = (ev) => {
+        if (!moved && Math.abs(ev.clientX - x0) < 3 && Math.abs(ev.clientY - yy0) < 3) return;
+        moved = true;
+        const lo = list[index - 1]?.t ?? 0;
+        const hi = list[index + 1]?.t ?? Infinity;
+        const nt = Math.min(hi, Math.max(lo, snapT((ev.clientX - rect.left) / pps + t0, ev)));
+        list = list.map((pt, i) => (i === index ? { t: nt, db: autoDbAt(ev.clientY - rect.top, y0) } : pt));
+        setAutoDrag({ stemId: stem.id, points: list });
+      };
+      const up = () => {
+        el.removeEventListener('pointermove', move);
+        el.removeEventListener('pointerup', up);
+        el.removeEventListener('pointercancel', up);
+        setAutoDrag(null);
+        if (!added && !moved) return;
+        const pt = list[index];
+        commitAuto(stem, list, `${added ? 'Nuovo punto' : 'Punto spostato'} nell’automazione di “${stem.name}”: ${dbLabel(pt.db)}`);
+      };
+      el.addEventListener('pointermove', move);
+      el.addEventListener('pointerup', up);
+      el.addEventListener('pointercancel', up);
+      return;
+    }
+    // Gobbo: a drag moves all its changes together (on the beats with "Griglia", Shift = the other way); a touch locates.
+    if (row?.kind === 'prompter' && !warpOn) {
+      if (!canEditSong) {
+        if (e.pointerType === 'touch') locateOnTap(e, t);
+        else player.locate(t);
+        return;
+      }
+      e.preventDefault();
+      const el = e.currentTarget;
+      el.setPointerCapture(e.pointerId);
+      const x0 = e.clientX;
+      const first = row.data.cues[0].t;
+      let delta = null;
+      const move = (ev) => {
+        if (delta == null && Math.abs(ev.clientX - x0) < 4) return;
+        const raw = (ev.clientX - x0) / pps;
+        const d = snap !== ev.shiftKey && tempo ? snapToBeat(tempo, first + raw) - first : raw;
+        // The first change never before the start of the song.
+        delta = Math.max(-first, d);
+        setPrompterDrag(delta);
+      };
+      const up = () => {
+        el.removeEventListener('pointermove', move);
+        el.removeEventListener('pointerup', up);
+        el.removeEventListener('pointercancel', up);
+        setPrompterDrag(null);
+        if (delta == null) player.locate(t);
+        else movePrompter(delta);
+      };
+      el.addEventListener('pointermove', move);
+      el.addEventListener('pointerup', up);
+      el.addEventListener('pointercancel', up);
+      return;
+    }
     // Start or end of a segment (arrow): drag to trim it, the audio stays where it is.
     const trim = !warpOn && trimmable(row) ? edgeAt(row, t) : null;
     if (trim) {
@@ -1090,6 +1548,22 @@ export default function ArrangementView({ player, item, lanes, settings, update,
 
   // Double click on a grid line: pin it where it is.
   const onDoubleClick = (e) => {
+    {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const ri = Math.floor((e.clientY - rect.top - RULER_H) / LANE_H);
+      const row = rows[ri];
+      const t = (e.clientX - rect.left) / pps + t0;
+      if (tool === 'auto' && row?.kind === 'audio' && !row.stem.live && canEditSong && !warpOn) {
+        const y0 = RULER_H + ri * LANE_H;
+        const hit = row.auto.findIndex((pt) => Math.abs((pt.t - t0) * pps - (e.clientX - rect.left)) <= AUTO_HIT && Math.abs(autoY(pt.db, y0) - (e.clientY - rect.top)) <= AUTO_HIT);
+        if (hit >= 0) commitAuto(row.stem, row.auto.filter((_, i) => i !== hit), `Tolto un punto dell’automazione di “${row.stem.name}”`);
+        return;
+      }
+      if (row?.kind === 'click' && !warpOn) {
+        if (canEditSong && !tempoMarkAt(t)) addTempoAt(t);
+        return;
+      }
+    }
     if (onLane(e)) {
       const s = sec.editable ? laneSection((e.clientX - e.currentTarget.getBoundingClientRect().left) / pps + t0) : null;
       if (s) setSecName(s.index);
@@ -1104,10 +1578,9 @@ export default function ArrangementView({ player, item, lanes, settings, update,
   };
 
   // Playhead and page-follow (Ableton style) at display rate.
+  // Display rate only while playing (animateWhilePlaying).
   useEffect(() => {
-    let raf;
     const tick = () => {
-      raf = requestAnimationFrame(tick);
       const el = scroller.current;
       if (!el || !playhead.current) return;
       const px = (livePosition() - t0) * pps;
@@ -1118,8 +1591,7 @@ export default function ArrangementView({ player, item, lanes, settings, update,
         if (rel > el.clientWidth * 0.85 || rel < 0) el.scrollLeft = px - el.clientWidth * 0.15;
       }
     };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+    return animateWhilePlaying(tick).stop;
   }, [pps, t0, settings.followPlayhead, loaded]);
 
   const zoom = useCallback(
@@ -1414,6 +1886,35 @@ export default function ArrangementView({ player, item, lanes, settings, update,
                   }}
                 />
               ))}
+            {tempoEdit != null &&
+              (() => {
+                const m = tempoMarks.find((x) => x.bar === tempoEdit);
+                const ci = rows.findIndex((r) => r.kind === 'click');
+                if (!m || m.t == null || ci < 0) return null;
+                const set = (patch, label) => commitTempo(tempoChanges.map((c) => (c.bar === m.bar ? { ...c, ...patch } : c)), label);
+                return (
+                  <TempoEditor
+                    key={m.bar}
+                    mark={m}
+                    left={(m.t - t0) * pps}
+                    top={RULER_H + ci * LANE_H + 2}
+                    editable={canEditSong}
+                    ignored={tempoIgnored}
+                    onBpm={(bpm) => set({ bpm }, bpm ? `Battuta ${m.bar}: ${bpm} BPM` : `Battuta ${m.bar}: il tempo resta quello di prima`)}
+                    onSig={(timeSig) => set({ timeSig }, timeSig ? `Battuta ${m.bar}: metro ${timeSig}` : `Battuta ${m.bar}: il metro resta quello di prima`)}
+                    onRamp={(ramp) => set({ ramp }, ramp ? `Battuta ${m.bar}: tempo graduale in ${ramp} battute` : `Battuta ${m.bar}: tempo subito`)}
+                    onRemove={() => {
+                      if (!confirm(`Togliere il cambio della battuta ${m.bar}?`)) return;
+                      commitTempo(
+                        tempoChanges.filter((c) => c.bar !== m.bar),
+                        `Tolto il cambio della battuta ${m.bar}`,
+                      );
+                      setTempoEdit(null);
+                    }}
+                    onClose={() => setTempoEdit(null)}
+                  />
+                );
+              })()}
             <div className="arr-playhead" ref={playhead} style={{ height }} />
           </div>
         </div>
@@ -1436,6 +1937,26 @@ export default function ArrangementView({ player, item, lanes, settings, update,
           {rows.map((r, i) =>
             r.kind === 'cue' ? (
               <CueHeader key="cue" cue={cue} solos={player.solos} onTrack={player.setTrack} loadedTracks={loaded.tracks} />
+            ) : r.kind === 'prompter' ? (
+              <div key="prompter" className="t-header" style={{ '--lane-color': '#f8fafc' }}>
+                <span className="t-color" />
+                <span className="t-name" title="I cambi slide del gobbo: trascinali per riallinearli al brano">
+                  Gobbo
+                </span>
+                {canEditSong && (
+                  <span className="t-btns">
+                    <button className="toggle" onClick={(e) => prompterStep(-1, e.shiftKey)} title="Sposta tutto il gobbo indietro di un movimento (Maiusc: di una battuta)">
+                      ‹
+                    </button>
+                    <button className="toggle" onClick={(e) => prompterStep(1, e.shiftKey)} title="Sposta tutto il gobbo avanti di un movimento (Maiusc: di una battuta)">
+                      ›
+                    </button>
+                  </span>
+                )}
+                <div className="t-row small muted">
+                  {r.data.cues.length} cambi · da {fmtTime(Math.max(0, r.data.cues[0].t + r.delta))}
+                </div>
+              </div>
             ) : (
               <TrackHeader
                 key={r.stem?.id || r.kind + i}
@@ -1443,6 +1964,7 @@ export default function ArrangementView({ player, item, lanes, settings, update,
                 index={r.index}
                 solos={player.solos}
                 onTrack={player.setTrack}
+                saved={mixSaved}
                 selected={r.kind === 'audio' && selection?.stemId === r.stem.id}
                 onSelect={r.kind === 'audio' && !r.stem.live ? () => setSelection((s) => (s?.stemId === r.stem.id ? s : { stemId: r.stem.id, index: null })) : undefined}
               />

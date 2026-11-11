@@ -20,6 +20,7 @@ import {
   slidesAtCue,
 } from '../shared/prompter.js';
 import { db } from './firebase';
+import { draftOf, editDraft } from './drafts';
 import { useEngineStatus } from './engine';
 
 export { cueIndexAt, normalizePrompter, SLIDE_COLORS, slideColor, slideName };
@@ -90,6 +91,8 @@ export function usePrompterData(setlistId, item, canEdit, notify) {
     if (!p) return;
     clearTimeout(p.timer);
     pending.current = null;
+    // The gobbo moved in the Arrangement and not saved yet: the draft (shown on top) must not hide this edit.
+    if (draftOf(p.itemId)?.item && 'prompter' in draftOf(p.itemId).item) editDraft(p.itemId, { item: { prompter: p.data } });
     updateDoc(doc(db, 'setlists', p.setlistId, 'items', p.itemId), { prompter: p.data, updatedAt: serverTimestamp() }).catch((e) =>
       notify(`Gobbo non salvato: ${e.message}`, true),
     );

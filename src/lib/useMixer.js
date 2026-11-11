@@ -3,7 +3,8 @@
 // saved with the song, and so is the channel section of each track (input gain
 // and EQ, opened from the track name): they go into its draft (lib/drafts.js, "Salva" writes
 // them for the whole band and the web), can be undone and come back on the
-// next load. Mute, solo and a direct output stay on this computer.
+// next load. So does the mute of the tracks (the mix of the live performance); solo and a
+// direct output stay on this computer, and so does the mute for who can't edit the song.
 //
 // The state is plain data and every command is an action object, so the
 // mixer window (MixerWindow.jsx) drives the same model over Tauri events.
@@ -68,7 +69,7 @@ export function useMixer({ player, lanes, canEdit: canEditSetlist, setlistId, no
       // The channel section changes the sound (badge on the strip).
       channel: channelActive(stem),
       // The cue track has only the mute of the song (on after the mixdown).
-      mute: stem.live ? !!stem.muted : (m.mute ?? !!stem.muted),
+      mute: stem.live || canEdit ? !!stem.muted : (m.mute ?? !!stem.muted),
       solo: !!player.solos[stem.id],
       out: !!player.leftOut[rehearsalGroup(stem)],
       route: m.route ? routeValue(m.route) : null,
@@ -151,7 +152,8 @@ export function useMixer({ player, lanes, canEdit: canEditSetlist, setlistId, no
       case 'mute':
         if (stem?.live) {
           if (canEdit) setStem(a.id, { muted: !stem.muted }, stem.muted ? 'Traccia cue riattivata' : 'Traccia cue mutata', false);
-        } else if (stem) local(stem, { mute: !(getMix(stem.id).mute ?? !!stem.muted) });
+        } else if (stem && canEdit) setStem(a.id, { muted: !stem.muted }, `${stem.muted ? 'Riattivata' : 'Mutata'} “${stem.name}”`, false);
+        else if (stem) local(stem, { mute: !(getMix(stem.id).mute ?? !!stem.muted) });
         break;
       case 'solo':
         if (stem && index.has(stem.id)) player.setTrack(stem, { solo: !player.solos[stem.id] });

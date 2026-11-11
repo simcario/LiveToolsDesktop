@@ -75,6 +75,9 @@ fn main() {
     println!("cargo:rustc-link-lib=dylib=user32");
     println!("cargo:rustc-link-search={}", out_dir.display());
     println!("cargo:rustc-link-lib=static=asio");
+    if is_mingw() {
+        link_static_stdcpp();
+    }
     println!("cargo:rustc-cfg=asio");
 
     // Check if bindings exist
@@ -128,15 +131,39 @@ fn create_lib(cpal_asio_dir: &Path) {
     walk_a_dir(common_dir, &mut cpp_paths);
 
     // build the asio lib
-    cc::Build::new()
+    let mut build = cc::Build::new();
+    build
         .include(format!("{}/{}", cpal_asio_dir.display(), "host"))
         .include(format!("{}/{}", cpal_asio_dir.display(), "common"))
         .include(format!("{}/{}", cpal_asio_dir.display(), "host/pc"))
         .include("asio-link/helpers.hpp")
         .file("asio-link/helpers.cpp")
         .files(cpp_paths)
-        .cpp(true)
-        .compile("libasio.a");
+        .cpp(true);
+    // LiveTools: with MinGW libstdc++ is linked statically (link_static_stdcpp), the
+    // computers the app runs on have no libstdc++-6.dll.
+    if is_mingw() {
+        build.cpp_link_stdlib(None);
+    }
+    build.compile("libasio.a");
+}
+
+fn is_mingw() -> bool {
+    env::var("TARGET").is_ok_and(|t| t.ends_with("windows-gnu"))
+}
+
+/// LiveTools: static libstdc++ under MinGW, emitted on every run because create_lib
+/// is skipped when libasio.a already exists.
+fn link_static_stdcpp() {
+    let compiler = cc::Build::new().cpp(true).get_compiler();
+    let out = std::process::Command::new(compiler.path())
+        .arg("-print-file-name=libstdc++.a")
+        .output()
+        .expect("MinGW C++ compiler did not start");
+    let lib = PathBuf::from(String::from_utf8_lossy(&out.stdout).trim());
+    let dir = lib.parent().filter(|_| lib.is_absolute()).expect("MinGW libstdc++.a not found");
+    println!("cargo:rustc-link-search=native={}", dir.display());
+    println!("cargo:rustc-link-lib=static:-bundle=stdc++");
 }
 
 /// Creates stub bindings for docs.rs

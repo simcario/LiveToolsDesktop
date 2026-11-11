@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { doc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { newId } from '../shared/setlists.js';
 import { hasOwnLyrics } from '../shared/music.js';
-import { engineStatus, livePosition, useEngineStatus } from '../lib/engine';
+import { animateWhilePlaying, engineStatus, livePosition, useEngineStatus } from '../lib/engine';
 import { db } from '../lib/firebase';
 import {
   autoPrompter,
@@ -198,15 +198,10 @@ function CueTimeline({ cues, slides, tempo, duration, editable, onLocate, onMove
     return () => ro.disconnect();
   }, []);
 
-  useEffect(() => {
-    let raf;
-    const tick = () => {
-      raf = requestAnimationFrame(tick);
-      if (head.current) head.current.style.transform = `translateX(${x(livePosition())}px)`;
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  });
+  // Display rate only while playing (animateWhilePlaying); re-run on every render (x changes).
+  useEffect(() => animateWhilePlaying(() => {
+    if (head.current) head.current.style.transform = `translateX(${x(livePosition())}px)`;
+  }).stop);
 
   const shown = drag ? cues.map((c, i) => (i === drag.i ? { ...c, t: drag.t } : c)) : cues;
 
@@ -410,7 +405,7 @@ export default function PrompterView({ item, setlistId, player, canEdit, setting
     });
   const deleteSlide = (s) => {
     const used = data.cues.filter((c) => c.slide === s.id).length;
-    if (used && !confirm(`“${slideName(slides, s.id)}” compare in ${used} cambi registrati, che verranno rimossi. Continuare?`)) return;
+    if (!confirm(`Eliminare la slide “${slideName(slides, s.id)}”?${used ? ` Compare in ${used} cambi registrati, che verranno rimossi.` : ''}`)) return;
     change((d) => ({
       ...d,
       slides: d.slides.filter((x) => x.id !== s.id),
@@ -436,7 +431,7 @@ export default function PrompterView({ item, setlistId, player, canEdit, setting
   // ---------- Cue editing ----------
   const editCue = (i, patch) =>
     change((d) => ({ ...d, cues: compactCues(d.cues.map((c, k) => (k === i ? { ...c, ...patch } : c)).sort((a, b) => a.t - b.t)) }));
-  const deleteCue = (i) => change((d) => ({ ...d, cues: d.cues.filter((_, k) => k !== i) }));
+  const deleteCue = (i) => confirm('Eliminare questo cambio registrato?') && change((d) => ({ ...d, cues: d.cues.filter((_, k) => k !== i) }));
   const clearCues = () => {
     if (confirm('Eliminare tutti i cambi registrati di questo brano?')) change((d) => ({ ...d, cues: [] }));
   };

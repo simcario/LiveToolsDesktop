@@ -1,7 +1,7 @@
 // Build environment of the "asio" Cargo feature.
 //
 //   npm run app:asio                     the app in dev with ASIO
-//   LIVETOOLS_ASIO=1 npm run installer   an installer with ASIO, see the note in README.md
+//   npm run installer:asio               a personal installer with ASIO, see the note in README.md
 //
 // Needs libclang (scoop install llvm). The Steinberg SDK can't be redistributed, so
 // it stays out of the repo: it's downloaded once into %USERPROFILE%\.asio_sdk.

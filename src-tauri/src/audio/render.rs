@@ -2,7 +2,7 @@
 //! or allocates: commands arrive on a lock-free queue, replaced objects are
 //! handed back to a non real-time thread to be dropped.
 
-use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, AtomicU64, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, AtomicU64, AtomicU8, AtomicUsize, Ordering};
 use std::sync::mpsc::SyncSender;
 use std::sync::Arc;
 
@@ -40,6 +40,8 @@ pub struct Shared {
     pub fade: AtomicF32,
     pub fade_target: AtomicF32,
     pub out_peaks: Vec<AtomicF32>,
+    /// [left, right] peak of the pad since the last status (its meter).
+    pub pad_peaks: [AtomicF32; 2],
     /// The track looked at in a channel section (its `tap` flag), for the spectrum.
     pub tap: Tap,
 }
@@ -60,7 +62,100 @@ impl Shared {
             fade: AtomicF32::new(1.0),
             fade_target: AtomicF32::new(1.0),
             out_peaks: (0..MAX_OUTPUTS).map(|_| AtomicF32::new(0.0)).collect(),
+            pad_peaks: [AtomicF32::new(0.0), AtomicF32::new(0.0)],
             tap: Tap::new(),
+        }
+    }
+}
+
+/// Most points of the volume automation of a track held by the audio thread.
+pub const MAX_AUTO: usize = 512;
+
+struct AutoBank {
+    len: AtomicUsize,
+    t: Box<[AtomicU64]>,
+    db: Box<[AtomicF32]>,
+}
+
+impl AutoBank {
+    fn new() -> Self {
+        Self {
+            len: AtomicUsize::new(0),
+            t: (0..MAX_AUTO).map(|_| AtomicU64::new(0)).collect(),
+            db: (0..MAX_AUTO).map(|_| AtomicF32::new(0.0)).collect(),
+        }
+    }
+}
+
+/// Volume automation of a track (Arrangement): points (seconds of the files,
+/// dB on top of the fader, -60 = silent), a straight line in dB between two.
+/// The UI writes the bank not in use and then switches to it: the callback
+/// reads without locks.
+pub struct Automation {
+    banks: [AutoBank; 2],
+    active: AtomicUsize,
+}
+
+impl Automation {
+    pub fn new() -> Self {
+        Self { banks: [AutoBank::new(), AutoBank::new()], active: AtomicUsize::new(0) }
+    }
+
+    /// New points, sorted by time ([] = no automation).
+    pub fn set(&self, points: &[(f64, f32)]) {
+        let next = 1 - self.active.load(Ordering::Acquire);
+        let b = &self.banks[next];
+        let n = points.len().min(MAX_AUTO);
+        for (i, (t, db)) in points.iter().take(n).enumerate() {
+            b.t[i].store(t.to_bits(), Ordering::Relaxed);
+            b.db[i].store(*db);
+        }
+        b.len.store(n, Ordering::Release);
+        self.active.store(next, Ordering::Release);
+    }
+
+    fn bank(&self) -> (&AutoBank, usize) {
+        let b = &self.banks[self.active.load(Ordering::Acquire)];
+        (b, b.len.load(Ordering::Acquire))
+    }
+
+    pub fn is_on(&self) -> bool {
+        self.bank().1 > 0
+    }
+
+    /// Linear gain at second `t` of the files (1 without points).
+    pub fn gain_at(&self, t: f64) -> f32 {
+        let (b, n) = self.bank();
+        if n == 0 {
+            return 1.0;
+        }
+        let at = |i: usize| f64::from_bits(b.t[i].load(Ordering::Relaxed));
+        let db = if t <= at(0) {
+            b.db[0].load()
+        } else if t >= at(n - 1) {
+            b.db[n - 1].load()
+        } else {
+            let (mut lo, mut hi) = (0, n - 1);
+            while hi - lo > 1 {
+                let mid = (lo + hi) / 2;
+                if at(mid) <= t {
+                    lo = mid;
+                } else {
+                    hi = mid;
+                }
+            }
+            let (ta, tb) = (at(lo), at(hi));
+            let (da, dz) = (b.db[lo].load(), b.db[hi].load());
+            if tb > ta {
+                da + (dz - da) * ((t - ta) / (tb - ta)) as f32
+            } else {
+                dz
+            }
+        };
+        if db <= -60.0 {
+            0.0
+        } else {
+            10f32.powf(db / 20.0)
         }
     }
 }
@@ -79,6 +174,8 @@ pub struct TrackControl {
     pub channel: ChannelControl,
     /// Copied into `Shared::tap` (spectrum of the channel section open).
     pub tap: AtomicBool,
+    /// Volume automation drawn in the Arrangement.
+    pub auto: Automation,
 }
 
 impl TrackControl {
@@ -94,6 +191,7 @@ impl TrackControl {
             peak_r: AtomicF32::new(0.0),
             channel: ChannelControl::new(),
             tap: AtomicBool::new(false),
+            auto: Automation::new(),
         }
     }
 }
@@ -189,11 +287,19 @@ pub struct PadParams {
     pub gain: f32,
     pub out_start: u32,
     pub mono: bool,
+    /// Seconds to go out (also between two keys): the pad of a video item can
+    /// fade out slowly in the next song.
+    #[serde(default = "pad_release")]
+    pub release: f32,
+}
+
+fn pad_release() -> f32 {
+    PAD_RELEASE
 }
 
 impl Default for PadParams {
     fn default() -> Self {
-        Self { enabled: false, key: 0, gain: 0.5, out_start: 0, mono: false }
+        Self { enabled: false, key: 0, gain: 0.5, out_start: 0, mono: false, release: PAD_RELEASE }
     }
 }
 
@@ -226,9 +332,9 @@ pub enum RtCmd {
     /// Tracks Fade: the tracks go to `target` (0 or 1) in `seconds`; click and pad don't fade.
     Fade { target: f32, seconds: f32 },
     Pad(PadParams),
-    /// At frame `at` the next song takes the place of this one, from its start:
-    /// with `overlap` this one goes on to its end at full volume, otherwise the
-    /// two crossfade in `xfade` frames.
+    /// At frame `at` (it can be after the end: a pause) the next song takes the place
+    /// of this one, from its frame `start`: this one fades out in `fade_out` frames
+    /// (0: it goes on to its end at full volume), the next one fades in in `fade_in`.
     Next(Box<NextSong>),
     CancelNext,
     /// count_in: the count-in clicks sound even with the click off.
@@ -243,8 +349,9 @@ pub struct NextSong {
     /// Taken by the callback when it changes song (no allocation there).
     pub tempo: Option<Box<TempoFrames>>,
     pub duration: i64,
-    pub overlap: bool,
-    pub xfade: i64,
+    pub fade_out: i64,
+    pub fade_in: i64,
+    pub start: i64,
 }
 
 /// Objects replaced in the callback, dropped by the UI ticker thread.
@@ -513,8 +620,9 @@ fn xfade_curve(x: f32) -> f32 {
 
 /// Mixes a deck of tracks into `out`: `n` frames from frame `lead` of the
 /// block, frame f weighted by `env[f]`. Reports underruns only for the deck playing.
+/// `at`: frame of the song at `lead` (for the volume automation).
 #[allow(clippy::too_many_arguments)]
-fn mix_tracks(tracks: &mut [RtTrack], scratch: &mut [f32], out: &mut [f32], lead: usize, n: usize, ch: usize, env: &[f32], master: f32, sr: f32, underruns: Option<&AtomicU32>, tap: Option<&Tap>) {
+fn mix_tracks(tracks: &mut [RtTrack], scratch: &mut [f32], out: &mut [f32], lead: usize, n: usize, ch: usize, env: &[f32], master: f32, sr: f32, at: i64, underruns: Option<&AtomicU32>, tap: Option<&Tap>) {
     if n == 0 {
         return;
     }
@@ -556,6 +664,14 @@ fn mix_tracks(tracks: &mut [RtTrack], scratch: &mut [f32], out: &mut [f32], lead
         let gain = c.gain.load() * master;
         let pan = c.pan.load().clamp(-1.0, 1.0);
         let (gl, gr) = (gain * (1.0 - pan).min(1.0), gain * (1.0 + pan).min(1.0));
+        // Automation: its level at the start and at the end of the block, a line in between.
+        let (a0, a1) = if c.auto.is_on() {
+            let secs = |f: i64| f.max(0) as f64 / sr.max(1.0) as f64;
+            (c.auto.gain_at(secs(at)), c.auto.gain_at(secs(at + n as i64)))
+        } else {
+            (1.0, 1.0)
+        };
+        let da = (a1 - a0) / n as f32;
         let (mut pl, mut pr) = (0f32, 0f32);
         let mut start = c.out_start.load(Ordering::Relaxed) as usize;
         let stereo = mode == OUT_STEREO && ch >= 2;
@@ -564,7 +680,7 @@ fn mix_tracks(tracks: &mut [RtTrack], scratch: &mut [f32], out: &mut [f32], lead
             start = 0;
         }
         for i in 0..take {
-            let k = env[lead + i];
+            let k = env[lead + i] * (a0 + da * i as f32);
             let l = buf[i * 2] * gl * k;
             let r = buf[i * 2 + 1] * gr * k;
             pl = pl.max(l.abs());
@@ -623,6 +739,8 @@ pub struct Renderer {
     /// The song before, still heard during a crossfade or an overlap.
     tail: Vec<RtTrack>,
     tail_on: bool,
+    /// Frame of the song before where its tail is (for its automation).
+    tail_pos: i64,
     /// Position of the tail's fade (1 → 0) and its step per frame (0: overlap).
     tail_x: f32,
     tail_step: f32,
@@ -660,6 +778,7 @@ impl Renderer {
             next: None,
             tail: Vec::new(),
             tail_on: false,
+            tail_pos: 0,
             tail_x: 0.0,
             tail_step: 0.0,
             xin_done: 0,
@@ -837,10 +956,11 @@ impl Renderer {
             t.deficit = 0;
         }
         self.tail_on = true;
+        self.tail_pos = self.shared.position.load(Ordering::Relaxed);
         self.tail_x = 1.0;
-        self.tail_step = if next.overlap { 0.0 } else { 1.0 / next.xfade.max(1) as f32 };
+        self.tail_step = if next.fade_out > 0 { 1.0 / next.fade_out as f32 } else { 0.0 };
         self.xin_done = 0;
-        self.xin_len = if next.overlap { 0 } else { next.xfade.max(1) };
+        self.xin_len = next.fade_in.max(0);
         if let Some(tempo) = next.tempo.take() {
             if let Some(old) = self.tempo.replace(tempo) {
                 self.trash(Garbage::Tempo(old));
@@ -851,7 +971,7 @@ impl Renderer {
         self.voice.left = 0;
         self.fade_in = 0;
         self.reset_fade();
-        self.shared.position.store(0, Ordering::Relaxed);
+        self.shared.position.store(next.start.max(0), Ordering::Relaxed);
         self.shared.next_fired.store(next.id, Ordering::Relaxed);
         self.trash(Garbage::Next(next));
     }
@@ -963,7 +1083,7 @@ impl Renderer {
         self.fade_gain = g;
         self.shared.fade.store(g);
 
-        mix_tracks(&mut self.tracks, &mut self.scratch, out, lead, n, ch, &self.env, master, sr as f32, Some(&self.shared.underruns), Some(&self.shared.tap));
+        mix_tracks(&mut self.tracks, &mut self.scratch, out, lead, n, ch, &self.env, master, sr as f32, pos + lead as i64, Some(&self.shared.underruns), Some(&self.shared.tap));
         if self.xin_len > 0 {
             self.xin_done += frames as i64;
             if self.xin_done >= self.xin_len {
@@ -971,7 +1091,8 @@ impl Renderer {
             }
         }
         if self.tail_on {
-            mix_tracks(&mut self.tail, &mut self.scratch, out, 0, frames, ch, &self.tail_env, master, sr as f32, None, None);
+            mix_tracks(&mut self.tail, &mut self.scratch, out, 0, frames, ch, &self.tail_env, master, sr as f32, self.tail_pos, None, None);
+            self.tail_pos += frames as i64;
             self.tail_x = (self.tail_x - self.tail_step * frames as f32).max(0.0);
             let dry = self.tail.iter().all(|t| t.stream.as_ref().is_none_or(|s| s.eof.load(Ordering::Acquire) && s.rx.slots() == 0));
             if self.tail_x <= 0.0 || dry {
@@ -979,7 +1100,9 @@ impl Renderer {
             }
         }
 
-        if let Some(tempo) = self.tempo.as_ref() {
+        // After the end of the song (a pause before the next one) the click is quiet.
+        let over = self.duration > 0 && pos >= self.duration;
+        if let Some(tempo) = self.tempo.as_ref().filter(|_| !over) {
             let click = self.click;
             let count_in = self.count_in;
             let mut triggers = [(0usize, ClickKind::Beat); 32];
@@ -1011,7 +1134,8 @@ impl Renderer {
             start = 0;
         }
         let up = 1.0 / (PAD_ATTACK * sr as f32);
-        let down = 1.0 / (PAD_RELEASE * sr as f32);
+        let down = 1.0 / (p.release.clamp(0.05, 60.0) * sr as f32);
+        let (mut peak_l, mut peak_r) = (0f32, 0f32);
         for i in 0..frames {
             let (mut l, mut r) = (0f32, 0f32);
             for v in self.pads.iter_mut() {
@@ -1025,10 +1149,17 @@ impl Renderer {
             if stereo {
                 out[o] += l * gain;
                 out[o + 1] += r * gain;
+                peak_l = peak_l.max((l * gain).abs());
+                peak_r = peak_r.max((r * gain).abs());
             } else {
+                let m = ((l + r) * 0.5 * gain).abs();
                 out[o] += (l + r) * 0.5 * gain;
+                peak_l = peak_l.max(m);
+                peak_r = peak_r.max(m);
             }
         }
+        self.shared.pad_peaks[0].store_max(peak_l);
+        self.shared.pad_peaks[1].store_max(peak_r);
     }
 
     /// Adds the click voice to its output, triggering it at the given frames.

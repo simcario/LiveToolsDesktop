@@ -15,6 +15,7 @@ import {
 } from '../shared/songs.js';
 import { useAccess } from '../lib/data';
 import { db, storage } from '../lib/firebase';
+import { deleteLiveCues } from '../lib/cueTrack';
 import { explainDenied, songLimitError } from '../shared/planGuard.js';
 import Icon from './Icon';
 import Toolbar, { ToolGroup } from './Toolbar';
@@ -83,6 +84,7 @@ export default function SongsPage({ user, setlists, setlist, setlistItems, canEd
       deleting.current.add(song.id);
       if (selectedId === song.id) setSelectedId(null);
       await deleteSong(storage, song);
+      deleteLiveCues(song.id).catch((e) => console.warn(e));
       notify(`Eliminato “${song.title}” dalla libreria`);
     } catch (e) {
       deleting.current.delete(song.id);

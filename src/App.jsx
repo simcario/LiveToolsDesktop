@@ -3,7 +3,7 @@ import { signOut } from 'firebase/auth';
 import { getRole, isSeparator } from './shared/setlists.js';
 import { auth } from './lib/firebase';
 import { useAccess, useAuthUser, useSetlist, useSetlists } from './lib/data';
-import { engine, useEngineStatus } from './lib/engine';
+import { engine, onDeviceChange, setAudioWatch, useEngineStatus } from './lib/engine';
 import { buildLanes } from './lib/lanes';
 import { clearHistory } from './lib/arrangeHistory';
 import { discardDraft, isDirty, saveDraft, useDraftItems } from './lib/drafts';
@@ -28,6 +28,12 @@ import SetlistEditor from './components/SetlistEditor';
 import SongsPage from './components/SongsPage';
 import SettingsModal from './components/SettingsModal';
 import PreferencesPanel from './components/PreferencesPanel';
+import PreflightModal from './components/PreflightModal';
+import MidiLearnBar from './components/MidiLearnBar';
+import { useMidiControl } from './lib/midiLearn';
+import { lanLiveOf, useStageNet, useStageNetState } from './lib/stageNet';
+import { useBackup } from './lib/backup';
+import { bandOf, useBandLeaveNotice, useOnlineMembers, usePingResponder, usePresence } from './lib/presence';
 import HelpPanel from './components/HelpPanel';
 import Transport from './components/Transport';
 import { ZoneResizer, zoneFrame } from './components/Zones';
@@ -163,14 +169,28 @@ function Workspace({ user }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [prefsOpen, setPrefsOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [preflightOpen, setPreflightOpen] = useState(false);
 
   const notify = useCallback((text, error = false) => setMessage(text ? { text, error } : null), []);
+  // A MIDI controller on the controls of the app (MIDI learn, Ctrl+M).
+  useMidiControl({ settings, update, notify });
   const email = (user.email || '').toLowerCase();
   const role = getRole(setlist, user.uid, email, isAdmin);
   const canDrive = ['owner', 'admin', 'editor', 'stage'].includes(role);
   const canEdit = ['owner', 'admin', 'editor'].includes(role);
 
-  const player = usePlayer({ user, setlist, items, settings, canDrive, canEdit, notify });
+  // Rete locale di palco: the song of the band's leader arrives here also without internet.
+  const lanLive = lanLiveOf(useStageNetState(), setlist?.id);
+  const player = usePlayer({ user, setlist, items, settings, canDrive, canEdit, notify, lanLive });
+  const stageNet = useStageNet({ setlist, user, settings, canDrive, loadedItem: player.loadedItem, notify });
+  // Palco Sync: this computer among the band connected to the setlist, and who is there.
+  usePresence(setlistId, user, settings.stageNet.part);
+  usePingResponder(setlistId, user.uid, setlist?.live?.ping);
+  const members = useOnlineMembers(setlistId);
+  const band = useMemo(() => bandOf(members, stageNet, user), [members, stageNet, user]);
+  useBandLeaveNotice(band, settings.followStage || settings.driveStage, notify);
+  // Computer di riserva: plays along with who leads, and takes over when it is gone.
+  useBackup({ settings, update, net: stageNet, player, items, canDrive, notify });
   const songs = player.songs;
   const numbers = useMemo(() => Object.fromEntries(songs.map((s, i) => [s.id, i + 1])), [songs]);
   const lanes = useMemo(() => buildLanes(songs), [songs]);
@@ -206,7 +226,13 @@ function Workspace({ user }) {
   usePrompterBroadcast({ setlist, loadedItem: player.loadedItem, settings, enabled: settings.driveStage && canDrive, user, notify });
 
   // Audio interface (re)opened when the choice changes.
+  const engineOnDefault = useRef(false);
   useEffect(() => {
+    // The engine is already on the default output (the interface was pulled out).
+    if (engineOnDefault.current) {
+      engineOnDefault.current = false;
+      return;
+    }
     let cancelled = false;
     engine
       .openDevice(settings.audioDevice, settings.bufferSize)
@@ -216,6 +242,47 @@ function Workspace({ user }) {
       cancelled = true;
     };
   }, [settings.audioDevice, settings.bufferSize]);
+
+  // Interfaces plugged in and out while the program runs (audio/watch.rs). A new
+  // one opens the audio settings with a notice; when the one in use goes, the
+  // engine has already moved to the default output: the choice follows it.
+  const [plugged, setPlugged] = useState(null); // names of the outputs just plugged in
+  const audioDevice = useRef(settings.audioDevice);
+  audioDevice.current = settings.audioDevice;
+  // Interfaces plugged in and out: detected only while the setting is on.
+  useEffect(() => {
+    setAudioWatch(settings.audioWatch);
+  }, [settings.audioWatch]);
+  useEffect(
+    () =>
+      onDeviceChange((c) => {
+        if (c.device || c.error) setDevice(c.device ? { info: c.device } : { error: c.error });
+        if (c.lost) {
+          const gone = c.removed[0] || c.lost;
+          notify(c.device ? `“${gone}” scollegata: l’audio passa a “${c.device.name}”` : `“${gone}” scollegata e nessuna altra uscita audio disponibile`, true);
+          if (audioDevice.current) {
+            engineOnDefault.current = true;
+            update({ audioDevice: null });
+          }
+        }
+        if (c.added.length) {
+          setPlugged(c.added);
+          setSettingsOpen(true);
+        }
+      }),
+    [notify, update],
+  );
+  // "Usa questa scheda": already the choice when it was missing at startup (the default played): open it now.
+  const chooseDevice = useCallback(
+    (name) => {
+      if (audioDevice.current !== name) return update({ audioDevice: name });
+      engine
+        .openDevice(name, settings.bufferSize)
+        .then((info) => setDevice({ info }))
+        .catch((e) => setDevice({ error: String(e) }));
+    },
+    [update, settings.bufferSize],
+  );
 
   useEffect(() => {
     checkCache(items).catch(() => {});
@@ -255,7 +322,13 @@ function Workspace({ user }) {
         else togglePrompterOutput();
         return;
       }
-      if (settingsOpen || prefsOpen || helpOpen) return;
+      // Controllo pre-concerto.
+      if (e.key === 'F7') {
+        e.preventDefault();
+        setPreflightOpen((o) => !o);
+        return;
+      }
+      if (settingsOpen || prefsOpen || helpOpen || preflightOpen) return;
       if ((e.ctrlKey || e.metaKey) && PAGES[Number(e.key) - 1]) {
         e.preventDefault();
         update({ page: PAGES[Number(e.key) - 1][0] });
@@ -316,7 +389,7 @@ function Workspace({ user }) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [player, songs, selected, settings.view, settings.click, settingsOpen, prefsOpen, helpOpen, update, page, stage]);
+  }, [player, songs, selected, settings.view, settings.click, settingsOpen, prefsOpen, helpOpen, preflightOpen, update, page, stage]);
 
   const frame = zoneFrame(settings.zones);
 
@@ -333,12 +406,16 @@ function Workspace({ user }) {
         notify={notify}
         device={device}
         liveOn={!!setlist?.live?.startedAt}
+        net={stageNet}
+        band={setlistId ? band : null}
+        setlist={setlist}
         page={page}
         showViews={page === 'live'}
         stage={stage}
         onSettings={() => setSettingsOpen(true)}
         onPrefs={() => setPrefsOpen(true)}
         onHelp={() => setHelpOpen(true)}
+        onPreflight={() => setPreflightOpen(true)}
         onSignOut={() => {
           if (confirm(`Uscire da ${user.email}?`)) {
             engine.unload();
@@ -409,7 +486,7 @@ function Workspace({ user }) {
             onSetlist={(id) => update({ setlistId: id })}
             settings={settings}
             update={update}
-            active={!settingsOpen && !prefsOpen && !helpOpen}
+            active={!settingsOpen && !prefsOpen && !helpOpen && !preflightOpen}
             onVideoOutput={openVideoOutput}
             canEdit={canEdit}
             notify={notify}
@@ -454,17 +531,49 @@ function Workspace({ user }) {
           <ZoneResizer zone="lower" />
         </>
       )}
+      <MidiLearnBar settings={settings} update={update} />
       <StatusBar message={message} device={device} page={page} stage={stage} onPage={(p) => update({ page: p })} onUpdates={() => setPrefsOpen('updates')} />
       {prefsOpen && (
         <PreferencesPanel
           settings={settings}
           update={update}
           initialSection={typeof prefsOpen === 'string' ? prefsOpen : undefined}
+          items={items}
+          onSendMidi={player.sendMidi}
           onClose={() => setPrefsOpen(false)}
         />
       )}
-      {settingsOpen && <SettingsModal settings={settings} update={update} device={device} onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && (
+        <SettingsModal
+          settings={settings}
+          update={update}
+          device={device}
+          plugged={plugged}
+          onUse={chooseDevice}
+          onClose={() => {
+            setSettingsOpen(false);
+            setPlugged(null);
+          }}
+        />
+      )}
       {helpOpen && <HelpPanel onClose={() => setHelpOpen(false)} />}
+      {preflightOpen && (
+        <PreflightModal
+          items={items}
+          device={device}
+          settings={settings}
+          net={stageNet}
+          onAudio={() => {
+            setPreflightOpen(false);
+            setSettingsOpen(true);
+          }}
+          onPrefs={(section) => {
+            setPreflightOpen(false);
+            setPrefsOpen(section);
+          }}
+          onClose={() => setPreflightOpen(false)}
+        />
+      )}
       {askItem && isDirty(askItem.id) && (
         <UnsavedModal
           item={askItem}

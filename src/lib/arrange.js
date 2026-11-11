@@ -2,7 +2,8 @@
 // off) the grid and bars inserted at the playhead. Stems are placed by
 // regions (shared/media.js regionsOf): the engine plays each file through
 // them, so no audio file is ever rewritten.
-import { cueTrackOf, regionsOf, stemsOf, videoOf } from '../shared/media.js';
+import { automationOf, cueTrackOf, regionsOf, shiftAutomation, stemsOf, videoOf } from '../shared/media.js';
+import { shiftTempoChanges, tempoChangesOf } from '../shared/tempoMap.js';
 import { recordStep } from './arrangeHistory';
 import { editDraft } from './drafts';
 import { gridBeats } from './grid';
@@ -10,6 +11,13 @@ import { gridOf } from './sync';
 import { sheetKey } from './cueTrack';
 
 const WHOLE = [{ at: 0, from: 0, len: null }];
+
+// The stems with their volume automation after second t moved by delta (null: no automation to move).
+function stemsShifted(item, t, delta) {
+  const stems = stemsOf(item);
+  if (!stems.some((s) => automationOf(s).length)) return null;
+  return stems.map((s) => (automationOf(s).length ? { ...s, auto: shiftAutomation(automationOf(s), t, delta) } : s));
+}
 
 // regions._grid = { stemId, regions }: placement of the grid's reference stem
 // frozen at its first edit by hand, so moving or trimming that stem does not
@@ -78,6 +86,8 @@ export function closeLeadingGap(item, all = regionsOf(item), origin = null) {
   // Not rounded: bar 1 has to land exactly on 0.
   if (all[GRID_KEY]) regions[GRID_KEY] = { ...all[GRID_KEY], regions: all[GRID_KEY].regions.map((g) => ({ ...g, at: g.at - gap })) };
   const media = { regions };
+  const stems = stemsShifted(item, -Infinity, -gap);
+  if (stems) media.stems = stems;
   const video = videoOf(item);
   if (video) media.video = { ...video, offset: r4((video.offset || 0) - gap) };
   const fields = {};
@@ -111,6 +121,8 @@ export function leadToAudio(item, tempo, all = regionsOf(item)) {
   const fields = { grid: { ...(item.grid || {}), lead: grid.lead + k } };
   const sections = growSection(item.sections, 1, k);
   if (sections) fields.sections = sections;
+  // The bars before bar 1 count now: the tempo changes stay on the same music.
+  if (tempoChangesOf(item).length) fields.tempoChanges = shiftTempoChanges(tempoChangesOf(item), 1, k);
   const media = {};
   const sheet = cueTrackOf(item);
   if (sheet.cues.length) {
@@ -192,6 +204,8 @@ export async function insertBars({ item, tempo, position, n }) {
   // Before everything: this silence was asked for, closeLeadingGap leaves it.
   if (p <= firstStart(item, regionsOf(item)) + 1e-3) regions[LEAD_KEY] = (Number(regions[LEAD_KEY]) || 0) + d;
   const media = { regions };
+  const stems = stemsShifted(item, p, d);
+  if (stems) media.stems = stems;
   if (item.cueTrack) {
     const sheet = cueTrackOf(item);
     media.cueTrack = { ...item.cueTrack, cues: sheet.cues.map((c) => (c.g >= bar.g ? { ...c, g: c.g + shiftBeats } : c)) };
@@ -220,6 +234,8 @@ export async function insertBars({ item, tempo, position, n }) {
   }
   const sections = growSection(item.sections, bar.bar, n);
   if (sections) fields.sections = sections;
+  // The tempo changes from that bar on move with the music; the new bars keep the tempo they are in.
+  if (tempoChangesOf(item).some((c) => c.bar >= bar.bar)) fields.tempoChanges = shiftTempoChanges(tempoChangesOf(item), bar.bar, n);
   if (item.duration) fields.duration = Math.round(item.duration + d);
   // Into the song's draft, saved with "Salva".
   editDraft(item.id, { media, item: fields });

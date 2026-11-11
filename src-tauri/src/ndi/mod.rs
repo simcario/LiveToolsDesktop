@@ -23,6 +23,8 @@ use sdk::{Frame, Runtime, Sender, RGBX};
 const PROMPTER_SIZE: (u32, u32) = (1920, 1080);
 /// Shown by the video output while there is no video.
 const BLACK_SIZE: (u32, u32) = (1920, 1080);
+/// How long an output nobody receives waits for a receiver before looking at `stop` again.
+const RECEIVER_WAIT_MS: u32 = 250;
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 pub struct OutputConfig {
@@ -185,6 +187,10 @@ fn video_loop(sender: Sender, stop: Arc<AtomicBool>, shared: Arc<Shared>, monito
     #[cfg(windows)]
     let mut faded: Option<Frame> = None;
     while !stop.load(Ordering::Relaxed) {
+        // Nobody receives the source: wait for someone (the video is picked up at the playhead then).
+        if !sender.has_receivers(RECEIVER_WAIT_MS) {
+            continue;
+        }
         let (generation, source) = shared.video.lock().clone();
         #[cfg(windows)]
         {
@@ -235,6 +241,9 @@ fn video_loop(sender: Sender, stop: Arc<AtomicBool>, shared: Arc<Shared>, monito
 fn prompter_loop(sender: Sender, stop: Arc<AtomicBool>, shared: Arc<Shared>) {
     let black = Arc::new(Frame::black(PROMPTER_SIZE.0, PROMPTER_SIZE.1));
     while !stop.load(Ordering::Relaxed) {
+        if !sender.has_receivers(RECEIVER_WAIT_MS) {
+            continue;
+        }
         let frame = shared.prompter.lock().clone().unwrap_or_else(|| black.clone());
         sender.send(&frame);
     }

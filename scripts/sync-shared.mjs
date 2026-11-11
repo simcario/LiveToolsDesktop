@@ -22,6 +22,8 @@ const files = [
   ['src/lib/mp3.js', 'mp3.js'],
   ['src/lib/mp3encode.js', 'mp3encode.js'],
   ['src/lib/mp3.worker.js', 'mp3.worker.js'],
+  ['src/lib/tempo-map.js', 'tempoMap.js'],
+  ['src/lib/midi-patch.js', 'midi-patch.js'],
 ];
 // Imports of web modules that live elsewhere here.
 const REWRITES = [["from './firebase'", "from '../lib/firebase'"]];

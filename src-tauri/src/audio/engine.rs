@@ -47,6 +47,8 @@ pub struct TrackMix {
     /// Channel section (Mixer → click on the track name): input gain and EQ.
     pub input_db: Option<f32>,
     pub eq: Option<EqSpec>,
+    /// Volume automation (Arrangement): [seconds of the song, dB], [] = none.
+    pub auto: Option<Vec<[f64; 2]>>,
 }
 
 fn one() -> f64 {
@@ -119,9 +121,10 @@ pub struct JumpSpec {
     pub repeat: bool,
 }
 
-/// How the next song takes over, at `at` seconds of the one playing:
-/// "overlap" (this one goes on to its end, also AutoLink with `at` = the end)
-/// or "crossfade" in `fade` seconds.
+/// How the next song takes over, at `at` seconds of the one playing (after its
+/// end: a pause): this one fades out in `fade` seconds (0: it goes on to its end,
+/// as "overlap" and AutoLink), the next one fades in in `fade_in` seconds and
+/// starts from its second `start`. `mode` only names it for the status.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TransitionSpec {
@@ -129,6 +132,10 @@ pub struct TransitionSpec {
     pub at: f64,
     #[serde(default)]
     pub fade: f64,
+    #[serde(default)]
+    pub fade_in: f64,
+    #[serde(default)]
+    pub start: f64,
 }
 
 /// The next song waiting in the engine.
@@ -167,6 +174,8 @@ pub struct Status {
     pub meters: Vec<[f32; 2]>,
     /// Peak of each output of the interface.
     pub outputs: Vec<f32>,
+    /// [left, right] peak of the pad since the last status.
+    pub pad: [f32; 2],
     pub device: Option<DeviceInfo>,
     pub device_error: Option<String>,
 }
@@ -239,9 +248,59 @@ impl Monitor {
             rate,
             meters: self.controls.read().iter().map(|c| [c.peak_l.swap(0.0), c.peak_r.swap(0.0)]).collect(),
             outputs: s.out_peaks.iter().take(channels).map(|p| p.swap(0.0)).collect(),
+            pad: [s.pad_peaks[0].swap(0.0), s.pad_peaks[1].swap(0.0)],
             device: self.device.read().clone(),
             device_error: self.device_error.lock().clone(),
         }
+    }
+}
+
+/// Status ticks out of 30 per second that reach the UI while nothing moves or sounds.
+const QUIET_EVERY: u32 = 8;
+
+/// Decides which status updates reach the windows: all of them (~30 per second)
+/// while the song plays or something sounds or fades, otherwise only the ones that
+/// change something, plus one every QUIET_EVERY ticks for windows just opened.
+/// At rest the 30 updates per second cost a fair part of a core (on a tablet above
+/// all, where each one goes through the main thread) for nothing.
+pub struct StatusPacer {
+    last: Option<String>,
+    quiet: u32,
+}
+
+impl Default for StatusPacer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl StatusPacer {
+    pub fn new() -> Self {
+        Self { last: None, quiet: 0 }
+    }
+
+    pub fn admit(&mut self, s: &Status) -> bool {
+        let sounding = |p: &f32| *p > 0.0;
+        let live = s.playing
+            || s.waiting
+            || s.ended
+            || s.fade != s.fade_target
+            || s.pad.iter().any(sounding)
+            || s.outputs.iter().any(sounding)
+            || s.meters.iter().any(|m| m.iter().any(sounding));
+        if live {
+            self.last = None;
+            self.quiet = 0;
+            return true;
+        }
+        let key = serde_json::to_string(s).unwrap_or_default();
+        self.quiet += 1;
+        if self.last.as_deref() == Some(key.as_str()) && self.quiet < QUIET_EVERY {
+            return false;
+        }
+        self.last = Some(key);
+        self.quiet = 0;
+        true
     }
 }
 
@@ -329,6 +388,8 @@ pub struct Controller {
     next: Option<Pending>,
     /// Readers of the song before, still heard in the crossfade or overlap.
     tail: Vec<Option<DecoderHandle>>,
+    /// Buffer asked by the UI: kept when the default output takes over.
+    buffer: Option<u32>,
 }
 
 pub struct Engine(pub Mutex<Controller>);
@@ -341,7 +402,8 @@ fn db_to_gain(db: f32) -> f32 {
     }
 }
 
-fn apply_mix(c: &TrackControl, m: &TrackMix) {
+/// `rate`: speed of the files (the automation is in seconds of the original song).
+fn apply_mix(c: &TrackControl, m: &TrackMix, rate: f64) {
     if let Some(db) = m.gain_db {
         c.gain.store(db_to_gain(db));
     }
@@ -370,6 +432,11 @@ fn apply_mix(c: &TrackControl, m: &TrackMix) {
     }
     if let Some(eq) = &m.eq {
         c.channel.set_eq(eq);
+    }
+    if let Some(points) = &m.auto {
+        let mut pts: Vec<(f64, f32)> = points.iter().filter(|p| p[0].is_finite() && p[1].is_finite()).map(|p| (p[0].max(0.0) / rate, p[1].clamp(-60.0, 6.0) as f32)).collect();
+        pts.sort_by(|a, b| a.0.total_cmp(&b.0));
+        c.auto.set(&pts);
     }
 }
 
@@ -402,6 +469,7 @@ impl Engine {
             jump_seq: 0,
             next: None,
             tail: Vec::new(),
+            buffer: None,
         };
         (Self(Mutex::new(controller)), monitor, garbage_rx)
     }
@@ -420,7 +488,12 @@ impl Controller {
         let Some(tx) = self.cmd.as_mut() else { return };
         let mut cmd = cmd;
         // The callback drains the queue every few ms: wait briefly if it is full.
+        // Not when its stream is gone (interface pulled out): nobody reads the
+        // queue any more, and waiting here would freeze every command.
         for _ in 0..200 {
+            if tx.is_abandoned() {
+                return;
+            }
             match tx.push(cmd) {
                 Ok(()) => return,
                 Err(rtrb::PushError::Full(c)) => {
@@ -435,7 +508,19 @@ impl Controller {
         self.host.list()
     }
 
+    /// A handle on the audio thread for the device watcher (watch.rs).
+    pub fn host_handle(&self) -> AudioHost {
+        self.host.clone()
+    }
+
+    /// The interface in use is gone: the default output of the system takes
+    /// its place, with the same buffer, the song stopped where it was.
+    pub fn recover_device(&mut self) -> Result<DeviceInfo, String> {
+        self.open_device(None, self.buffer)
+    }
+
     pub fn open_device(&mut self, name: Option<String>, buffer: Option<u32>) -> Result<DeviceInfo, String> {
+        self.buffer = buffer;
         let position = self.position();
         self.shared().playing.store(false, Ordering::Relaxed);
         self.host.close();
@@ -468,7 +553,8 @@ impl Controller {
     }
 
     /// Opens the tracks of a song, each reader at its start.
-    fn open_song(&self, spec: SongSpec) -> (Loaded, Vec<RtTrack>, SongLoad) {
+    /// `from`: seconds of the files where the readers start.
+    fn open_song(&self, spec: SongSpec, from: f64) -> (Loaded, Vec<RtTrack>, SongLoad) {
         let sr = self.sample_rate();
         let tempo = spec.tempo();
         let rate = spec.rate();
@@ -482,7 +568,7 @@ impl Controller {
         let mut duration = 0f64;
         for t in &spec.tracks {
             let control = Arc::new(TrackControl::new());
-            apply_mix(&control, &t.mix);
+            apply_mix(&control, &t.mix, rate);
             let path = PathBuf::from(&t.path);
             let (info, error) = match decode::probe(&path) {
                 Ok(i) => (Some(i), None),
@@ -490,7 +576,7 @@ impl Controller {
             };
             let placed = scale_regions(&t.regions, rate);
             let (decoder, stream) = if info.is_some() {
-                let (d, s) = stream::spawn(path.clone(), 0.0, sr, placed.clone());
+                let (d, s) = stream::spawn(path.clone(), from.max(0.0), sr, placed.clone());
                 (Some(d), Some(s))
             } else {
                 (None, None)
@@ -543,7 +629,7 @@ impl Controller {
         self.cancel_next();
         self.tail.clear();
         let sr = self.sample_rate();
-        let (song, rt, result) = self.open_song(spec);
+        let (song, rt, result) = self.open_song(spec, 0.0);
         self.publish(&song);
         self.send(RtCmd::Tracks { tracks: Box::new(rt), position: 0 });
         self.send(RtCmd::Tempo(Some(Box::new(song.tempo.frames_per(self.fps(song.rate))))));
@@ -575,11 +661,15 @@ impl Controller {
         let Some(cur) = self.song.as_ref() else { return Err("Nessun brano caricato".into()) };
         let sr = self.sample_rate() as f64;
         let end = cur.song_duration();
-        let at = t.at.clamp(0.0, end);
+        // Up to a minute of pause after the end.
+        let at = t.at.clamp(0.0, end + 60.0);
         let at_frame = (cur.real(at) * sr).floor() as i64;
-        let overlap = t.mode != "crossfade";
-        let xfade = (t.fade.clamp(0.0, 30.0) / cur.rate * sr) as i64;
-        let (song, rt, result) = self.open_song(spec);
+        let fade_out = (t.fade.clamp(0.0, 30.0) / cur.rate * sr) as i64;
+        let fade_in = (t.fade_in.clamp(0.0, 30.0) * sr) as i64;
+        // Seconds of the files of the next song: its readers start there.
+        let from = (t.start.max(0.0) / spec.rate()).min(3600.0);
+        let (song, rt, result) = self.open_song(spec, from);
+        let from = from.min(song.duration);
         let tempo = song.tempo.frames_per(self.fps(song.rate));
         self.jump_seq += 1;
         let id = self.jump_seq;
@@ -590,8 +680,9 @@ impl Controller {
             tracks: Box::new(rt),
             tempo: Some(Box::new(tempo)),
             duration: (song.duration * sr) as i64,
-            overlap,
-            xfade,
+            fade_out,
+            fade_in,
+            start: (from * sr).floor() as i64,
         })));
         self.next = Some(Pending { id, song });
         Ok(result)
@@ -814,7 +905,7 @@ impl Controller {
         let Some(song) = &self.song else { return };
         if let Some(i) = song.ids.iter().position(|x| x == id) {
             if let Some(c) = song.controls.get(i) {
-                apply_mix(c, &mix);
+                apply_mix(c, &mix, song.rate);
             }
         }
     }

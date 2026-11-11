@@ -7,6 +7,12 @@ import { TIME_SIGNATURES } from '../shared/setlists.js';
 import Icon from './Icon';
 import Toolbar, { ToolGroup } from './Toolbar';
 import { ZoneToggles } from './Zones';
+import { toggleLearning, useMidiLearnState } from '../lib/midiLearn';
+import { rttText } from '../lib/stageNet';
+import BandPanel from './BandPanel';
+
+// Who is on the local network of the stage, for the tooltips.
+const peersText = (peers) => peers.map((p) => `${p.name}${p.part ? ` (${p.part})` : ''} · ${rttText(p.rtt)}`).join('\n');
 
 function Lcd() {
   const bar = useEngineStatus((s) => s.bar);
@@ -81,9 +87,10 @@ function DownloadBar({ label, files }) {
   );
 }
 
-export default function Transport({ user, item, player, settings, update, canDrive, canEdit, notify, device, onSettings, onPrefs, onHelp, onSignOut, liveOn, page, showViews = true, stage = false }) {
+export default function Transport({ user, item, player, settings, update, canDrive, canEdit, notify, device, onSettings, onPrefs, onHelp, onPreflight, onSignOut, liveOn, page, showViews = true, stage = false, net = null, band = null, setlist = null }) {
   const playing = useEngineStatus((s) => s.playing);
   const waiting = useEngineStatus((s) => s.waiting);
+  const learning = useMidiLearnState().on;
   const loaded = player.loaded;
   const tempo = loaded?.tempo?.segments?.find((s) => !s.countIn);
   // Tempo and metre of the song in the player, editable by who may edit it.
@@ -104,20 +111,21 @@ export default function Transport({ user, item, player, settings, update, canDri
       </ToolGroup>
       <ToolGroup id="transport" label="Trasporto" locked>
         <div className="t-group">
-          <button className="t-btn" onClick={() => player.step(-1)} title="Brano precedente (←)">
+          <button className="t-btn" onClick={() => player.step(-1)} title="Brano precedente (←)" data-midi="transport.prev">
             <Icon name="skip-back" size={16} />
           </button>
           <button
             className={`t-btn play ${playing ? (waiting ? 'is-wait' : 'is-on') : ''}`}
             onClick={() => player.toggle(item)}
             title="Play / Stop (Spazio)"
+            data-midi="transport.play"
           >
             <Icon name="play" size={16} />
           </button>
-          <button className="t-btn" onClick={() => player.stop()} title="Stop (doppio stop: torna all’inizio)">
+          <button className="t-btn" onClick={() => player.stop()} title="Stop (doppio stop: torna all’inizio)" data-midi="transport.stop" data-midi-name="Stop">
             <Icon name="stop" size={14} />
           </button>
-          <button className="t-btn" onClick={() => player.step(1)} title="Brano successivo (→)">
+          <button className="t-btn" onClick={() => player.step(1)} title="Brano successivo (→)" data-midi="transport.next">
             <Icon name="skip-forward" size={16} />
           </button>
         </div>
@@ -157,6 +165,7 @@ export default function Transport({ user, item, player, settings, update, canDri
             className={`t-btn ${settings.countIn ? 'is-on' : ''}`}
             onClick={() => update({ countIn: !settings.countIn })}
             title="Count-in prima del brano"
+            data-midi="transport.countIn"
           >
             <span className="mono small">1·2</span>
           </button>
@@ -164,6 +173,8 @@ export default function Transport({ user, item, player, settings, update, canDri
             className={`t-btn ${settings.click.enabled ? 'is-on' : ''}`}
             onClick={() => update({ click: { ...settings.click, enabled: !settings.click.enabled } })}
             title="Click (metronomo) sull’uscita click (C)"
+            data-midi="transport.click"
+            data-midi-name="Click"
           >
             <Icon name="metronome" size={16} />
           </button>
@@ -171,6 +182,8 @@ export default function Transport({ user, item, player, settings, update, canDri
             className={`t-btn ${settings.click.eighths ? 'is-on' : ''}`}
             onClick={() => update({ click: { ...settings.click, eighths: !settings.click.eighths } })}
             title="Click in ottavi: raddoppia i battiti nei tempi semplici (Maiusc+C)"
+            data-midi="transport.eighths"
+            data-midi-name="Click in ottavi"
           >
             <span className="mono small">×2</span>
           </button>
@@ -178,6 +191,7 @@ export default function Transport({ user, item, player, settings, update, canDri
             className={`t-btn ${settings.autoAdvance ? 'is-on' : ''}`}
             onClick={() => update({ autoAdvance: !settings.autoAdvance })}
             title="A fine brano prepara il successivo"
+            data-midi="transport.autoAdvance"
           >
             <Icon name="follow" size={16} />
           </button>
@@ -199,37 +213,59 @@ export default function Transport({ user, item, player, settings, update, canDri
             className={`btn btn-sm ${settings.followStage ? 'is-on' : ''}`}
             onClick={() => update({ followStage: !settings.followStage })}
             title="Carica il brano attivato dal master della band (Palco Sync)"
+            data-midi="band.follow"
+            data-midi-name="Segui palco"
           >
             {liveOn && <span className="dot live" />} Segui palco
+            {settings.followStage && settings.stageNet.backup && (
+              <span className="t-lan t-backup" title="Computer di riserva: suona insieme a chi guida (Impostazioni › Rete locale)">
+                RISERVA
+              </span>
+            )}
+            {settings.followStage && net?.connected && (
+              <span className="t-lan" title={`Rete locale: collegato a ${net.host?.name || net.joined} · ${rttText(net.rtt)}${net.peers.length ? `\nIn rete:\n${peersText(net.peers)}` : ''}`}>
+                LAN
+              </span>
+            )}
           </button>
           {canDrive && (
             <button
               className={`btn btn-sm ${settings.driveStage ? 'is-on' : ''}`}
               onClick={() => update({ driveStage: !settings.driveStage })}
               title="Il brano caricato qui diventa quello attivo per tutta la band"
+              data-midi="band.drive"
+              data-midi-name="Guida la band"
             >
               <Icon name="radio" size={14} /> Guida
+              {settings.driveStage && net?.hosting && (
+                <span className="t-lan" title={net.peers.length ? `Rete locale, in ascolto:\n${peersText(net.peers)}` : 'Rete locale attiva: nessuno collegato'}>
+                  LAN {net.peers.length}
+                </span>
+              )}
             </button>
           )}
+          {band && setlist && <BandPanel band={band} setlist={setlist} canDrive={canDrive} notify={notify} />}
         </div>
       </ToolGroup>
       {/* The views (Palco, Arrangement, Gobbo, Spartito) belong to the Live page only. */}
       {showViews && (
         <ToolGroup id="views" label="Viste" locked>
           <div className="view-switch" role="tablist" aria-label="Vista (Tab)">
-            <button className={settings.view === 'stage' ? 'is-on' : ''} onClick={() => update({ view: 'stage' })}>
+            <button className={settings.view === 'stage' ? 'is-on' : ''} onClick={() => update({ view: 'stage' })} data-midi="view.stage" data-midi-name="Vista Palco">
               <Icon name="grid" size={14} /> Palco
             </button>
             <button
               className={settings.view === 'arrangement' ? 'is-on' : ''}
               onClick={() => update({ view: 'arrangement' })}
+              data-midi="view.arrangement"
+              data-midi-name="Vista Arrangement"
             >
               <Icon name="timeline" size={14} /> Arrangement
             </button>
-            <button className={settings.view === 'prompter' ? 'is-on' : ''} onClick={() => update({ view: 'prompter' })}>
+            <button className={settings.view === 'prompter' ? 'is-on' : ''} onClick={() => update({ view: 'prompter' })} data-midi="view.prompter" data-midi-name="Vista Gobbo">
               <Icon name="lyrics" size={14} /> Gobbo
             </button>
-            <button className={settings.view === 'score' ? 'is-on' : ''} onClick={() => update({ view: 'score' })}>
+            <button className={settings.view === 'score' ? 'is-on' : ''} onClick={() => update({ view: 'score' })} data-midi="view.score" data-midi-name="Vista Spartito">
               <Icon name="file-text" size={14} /> Spartito
             </button>
           </div>
@@ -251,6 +287,20 @@ export default function Transport({ user, item, player, settings, update, canDri
         </button>
       </ToolGroup>
       <ToolGroup id="app" label="App" locked corner>
+        <button
+          className={`btn btn-ghost btn-icon ${learning ? 'is-on' : ''}`}
+          onClick={toggleLearning}
+          aria-pressed={learning}
+          title="MIDI learn: collega tasti e fader di un controller ai comandi (Ctrl+M)"
+          aria-label="MIDI learn"
+        >
+          <Icon name="music" size={16} />
+        </button>
+        {onPreflight && (
+          <button className="btn btn-ghost btn-icon" onClick={onPreflight} title="Controllo pre-concerto: file, audio, MIDI, pedale, disco (F7)" aria-label="Controllo pre-concerto">
+            <Icon name="check" size={16} />
+          </button>
+        )}
         <button className="btn btn-ghost btn-icon" onClick={onHelp} title="Manuale (F1)" aria-label="Manuale">
           <Icon name="help" size={16} />
         </button>

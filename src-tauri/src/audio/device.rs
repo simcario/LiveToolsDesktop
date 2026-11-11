@@ -97,8 +97,12 @@ enum HostCmd {
     List {
         reply: Sender<Vec<DeviceEntry>>,
     },
+    Names {
+        reply: Sender<Vec<String>>,
+    },
 }
 
+#[derive(Clone)]
 pub struct AudioHost {
     tx: Sender<HostCmd>,
 }
@@ -111,6 +115,7 @@ impl AudioHost {
             .spawn(move || {
                 let asio = asio::Drivers::new();
                 let mut current: Option<cpal::Stream> = None;
+                let mut cache = NamesCache::default();
                 for cmd in rx {
                     match cmd {
                         HostCmd::Open { name, buffer, renderer, reply } => {
@@ -128,6 +133,9 @@ impl AudioHost {
                         }
                         HostCmd::List { reply } => {
                             let _ = reply.send(list(&asio));
+                        }
+                        HostCmd::Names { reply } => {
+                            let _ = reply.send(cache.get());
                         }
                     }
                 }
@@ -158,6 +166,38 @@ impl AudioHost {
             return Vec::new();
         }
         rx.recv().unwrap_or_default()
+    }
+
+    /// Names of the outputs of the system, without asking their configurations
+    /// (cheap: the device watcher calls it every second).
+    pub fn names(&self) -> Vec<String> {
+        let (reply, rx) = channel();
+        if self.tx.send(HostCmd::Names { reply }).is_err() {
+            return Vec::new();
+        }
+        rx.recv().unwrap_or_default()
+    }
+}
+
+/// Names of the outputs, asked again to the system only when its list of devices changes.
+/// Telling the outputs from the inputs opens every device (on Windows ~0.6 s with virtual
+/// webcams and microphones installed, on the thread that also opens the stream), while the
+/// list of all of them takes a few ms: the watcher asks once a second.
+#[derive(Default)]
+struct NamesCache {
+    all: Option<Vec<String>>,
+    outputs: Vec<String>,
+}
+
+impl NamesCache {
+    fn get(&mut self) -> Vec<String> {
+        let host = cpal::default_host();
+        let all: Option<Vec<String>> = host.devices().ok().map(|d| d.filter_map(|d| d.name().ok()).collect());
+        if all.is_none() || all != self.all {
+            self.outputs = host.output_devices().map(|d| d.filter_map(|d| d.name().ok()).collect()).unwrap_or_default();
+            self.all = all;
+        }
+        self.outputs.clone()
     }
 }
 

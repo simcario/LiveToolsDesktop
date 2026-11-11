@@ -27,15 +27,18 @@ import { autoSnapshot, logChange } from '../shared/history.js';
 import { createSong, itemFromSong, updateSong, useLibrary } from '../shared/songs.js';
 import { useAccess } from '../lib/data';
 import { db, storage } from '../lib/firebase';
+import { deleteLiveCues } from '../lib/cueTrack';
 import { explainDenied, songLimitError } from '../shared/planGuard.js';
 import Icon from './Icon';
 import Toolbar, { ToolGroup } from './Toolbar';
+import HistoryModal from './HistoryModal';
 import { ZoneResizer } from './Zones';
 import MediaFields, { ScoreFile } from './MediaFields';
 import ChartTags from './ChartTags';
 import ScreenImage from './ScreenImage';
 import { ChartLines } from './ChordChart';
 import { printChords } from '../shared/chartSheet.js';
+import { ccError, sysexError } from '../shared/midi-patch.js';
 
 // Setlist page: the same editing as the web app (songs and blocks, order,
 // built-in fields, custom column values, lyrics for the prompter), saved on
@@ -283,7 +286,12 @@ function StageFields({ d, set, setDraft }) {
                 </option>
               ))}
             </select>
-            <button type="button" className="toggle" onClick={() => setDraft((x) => ({ ...x, sections: x.sections.filter((_, j) => j !== i) }))} title="Rimuovi sezione">
+            <button
+              type="button"
+              className="toggle"
+              onClick={() => confirm(`Rimuovere la sezione ${i + 1}?`) && setDraft((x) => ({ ...x, sections: x.sections.filter((_, j) => j !== i) }))}
+              title="Rimuovi sezione"
+            >
               <Icon name="x" size={11} />
             </button>
           </div>
@@ -468,19 +476,70 @@ function MidiFields({ d, setDraft }) {
   return (
     <div className="se-form">
       <p className="small muted" style={{ margin: 0 }}>
-        Bank Select e Program Change inviati dall’app web ai dispositivi con l’invio MIDI attivo.
+        Quando il brano diventa quello nel player, i computer e i tablet con l’invio MIDI attivo (Impostazioni › MIDI) mandano a ogni strumento Bank
+        Select, Program Change e, se li scrivi, Control Change (numero=valore) e SysEx (esadecimale).
       </p>
       {d.midi.map((p, i) => (
-        <div key={i} className="se-line">
-          <input className="input grow" value={p.label || ''} onChange={(e) => setPatch(i, 'label', e.target.value)} placeholder="Strumento" />
-          <input className="input grow" value={p.name || ''} onChange={(e) => setPatch(i, 'name', e.target.value)} placeholder="Nome patch" />
-          <input className="input se-tiny" value={p.channel ?? ''} onChange={(e) => setPatch(i, 'channel', e.target.value)} placeholder="Ch" title="Canale" />
-          <input className="input se-tiny" value={p.program ?? ''} onChange={(e) => setPatch(i, 'program', e.target.value)} placeholder="PC" title="Program Change (1-128)" />
-          <input className="input se-tiny" value={p.bankMsb ?? ''} onChange={(e) => setPatch(i, 'bankMsb', e.target.value)} placeholder="MSB" title="Bank MSB" />
-          <input className="input se-tiny" value={p.bankLsb ?? ''} onChange={(e) => setPatch(i, 'bankLsb', e.target.value)} placeholder="LSB" title="Bank LSB" />
-          <button type="button" className="toggle" onClick={() => setDraft((x) => ({ ...x, midi: x.midi.filter((_, j) => j !== i) }))} title="Rimuovi patch">
-            <Icon name="x" size={11} />
-          </button>
+        <div key={i} className="se-patch">
+          <div className="se-line">
+            <input className="input grow" value={p.label || ''} onChange={(e) => setPatch(i, 'label', e.target.value)} placeholder="Strumento" />
+            <input className="input grow" value={p.name || ''} onChange={(e) => setPatch(i, 'name', e.target.value)} placeholder="Nome patch" />
+            <input
+              className="input se-tiny"
+              value={p.channel ?? ''}
+              onChange={(e) => setPatch(i, 'channel', e.target.value)}
+              placeholder="Ch"
+              title="Canale"
+            />
+            <input
+              className="input se-tiny"
+              value={p.program ?? ''}
+              onChange={(e) => setPatch(i, 'program', e.target.value)}
+              placeholder="PC"
+              title="Program Change (1-128)"
+            />
+            <input
+              className="input se-tiny"
+              value={p.bankMsb ?? ''}
+              onChange={(e) => setPatch(i, 'bankMsb', e.target.value)}
+              placeholder="MSB"
+              title="Bank MSB"
+            />
+            <input
+              className="input se-tiny"
+              value={p.bankLsb ?? ''}
+              onChange={(e) => setPatch(i, 'bankLsb', e.target.value)}
+              placeholder="LSB"
+              title="Bank LSB"
+            />
+            <button
+              type="button"
+              className="toggle"
+              onClick={() => confirm(`Rimuovere la patch MIDI ${i + 1}?`) && setDraft((x) => ({ ...x, midi: x.midi.filter((_, j) => j !== i) }))}
+              title="Rimuovi patch"
+            >
+              <Icon name="x" size={11} />
+            </button>
+          </div>
+          <div className="se-line">
+            <input
+              className="input se-cc"
+              value={p.cc ?? ''}
+              onChange={(e) => setPatch(i, 'cc', e.target.value)}
+              placeholder="CC  7=100, 91=40"
+              title="Control Change: numero=valore, separati da virgole"
+              spellCheck={false}
+            />
+            <input
+              className="input grow mono"
+              value={p.sysex ?? ''}
+              onChange={(e) => setPatch(i, 'sysex', e.target.value)}
+              placeholder="SysEx  F0 43 10 4C … F7"
+              title="SysEx in esadecimale, da F0 a F7 (anche più messaggi)"
+              spellCheck={false}
+            />
+          </div>
+          {(ccError(p.cc) || sysexError(p.sysex)) && <p className="pref-error">{ccError(p.cc) || sysexError(p.sysex)}</p>}
         </div>
       ))}
       <button
@@ -705,6 +764,7 @@ function TitleEditor({ setlist, canEdit, onRename }) {
 }
 
 export default function SetlistEditor({ user, setlist, items, itemDocs, numbers, canEdit, selectedId, onSelect, onOpenPrompter, notify }) {
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [editId, setEditId] = useState(selectedId);
   const [drag, setDrag] = useState(null); // { from, before }
   const listRef = useRef(null);
@@ -831,6 +891,7 @@ export default function SetlistEditor({ user, setlist, items, itemDocs, numbers,
     safely(async () => {
       try {
         await deleteItemMedia(storage, setlistId, item);
+        deleteLiveCues(item.id).catch((e) => console.warn(e));
         track(`Eliminato “${item.title}”`);
         await deleteDoc(itemRef(item.id));
       } catch (e) {
@@ -900,6 +961,7 @@ export default function SetlistEditor({ user, setlist, items, itemDocs, numbers,
 
   return (
     <div className="setlist-editor">
+      {historyOpen && <HistoryModal user={user} setlist={setlist} items={items} itemDocs={itemDocs} canEdit={canEdit} notify={notify} onClose={() => setHistoryOpen(false)} />}
       <Toolbar id="setlist" title="Scaletta" className="arr-toolbar">
         <ToolGroup id="title" label="Scaletta" locked grow>
           <Icon name="list-music" size={15} />
@@ -923,6 +985,11 @@ export default function SetlistEditor({ user, setlist, items, itemDocs, numbers,
             </button>
           </ToolGroup>
         )}
+        <ToolGroup id="history" label="Storico">
+          <button className="btn btn-sm" onClick={() => setHistoryOpen(true)} title="Le modifiche fatte, le versioni da ripristinare e i generi e la durata del set">
+            <Icon name="undo" size={13} /> Storico e analisi
+          </button>
+        </ToolGroup>
         <ToolGroup id="screen" label="Schermo">
           <ScreenImage setlist={setlist} canEdit={canEdit} notify={notify} />
         </ToolGroup>
@@ -1011,7 +1078,12 @@ export default function SetlistEditor({ user, setlist, items, itemDocs, numbers,
                 </div>
               );
             })}
-            {!items.length && <p className="pr-note">La scaletta è vuota.{canEdit && ' Aggiungi il primo brano qui sotto.'}</p>}
+            {!items.length && (
+              <p className="pr-note">
+                La scaletta è vuota.
+                {canEdit && ' Aggiungi il primo brano qui sotto.'}
+              </p>
+            )}
           </div>
           {canEdit && (
             <QuickEntry

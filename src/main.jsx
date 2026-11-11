@@ -7,8 +7,11 @@ import '@fontsource/jetbrains-mono/700.css';
 import './styles.css';
 import './styles/toolbar.css';
 import './styles/stage.css';
+import './styles/transitions.css';
 import './styles/arrangement.css';
 import './styles/mixer.css';
+import './styles/preflight.css';
+import './styles/history.css';
 
 // The same bundle serves the main window and the output windows
 // (index.html?view=video / ?view=prompter / ?view=mixer), which never load Firebase.

@@ -22,6 +22,7 @@ const EMPTY = {
   rate: 1, // speed of the song loaded (tempo changed): times stay those of the original
   meters: [],
   outputs: [],
+  pad: [0, 0], // [left, right] peak of the pad
   device: null,
   deviceError: null,
 };
@@ -54,6 +55,33 @@ export function subscribeStatus(f) {
   return () => listeners.delete(run);
 }
 
+// Runs frame() at display rate while the song plays, otherwise once for each status that
+// arrives (a locate, a stop) and for each kick(): a requestAnimationFrame loop always on keeps
+// the browser making frames at rest, a tenth of a core on a tablet for nothing.
+export function animateWhilePlaying(frame) {
+  let raf = 0;
+  let alive = true;
+  const run = () => {
+    raf = 0;
+    if (!alive) return;
+    frame();
+    if (status.playing || status.waiting) raf = requestAnimationFrame(run);
+  };
+  const kick = () => {
+    if (!raf && alive) raf = requestAnimationFrame(run);
+  };
+  listeners.add(kick);
+  kick();
+  return {
+    kick,
+    stop: () => {
+      alive = false;
+      listeners.delete(kick);
+      cancelAnimationFrame(raf);
+    },
+  };
+}
+
 export function onSongEnded(f) {
   endedListeners.add(f);
   return () => endedListeners.delete(f);
@@ -76,7 +104,21 @@ export function onStretchProgress(f) {
   return () => progressListeners.delete(f);
 }
 
-export const dbToGain = (db) => (db <= -60 ? 0 : 10 ** (db / 20));
+const deviceListeners = new Set();
+listen('audio-devices', (e) => deviceListeners.forEach((f) => f(e.payload)));
+
+// Interfaces plugged in or out (src-tauri audio/watch.rs):
+// f({ added: [names], removed: [names], lost: name|null, device: info|null, error: string|null }).
+// `lost`: the interface in use is gone and the default output took its place (song stopped).
+/** Automatic detection of the interfaces plugged in and out, on or off (Impostazioni audio). */
+export const setAudioWatch = (enabled) => invoke('audio_watch', { enabled }).catch(() => {});
+
+export function onDeviceChange(f) {
+  deviceListeners.add(f);
+  return () => deviceListeners.delete(f);
+}
+
+export const dbToGain =(db) => (db <= -60 ? 0 : 10 ** (db / 20));
 
 export const engine = {
   devices: () => invoke('audio_devices'),
@@ -102,7 +144,7 @@ export const engine = {
   // Tracks Fade: the tracks out (or back in) in `seconds`; click and pad go on.
   fade: (out, seconds) => invoke('engine_fade', { out: !!out, seconds }),
   setPad: (pad) => invoke('engine_set_pad', { pad }),
-  // The next song takes over at transition.at seconds: { mode: 'overlap' | 'crossfade', at, fade }.
+  // The next song takes over at transition.at seconds (after the end: a pause): { mode, at, fade (out), fadeIn, start }.
   queueNext: (song, transition) => invoke('engine_queue_next', { song, transition }),
   cancelNext: () => invoke('engine_cancel_next'),
   // Stems in another key / tempo, rendered once: [{ path, semitones, rate }] → [{ path, error }].

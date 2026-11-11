@@ -1,6 +1,6 @@
 {
   "name": "livetools-desktop",
-  "version": "0.1.15",
+  "version": "0.1.16",
   "private": true,
   "type": "module",
   "scripts": {
@@ -14,6 +14,7 @@
     "icons": "tauri icon ../web/public/icons/icon-512.png",
     "sync-shared": "node scripts/sync-shared.mjs",
     "installer": "node scripts/release.mjs installer",
+    "installer:asio": "node scripts/release.mjs personal",
     "release": "node scripts/release.mjs release",
     "release:publish": "node scripts/release.mjs publish"
   },

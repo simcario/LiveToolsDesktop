@@ -50,11 +50,14 @@ export const connectDrive = (code) => callable('driveConnect')({ code }).then((r
 export const disconnectDrive = () => callable('driveDisconnect')().then(() => forgetDriveToken());
 
 function driveError(status) {
-  if (status === 404 || status === 403) {
-    return new Error('File non raggiungibile su Google Drive: è sul Drive di un altro account o è stato eliminato.');
-  }
-  if (status === 401) return new Error('Accesso a Google Drive scaduto: ricollega Drive dalla pagina Account.');
-  return new Error(`Google Drive non ha risposto (${status}).`);
+  const e =
+    status === 404 || status === 403
+      ? new Error('File non raggiungibile su Google Drive: è sul Drive di un altro account o è stato eliminato.')
+      : status === 401
+        ? new Error('Accesso a Google Drive scaduto: ricollega Drive dalla pagina Account.')
+        : new Error(`Google Drive non ha risposto (${status}).`);
+  e.status = status;
+  return e;
 }
 
 /** fetch with the Drive token; one retry with a new token after a 401. */
@@ -141,10 +144,18 @@ export async function copyDriveFile(path, name) {
  * Drive or with Drive not connected here stays where it is (it costs LiveTools
  * nothing) and must not block removing the song.
  */
+// The file leaves the Drive for good (not the bin). Already gone is fine; a file
+// on another account's Drive (403) can't be reached from here and is left there.
+// Any other failure rejects, so the reference stays and the deletion can be retried.
 export async function deleteDriveFile(path) {
   try {
     await driveFetch(`${API}/${encodeURIComponent(driveIdOf(path))}`, { method: 'DELETE' });
   } catch (e) {
-    console.warn('File su Google Drive non eliminato', path, e.message);
+    if (e.status === 404) return;
+    if (e.status === 403) {
+      console.warn('File su Google Drive di un altro account: non eliminato', path);
+      return;
+    }
+    throw e;
   }
 }

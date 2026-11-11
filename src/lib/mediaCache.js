@@ -9,7 +9,11 @@ import { isLocalPath, setLocalFiles, stemsOf, videoOf } from '../shared/media.js
 import { driveMediaUrl, driveToken, isDrivePath } from '../shared/drive.js';
 
 // Files of the Free plan (local/…): only in this cache, nothing to download.
-setLocalFiles({ remove: (path) => invoke('delete_local_media', { path }).then(() => set(path, { ready: false, local: null })) });
+// A deleted cloud file also leaves this computer (evict).
+setLocalFiles({
+  remove: (path) => invoke('delete_local_media', { path }).then(() => set(path, { ready: false, local: null })),
+  evict: (path) => invoke('delete_cached_media', { path }).then(() => set(path, { ready: false, local: null })),
+});
 export const LOCAL_MISSING = 'File solo sul dispositivo che lo ha aggiunto: qui non c’è.';
 import { scoreOf } from '../shared/score.js';
 import { storage } from './firebase';

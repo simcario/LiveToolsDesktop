@@ -9,6 +9,7 @@ mod resample;
 pub mod stream;
 pub mod stretch;
 pub mod tempo;
+pub mod watch;
 
 pub use engine::{Engine, SongSpec, TrackMix};
 pub use render::ClickParams;

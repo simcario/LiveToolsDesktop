@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { engine } from '../lib/engine';
+import { engine, onDeviceChange } from '../lib/engine';
 import { OUTPUT_ROLES, outputOptions, parseRoute, routeValue } from '../lib/settings';
 import Icon from './Icon';
 import Meter from './Meter';
 
 const BUFFERS = [null, 64, 128, 256, 512, 1024, 2048];
 
-export default function SettingsModal({ settings, update, device, onClose }) {
+// plugged: names of the interfaces just plugged in (opened by App with a notice).
+export default function SettingsModal({ settings, update, device, plugged, onUse, onClose }) {
   const [devices, setDevices] = useState(null);
   const [mediaDir, setMediaDir] = useState('');
   const channels = device?.info?.channels || 2;
@@ -16,6 +17,8 @@ export default function SettingsModal({ settings, update, device, onClose }) {
   useEffect(() => {
     engine.devices().then(setDevices).catch(() => setDevices([]));
     invoke('media_dir').then(setMediaDir).catch(() => {});
+    // The list follows the interfaces plugged in and out.
+    return onDeviceChange(() => engine.devices().then(setDevices).catch(() => {}));
   }, []);
 
   useEffect(() => {
@@ -36,6 +39,26 @@ export default function SettingsModal({ settings, update, device, onClose }) {
           </button>
         </div>
         <div className="modal-body">
+          {plugged?.length > 0 && (
+            <div className="plugged" role="status">
+              <Icon name="sliders" size={18} />
+              <div className="plugged-text">
+                <strong>{plugged.length > 1 ? 'Nuove schede audio collegate' : 'Nuova scheda audio collegata'}</strong>
+                {plugged.map((name) => (
+                  <div key={name} className="plugged-row">
+                    <span>{name}</span>
+                    {device?.info?.name === name ? (
+                      <span className="hint">In uso</span>
+                    ) : (
+                      <button className="btn btn-primary btn-sm" onClick={() => onUse(name)}>
+                        Usa questa scheda
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="field-row">
             <label className="field">
               <span>Scheda audio</span>
@@ -86,6 +109,15 @@ export default function SettingsModal({ settings, update, device, onClose }) {
           {device?.info?.host === 'ASIO' && (
             <p className="hint">Con ASIO la frequenza di campionamento è quella impostata nel pannello del driver, e di solito nessun altro programma può usare la scheda.</p>
           )}
+          <label className="check">
+            <input type="checkbox" checked={settings.audioWatch} onChange={(e) => update({ audioWatch: e.target.checked })} />
+            Rileva le schede audio collegate e scollegate
+          </label>
+          <p className="hint">
+            {settings.audioWatch
+              ? 'Una scheda collegata apre questa finestra; se quella in uso si scollega, l’audio passa da solo alla predefinita.'
+              : 'Spento: niente avvisi e nessun cambio automatico. Se la scheda in uso si scollega, scegline un’altra qui.'}
+          </p>
 
           <div className="field">
             <span>Matrice uscite (per ruolo delle tracce)</span>

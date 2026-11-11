@@ -1,6 +1,7 @@
 // Builds the Windows installer and publishes it as an app update.
 //
 //   npm run installer                    installer of the current version (release/v<x.y.z>/)
+//   npm run installer:asio               personal installer with ASIO (release/personal/), never published
 //   npm run release -- patch|minor|major|<x.y.z> [--notes "..." | --notes-file f.md]
 //                                        bump the version, build, publish the update
 //   npm run release:publish [-- --notes "..."]
@@ -15,7 +16,7 @@
 //   github-token        GitHub token with "Contents: read & write" on the releases repo
 //                       (or the GITHUB_TOKEN env variable; to create the repo, a classic token with "repo")
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -119,7 +120,7 @@ async function fetchRedist() {
   }
 }
 
-function build(version) {
+function build(version, { asio = false } = {}) {
   if (!existsSync(paths.key)) fail(`Chiave di firma degli aggiornamenti mancante: ${paths.key}\n  Creala con: npx tauri signer generate -w "${paths.key}"`);
   step(`Build di ${PRODUCT} ${version} (${TOOLCHAIN})`);
   const env = {
@@ -132,12 +133,28 @@ function build(version) {
     const key = Object.keys(env).find((k) => k.toLowerCase() === 'path') || 'PATH';
     env[key] = `${MINGW_BIN};${env[key]}`;
   }
-  // Off by default: publishing an installer with ASIO needs one of the SDK's two licenses (see README.md).
-  const asio = process.env.LIVETOOLS_ASIO === '1';
+  // Only in the personal installer: publishing ASIO needs one of the SDK's two licenses (see README.md).
   if (asio) Object.assign(env, asioEnv(TOOLCHAIN));
   const r = spawnSync(`npx tauri build${asio ? ' --features asio' : ''}`, { cwd: root, env, stdio: 'inherit', shell: true });
   if (r.status !== 0) fail('Build non riuscita');
-  return collect(version);
+  return asio ? personal(version) : collect(version);
+}
+
+/**
+ * Moves the ASIO installer out of the bundle folder into release/personal/, so "publish"
+ * can't find it and upload it as an update.
+ */
+function personal(version) {
+  const nsis = join(tauriDir, 'target', 'release', 'bundle', 'nsis');
+  const setup = join(nsis, `${PRODUCT}_${version}_x64-setup.exe`);
+  const out = join(root, 'release', 'personal');
+  mkdirSync(out, { recursive: true });
+  const dest = join(out, `${PRODUCT}_${version}_x64-asio-setup.exe`);
+  copyFileSync(setup, dest);
+  for (const f of [setup, `${setup}.sig`]) if (existsSync(f)) rmSync(f);
+  console.log(`\n✔ Installer personale con ASIO: ${dest} (${(statSync(dest).size / 1024 ** 2).toFixed(1)} MB)`);
+  console.log('  Solo per questo PC: non va pubblicato né dato ad altri finché non c’è la licenza Steinberg.');
+  return { setup: dest };
 }
 
 /** Copies installer and signature into release/v<version>/ next to the update manifest. */
@@ -237,7 +254,13 @@ async function publish(version, files) {
 
 const notes = opt('notes-file') ? readFileSync(opt('notes-file'), 'utf8').trim() : opt('notes');
 
-if (command === 'installer') {
+if (process.env.LIVETOOLS_ASIO === '1' && command !== 'personal')
+  fail('ASIO non entra negli installer pubblicabili finché non c’è la licenza Steinberg: usa "npm run installer:asio"');
+
+if (command === 'personal') {
+  await fetchRedist();
+  build(currentVersion(), { asio: true });
+} else if (command === 'installer') {
   await fetchRedist();
   const version = currentVersion();
   build(version);
@@ -256,5 +279,5 @@ if (command === 'installer') {
   const version = currentVersion();
   await publish(version, collect(version, notes));
 } else {
-  fail('Comando sconosciuto: usa installer, release o publish');
+  fail('Comando sconosciuto: usa installer, personal, release o publish');
 }

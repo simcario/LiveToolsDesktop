@@ -9,6 +9,10 @@ import { CLICK_KINDS, CLICK_SOUNDS, DEFAULT_KIND, DEFAULT_SETTINGS, clickKind } 
 import { checkForUpdates, installUpdate, useUpdater } from '../lib/updater';
 import { pedalDevice, useBluetoothDevices } from '../lib/pedal';
 import { defaultNdiName, useNdiStatus } from '../lib/ndi';
+import { midiOutputs, midiTargeted } from '../lib/midi';
+import { instrumentsOf, ROUTE_OFF } from '../shared/midi-patch.js';
+import { describeKey, midiInputs, setLearning, unassign } from '../lib/midiLearn';
+import { rttText, STAGE_PARTS, useStageNetState } from '../lib/stageNet';
 import { DEFAULT_PEDAL, keyLabel, PEDAL_LAYOUTS, teachPedal, usePedalTest } from '../shared/score.js';
 import { auth } from '../lib/firebase';
 import { useAccount, useAuthUser } from '../lib/data';
@@ -37,6 +41,8 @@ const SECTIONS = [
   { id: 'general', label: 'Generale', icon: 'settings' },
   { id: 'transport', label: 'Trasporto', icon: 'metronome' },
   { id: 'pedal', label: 'Pedale & spartito', icon: 'file-text' },
+  { id: 'midi', label: 'MIDI', icon: 'music' },
+  { id: 'net', label: 'Rete locale', icon: 'radio' },
   { id: 'ndi', label: 'Uscite NDI', icon: 'radio' },
   { id: 'updates', label: 'Aggiornamenti', icon: 'download' },
 ];
@@ -156,6 +162,106 @@ const SETTINGS = [
     Control: PedalLayout,
   },
   {
+    id: 'midi.output',
+    section: 'midi',
+    category: 'MIDI',
+    title: 'Uscita',
+    description:
+      'L’interfaccia MIDI (o la tastiera USB) a cui vanno le patch dei brani: Bank Select, Program Change, Control Change e SysEx ' +
+      'scritti nella scheda MIDI del brano. Con rtpMIDI le uscite di rete compaiono qui come le altre.',
+    keywords: 'midi patch program change bank sysex tastiera nord interfaccia usb rtp rete',
+    Control: MidiOutput,
+  },
+  {
+    id: 'midi.auto',
+    section: 'midi',
+    category: 'MIDI',
+    title: 'Cambio patch automatico',
+    description:
+      'Manda le patch quando un brano diventa quello nel player: caricato, scelto nel Palco o preso da una transizione. ' +
+      'Lo stesso brano ricaricato (tonalità, tempo, cue) non le rimanda.',
+    keywords: 'midi automatico program change brano',
+    Control: MidiAuto,
+  },
+  {
+    id: 'midi.routes',
+    section: 'midi',
+    category: 'MIDI',
+    title: 'Uscita di ogni strumento',
+    description:
+      'Gli strumenti con una patch nei brani di questa scaletta. Ognuno può andare su un’altra uscita oppure non partire da questo ' +
+      'computer (per esempio se il tastierista manda le sue patch dal proprio).',
+    keywords: 'midi strumento tastiera routing mappa canale',
+    Control: MidiRoutes,
+  },
+  {
+    id: 'midi.learn',
+    section: 'midi',
+    category: 'MIDI learn',
+    title: 'Controlli assegnati',
+    description:
+      'Un controller MIDI (pedaliera, pad, fader) comanda i controlli di LiveTools. Con MIDI learn (Ctrl+M, o il pulsante con la nota ' +
+      'in alto a destra) i controlli assegnabili si illuminano: tocca un controllo, poi premi un tasto o muovi un fader sul controller. ' +
+      'Esc esce, Canc toglie il comando al controllo scelto. Le assegnazioni restano su questo computer.',
+    keywords: 'midi learn controller pedaliera pedale tasto fader assegna mappa comando',
+    Control: MidiLearnList,
+  },
+  {
+    id: 'midi.inputs',
+    section: 'midi',
+    category: 'MIDI learn',
+    title: 'Ingressi',
+    description:
+      'Da quali ingressi MIDI arrivano i comandi. Si aprono solo mentre ci sono controlli assegnati o MIDI learn è attivo; ' +
+      'un ingresso usato da un altro programma non si può aprire.',
+    keywords: 'midi ingresso input controller',
+    Control: MidiInputs,
+  },
+  {
+    id: 'net.status',
+    section: 'net',
+    category: 'Rete locale',
+    title: 'Band in rete',
+    description:
+      'Sulla stessa rete Wi-Fi (anche senza internet) chi ha “Guida” manda il brano sul palco a chi ha “Segui palco”, ' +
+      'computer e tablet: si trovano da soli e il brano arriva subito. Con internet passa anche dal cloud, come sempre. ' +
+      'La prima volta Windows chiede di consentire LiveTools sulle reti private: rispondi Consenti.',
+    keywords: 'rete locale lan wifi wi-fi offline senza internet palco sync guida segui band router',
+    Control: NetStatus,
+  },
+  {
+    id: 'net.part',
+    section: 'net',
+    category: 'Rete locale',
+    title: 'Ruolo sul palco',
+    description: 'Come ti vede il resto della band nell’elenco di chi è collegato.',
+    keywords: 'ruolo strumento band nome',
+    Control: NetPart,
+  },
+  {
+    id: 'net.address',
+    section: 'net',
+    category: 'Rete locale',
+    title: 'Indirizzo di chi guida',
+    description:
+      'Di solito vuoto: chi segue trova da solo chi guida la stessa scaletta. Se il router blocca la ricerca, scrivi qui ' +
+      'l’indirizzo che compare su chi guida (per esempio 192.168.1.20).',
+    keywords: 'indirizzo ip manuale router',
+    Control: NetAddress,
+  },
+  {
+    id: 'net.backup',
+    section: 'net',
+    category: 'Rete locale',
+    title: 'Computer di riserva',
+    description:
+      'Un secondo computer che suona insieme a quello di chi guida: stesso brano, stesso play e stop, stesso punto, sulle sue uscite. ' +
+      'Accendilo qui e premi “Segui palco”. Se il computer principale si ferma, sposta i cavi (o usa un commutatore audio): la riserva ' +
+      'sta già suonando. Se il principale sparisce dalla rete, la riserva continua e, se lo permetti, guida la band al suo posto.',
+    keywords: 'riserva backup ridondanza failover secondo computer emergenza crash commutatore',
+    Control: NetBackup,
+  },
+  {
     id: 'ndi.video',
     section: 'ndi',
     category: 'NDI',
@@ -200,7 +306,7 @@ const SETTINGS = [
 
 const matches = (s, q) => `${s.category} ${s.title} ${s.description} ${s.keywords || ''}`.toLowerCase().includes(q);
 
-export default function PreferencesPanel({ settings, update, onClose, initialSection }) {
+export default function PreferencesPanel({ settings, update, onClose, initialSection, items = [], onSendMidi }) {
   const [section, setSection] = useState(initialSection || SECTIONS[0].id);
   const [query, setQuery] = useState('');
   const [busy, setBusy] = useState(false);
@@ -252,6 +358,9 @@ export default function PreferencesPanel({ settings, update, onClose, initialSec
                 settings={settings}
                 update={update}
                 onBusy={setBusy}
+                items={items}
+                onSendMidi={onSendMidi}
+                onClose={onClose}
               />
             ))}
             {!shown.length && <p className="hint">Nessuna impostazione trovata.</p>}
@@ -498,6 +607,288 @@ function MediaLocation({ onBusy, settings, update, ...item }) {
         </div>
       )}
       {error && <p className="pref-error">{error}</p>}
+    </PrefItem>
+  );
+}
+
+// ---------- MIDI ----------
+
+// The MIDI outputs, read when the section opens and with “Aggiorna” (an interface plugged in later).
+function useMidiOutputs() {
+  const [ports, setPorts] = useState(null);
+  const [error, setError] = useState(null);
+  const refresh = () =>
+    midiOutputs()
+      .then((p) => {
+        setPorts(p);
+        setError(null);
+      })
+      .catch((e) => {
+        setPorts([]);
+        setError(String(e?.message || e));
+      });
+  useEffect(() => {
+    refresh();
+  }, []);
+  return { ports, error, refresh };
+}
+
+const setMidi = (update, patch) => update((s) => ({ midi: { ...s.midi, ...patch } }));
+
+function MidiOutput({ settings, update, onBusy, items, onSendMidi, ...item }) {
+  const { ports, error, refresh } = useMidiOutputs();
+  const [test, setTest] = useState(null);
+  const out = settings.midi.output;
+  const sendNow = async () => {
+    setTest('Invio…');
+    try {
+      const n = await onSendMidi?.();
+      setTest(n == null ? 'Nessun brano nel player con patch MIDI.' : `Inviati ${n} messaggi.`);
+    } catch (e) {
+      setTest(String(e?.message || e));
+    }
+  };
+  return (
+    <PrefItem {...item} modified={!!out} onReset={() => setMidi(update, { output: D.midi.output })}>
+      <div className="pref-row">
+        <select className="select pref-select" value={out} onChange={(e) => setMidi(update, { output: e.target.value })}>
+          <option value="">Nessuna</option>
+          {(ports || []).map((p) => (
+            <option key={p} value={p}>
+              {p}
+            </option>
+          ))}
+          {out && ports && !ports.includes(out) && <option value={out}>{out} (non collegata)</option>}
+        </select>
+        <button className="btn btn-sm" onClick={refresh} title="Cerca di nuovo le interfacce MIDI collegate">
+          Aggiorna
+        </button>
+        {midiTargeted(settings.midi) && (
+          <button className="btn btn-sm" onClick={sendNow} title="Manda adesso le patch del brano nel player">
+            Invia ora
+          </button>
+        )}
+      </div>
+      {ports && !ports.length && !error && <span className="hint">Nessuna interfaccia MIDI collegata.</span>}
+      {test && <span className="hint">{test}</span>}
+      {error && <p className="pref-error">{error}</p>}
+    </PrefItem>
+  );
+}
+
+function MidiAuto({ settings, update, onBusy, items, onSendMidi, ...item }) {
+  const on = settings.midi.auto;
+  return (
+    <PrefItem {...item} modified={on !== D.midi.auto} onReset={() => setMidi(update, { auto: D.midi.auto })}>
+      <label className="check">
+        <input type="checkbox" checked={on} onChange={(e) => setMidi(update, { auto: e.target.checked })} />
+        Invia le patch a ogni cambio di brano
+      </label>
+    </PrefItem>
+  );
+}
+
+function MidiRoutes({ settings, update, onBusy, items, onSendMidi, ...item }) {
+  const { ports } = useMidiOutputs();
+  const routes = settings.midi.routes;
+  const names = instrumentsOf(items);
+  const setRoute = (name, value) => {
+    const next = { ...routes };
+    if (value) next[name] = value;
+    else delete next[name];
+    setMidi(update, { routes: next });
+  };
+  return (
+    <PrefItem {...item} modified={Object.keys(routes).length > 0} onReset={() => setMidi(update, { routes: {} })}>
+      {!names.length && <span className="hint">Nessun brano di questa scaletta ha patch MIDI.</span>}
+      {names.map((name) => {
+        const r = routes[name] || '';
+        return (
+          <div key={name} className="pref-row pref-midi-route">
+            <span className="pref-midi-name">{name}</span>
+            <select className="select pref-select" value={r} onChange={(e) => setRoute(name, e.target.value)}>
+              <option value="">{settings.midi.output ? `Uscita: ${settings.midi.output}` : 'Uscita (nessuna)'}</option>
+              {(ports || []).map((p) => (
+                <option key={p} value={p}>
+                  {p}
+                </option>
+              ))}
+              {r && r !== ROUTE_OFF && ports && !ports.includes(r) && <option value={r}>{r} (non collegata)</option>}
+              <option value={ROUTE_OFF}>Non inviare da questo computer</option>
+            </select>
+          </div>
+        );
+      })}
+    </PrefItem>
+  );
+}
+
+function MidiLearnList({ settings, update, onBusy, items, onSendMidi, onClose, ...item }) {
+  const entries = Object.entries(settings.midi.map).sort((a, b) => a[1].name.localeCompare(b[1].name));
+  return (
+    <PrefItem {...item} modified={entries.length > 0} onReset={() => update((s) => ({ midi: { ...s.midi, map: {} } }))}>
+      <div className="pref-row">
+        <button
+          className="btn btn-sm"
+          onClick={() => {
+            onClose?.();
+            setLearning(true);
+          }}
+          title="Chiude le impostazioni e attiva MIDI learn (Ctrl+M)"
+        >
+          Attiva MIDI learn
+        </button>
+      </div>
+      {!entries.length && <span className="hint">Nessun controllo assegnato.</span>}
+      {entries.map(([id, a]) => (
+        <div key={id} className="pref-row pref-midi-route">
+          <span className="pref-midi-name" title={a.name}>
+            {a.name}
+          </span>
+          <span className="pref-value mono pref-midi-key">{describeKey(a.key)}</span>
+          <button className="btn btn-sm btn-ghost" onClick={() => unassign(update, id)} title="Togli il comando MIDI">
+            <Icon name="x" size={12} />
+          </button>
+        </div>
+      ))}
+    </PrefItem>
+  );
+}
+
+function MidiInputs({ settings, update, onBusy, items, onSendMidi, onClose, ...item }) {
+  const [ports, setPorts] = useState(null);
+  const refresh = () =>
+    midiInputs()
+      .then(setPorts)
+      .catch(() => setPorts([]));
+  useEffect(() => {
+    refresh();
+  }, []);
+  const chosen = settings.midi.inputs;
+  const all = !Array.isArray(chosen);
+  const setInputs = (inputs) => update((s) => ({ midi: { ...s.midi, inputs } }));
+  const toggle = (name, on) => {
+    const cur = all ? (ports || []).map((p) => p.name) : chosen;
+    setInputs(on ? [...new Set([...cur, name])] : cur.filter((n) => n !== name));
+  };
+  return (
+    <PrefItem {...item} modified={!all} onReset={() => setInputs(null)}>
+      <label className="check">
+        <input type="checkbox" checked={all} onChange={(e) => setInputs(e.target.checked ? null : (ports || []).map((p) => p.name))} />
+        Tutti gli ingressi
+      </label>
+      {(ports || []).map((p) => (
+        <div key={p.name} className="pref-row">
+          <label className="check">
+            <input type="checkbox" checked={all || chosen.includes(p.name)} disabled={all} onChange={(e) => toggle(p.name, e.target.checked)} />
+            {p.name}
+          </label>
+          {p.listening && <span className="pref-tag">In ascolto</span>}
+          {p.error && <span className="pref-error">{p.error}</span>}
+        </div>
+      ))}
+      {ports && !ports.length && <span className="hint">Nessun ingresso MIDI collegato.</span>}
+      <div className="pref-row">
+        <button className="btn btn-sm" onClick={refresh}>
+          Aggiorna
+        </button>
+      </div>
+    </PrefItem>
+  );
+}
+
+// ---------- Rete locale ----------
+
+const setNet = (update, patch) => update((s) => ({ stageNet: { ...s.stageNet, ...patch } }));
+
+function NetStatus({ settings, update, onBusy, items, onSendMidi, onClose, ...item }) {
+  const net = useStageNetState();
+  const [address, setAddress] = useState(null);
+  useEffect(() => {
+    invoke('stage_net_address').then(setAddress).catch(() => {});
+  }, [net.hosting]);
+  const on = settings.stageNet.enabled;
+  let status;
+  if (!on) status = 'Spenta: la band si sincronizza solo via internet.';
+  else if (net.hosting) status = `Guidi la band${address ? ` da ${address}` : ''}: ${net.peers.length === 1 ? '1 collegato' : `${net.peers.length} collegati`}.`;
+  else if (net.connected) status = `Segui ${net.host?.name || net.joined} · ${rttText(net.rtt)}`;
+  else if (settings.followStage) status = net.joined ? `Cerco di collegarmi a ${net.joined}…` : 'Cerco chi guida questa scaletta in rete…';
+  else status = 'Attiva “Guida” o “Segui palco” nella barra in alto.';
+  return (
+    <PrefItem {...item} modified={!on} onReset={() => setNet(update, { enabled: true })}>
+      <label className="check">
+        <input type="checkbox" checked={on} onChange={(e) => setNet(update, { enabled: e.target.checked })} />
+        Usa la rete locale
+      </label>
+      <span className="hint">{status}</span>
+      {net.error && <p className="pref-error">{net.error}</p>}
+      {net.peers.map((p) => (
+        <div key={p.id || p.addr} className="pref-row pref-midi-route">
+          <span className="pref-midi-name">{p.name}</span>
+          <span className="pref-value">{[p.part, p.device === 'tablet' ? 'tablet' : 'computer'].filter(Boolean).join(' · ')}</span>
+          <span className="pref-value mono">{rttText(p.rtt)}</span>
+        </div>
+      ))}
+    </PrefItem>
+  );
+}
+
+function NetPart({ settings, update, onBusy, items, onSendMidi, onClose, ...item }) {
+  const part = settings.stageNet.part;
+  return (
+    <PrefItem {...item} modified={!!part} onReset={() => setNet(update, { part: '' })}>
+      <select className="select pref-select" value={part} onChange={(e) => setNet(update, { part: e.target.value })}>
+        <option value="">Nessuno</option>
+        {STAGE_PARTS.map((x) => (
+          <option key={x} value={x}>
+            {x}
+          </option>
+        ))}
+      </select>
+    </PrefItem>
+  );
+}
+
+function NetBackup({ settings, update, onBusy, items, onSendMidi, onClose, ...item }) {
+  const { backup, takeover } = settings.stageNet;
+  return (
+    <PrefItem {...item} modified={!!backup || !takeover} onReset={() => setNet(update, { backup: false, takeover: true })}>
+      <label className="check">
+        <input type="checkbox" checked={!!backup} onChange={(e) => setNet(update, { backup: e.target.checked })} />
+        Questo computer è la riserva
+      </label>
+      <label className="check">
+        <input type="checkbox" checked={takeover !== false} disabled={!backup} onChange={(e) => setNet(update, { takeover: e.target.checked })} />
+        Se il principale sparisce dalla rete, guida la band al suo posto
+      </label>
+      {backup && !settings.followStage && <span className="hint">Premi “Segui palco” per agganciarti a chi guida.</span>}
+    </PrefItem>
+  );
+}
+
+function NetAddress({ settings, update, onBusy, items, onSendMidi, onClose, ...item }) {
+  const net = useStageNetState();
+  const saved = settings.stageNet.address;
+  const [draft, setDraft] = useState(saved);
+  useEffect(() => setDraft(saved), [saved]);
+  const commit = () => draft.trim() !== saved && setNet(update, { address: draft.trim() });
+  return (
+    <PrefItem {...item} modified={!!saved} onReset={() => setNet(update, { address: '' })}>
+      <div className="pref-row">
+        <input
+          className="input"
+          value={draft}
+          placeholder="Trovato da solo"
+          spellCheck={false}
+          aria-label="Indirizzo di chi guida"
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+        />
+      </div>
+      {net.beacons.length > 0 && (
+        <span className="hint">In rete: {net.beacons.map((b) => `${b.name} (${b.title || 'scaletta'}) ${b.addr}`).join(' · ')}</span>
+      )}
     </PrefItem>
   );
 }
@@ -869,7 +1260,12 @@ function PedalKeys({ settings, update, onBusy, ...item }) {
           {pedal[a].map((k) => (
             <span key={k} className="kbd pedal-key">
               {keyLabel(k)}
-              <button onClick={() => setPedal(settings, update, { [a]: pedal[a].filter((x) => x !== k) })} title="Togli questo tasto">
+              <button
+                onClick={() =>
+                  confirm(`Togliere il tasto ${keyLabel(k)} dal pedale?`) && setPedal(settings, update, { [a]: pedal[a].filter((x) => x !== k) })
+                }
+                title="Togli questo tasto"
+              >
                 <Icon name="x" size={10} />
               </button>
             </span>

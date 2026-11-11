@@ -38,9 +38,10 @@ export default function ScreenImage({ setlist, canEdit, notify }) {
   };
 
   const remove = async () => {
+    if (!confirm(`Togliere l’immagine “${image.name}” dallo schermo? Il file viene eliminato definitivamente dallo storage cloud e da questo computer.`)) return;
     try {
+      await deleteMediaFile(storage, image.path, target);
       await save(null);
-      await deleteMediaFile(storage, image.path, target).catch(() => {});
     } catch (e) {
       notify(`Immagine non tolta: ${explainDenied(e)}`, true);
     }

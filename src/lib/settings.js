@@ -10,6 +10,7 @@ const MIX_KEY = 'livetools-desktop:mix';
 export const DEFAULT_SETTINGS = {
   audioDevice: null,
   bufferSize: null,
+  audioWatch: true, // interfaces plugged in and out: notice and automatic switch (audio/watch.rs)
   outputs: {
     main: { start: 0, mode: 'stereo' },
     click: { start: 2, mode: 'mono' },
@@ -58,6 +59,14 @@ export const DEFAULT_SETTINGS = {
   ndi: { video: { enabled: false, name: '' }, prompter: { enabled: false, name: '' } },
   updateCheck: true, // look for a new release at startup (never installs on its own)
   pedal: DEFAULT_PEDAL, // page turner of the PDF score: keys for next / previous page, layout
+  // MIDI out (lib/midi.js): output port, patches sent when a song becomes the one in the player,
+  // and per instrument (patch label) another port or "off" (not sent from here).
+  // MIDI learn (lib/midiLearn.js): map = control id → { key, name }; inputs listened to (null = all).
+  midi: { output: '', auto: true, routes: {}, map: {}, inputs: null },
+  // Rete locale di palco (lib/stageNet.js): on/off, address of the host written by hand, role shown to the band.
+  // backup: this computer is the "computer di riserva" (lib/backup.js): it follows the song and the transport
+  // of who leads and plays along; takeover: it leads the band by itself when who leads is gone.
+  stageNet: { enabled: true, address: '', part: '', backup: false, takeover: true },
 };
 
 function read(key, fallback) {
@@ -91,6 +100,8 @@ function merge(saved) {
       prompter: { ...DEFAULT_SETTINGS.ndi.prompter, ...(saved?.ndi?.prompter || {}) },
     },
     pedal: pedalOf(saved?.pedal),
+    stageNet: { ...DEFAULT_SETTINGS.stageNet, ...(saved?.stageNet || {}) },
+    midi: { ...DEFAULT_SETTINGS.midi, ...(saved?.midi || {}), routes: { ...(saved?.midi?.routes || {}) }, map: { ...(saved?.midi?.map || {}) } },
     zones: {
       left: { ...DEFAULT_SETTINGS.zones.left, ...(saved?.zones?.left || {}) },
       lower: { ...DEFAULT_SETTINGS.zones.lower, ...(saved?.zones?.lower || {}) },

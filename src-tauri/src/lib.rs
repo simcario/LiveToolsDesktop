@@ -5,8 +5,10 @@
 mod audio;
 mod bluetooth;
 mod media;
+mod midi;
 mod ndi;
 mod oauth;
+mod stagenet;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -33,6 +35,12 @@ fn open_audio_device(engine: State<'_, Engine>, name: Option<String>, buffer: Op
 #[tauri::command(async)]
 fn engine_load(engine: State<'_, Engine>, song: SongSpec) -> Result<SongLoad, String> {
     engine.0.lock().load(song)
+}
+
+/// Automatic detection of the audio interfaces plugged in and out (audio/watch.rs), on or off.
+#[tauri::command]
+fn audio_watch(enabled: bool) {
+    audio::watch::set_enabled(enabled);
 }
 
 #[tauri::command]
@@ -173,10 +181,22 @@ pub fn run() {
         .manage(monitor.clone())
         .setup(move |app| {
             media::init(app.handle());
-            // ~30 status updates per second to every window (transport, meters, video sync).
+            // Interfaces plugged in and out: the default output takes over a lost one.
+            let (reopen, emit) = (app.handle().clone(), app.handle().clone());
+            audio::watch::start(
+                app.state::<Engine>().0.lock().host_handle(),
+                monitor.clone(),
+                move || reopen.state::<Engine>().0.lock().recover_device(),
+                move |change| {
+                    let _ = emit.emit("audio-devices", change);
+                },
+            );
+            // ~30 status updates per second to every window (transport, meters, video sync)
+            // while something plays; at rest only the changes (StatusPacer).
             let handle = app.handle().clone();
             let mut jump_seen = 0;
             let mut next_seen = 0;
+            let mut pacer = audio::engine::StatusPacer::new();
             std::thread::Builder::new()
                 .name("livetools-status".into())
                 .spawn(move || loop {
@@ -194,12 +214,26 @@ pub fn run() {
                         next_seen = changed;
                         handle.state::<Engine>().0.lock().next_fired(changed);
                     }
-                    let _ = handle.emit("engine-status", monitor.status());
+                    let status = monitor.status();
+                    if pacer.admit(&status) {
+                        let _ = handle.emit("engine-status", status);
+                    }
                 })?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            midi::midi_outputs,
+            midi::midi_send,
+            midi::midi_release,
+            midi::midi_inputs,
+            midi::midi_listen,
+            stagenet::stage_net_host,
+            stagenet::stage_net_publish,
+            stagenet::stage_net_scan,
+            stagenet::stage_net_join,
+            stagenet::stage_net_address,
             audio_devices,
+            audio_watch,
             open_audio_device,
             engine_load,
             engine_unload,
@@ -226,6 +260,7 @@ pub fn run() {
             track_onsets,
             media::media_dir,
             media::media_info,
+            media::disk_space,
             media::set_media_dir,
             media::cache_status,
             media::download_media,
@@ -233,6 +268,8 @@ pub fn run() {
             media::store_media_chunk,
             media::store_media_done,
             media::delete_local_media,
+            media::delete_cached_media,
+            media::delete_live_cues,
             oauth::google_sign_in,
             bluetooth::bluetooth_devices,
             ndi::ndi_status,

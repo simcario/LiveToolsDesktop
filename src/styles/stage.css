@@ -142,11 +142,13 @@ input.fader::-moz-range-thumb {
   background: #070a10;
   overflow: hidden;
 }
+/* The level is a transform (Meter.jsx): no layout 30 times a second for each meter. */
 .meter i span {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  inset: 0;
+  transform: scaleY(0);
+  transform-origin: 50% 100%;
+  will-change: transform;
   background: linear-gradient(0deg, var(--yes) 0%, var(--yes) 70%, var(--warn) 86%, var(--danger) 100%);
 }
 .meter.h {
@@ -159,8 +161,8 @@ input.fader::-moz-range-thumb {
   height: 3px;
 }
 .meter.h i span {
-  top: 0;
-  right: auto;
+  transform: scaleX(0);
+  transform-origin: 0 50%;
   background: linear-gradient(90deg, var(--yes) 0%, var(--yes) 70%, var(--warn) 86%, var(--danger) 100%);
 }
 .m-db {
@@ -864,20 +866,28 @@ input.fader::-moz-range-thumb {
     background: var(--surface);
   }
 }
+/* Played part and playhead move by transform only (StageView Overview): no layout or
+   repaint of the waveform 60 times a second. */
 .st-played {
   position: absolute;
   left: 0;
   top: var(--bubble-h);
   bottom: 0;
+  width: 100%;
+  transform: scaleX(0);
+  transform-origin: 0 0;
+  will-change: transform;
   background: rgba(7, 10, 16, 0.58);
   pointer-events: none;
 }
 .st-head {
   position: absolute;
+  left: 0;
   top: 0;
   bottom: 0;
   width: 2px;
   margin-left: -1px;
+  will-change: transform;
   background: #fff;
   box-shadow: 0 0 6px rgba(255, 255, 255, 0.7);
   pointer-events: none;

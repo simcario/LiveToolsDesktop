@@ -225,7 +225,10 @@ Firebase riceve l'ID token: stesso utente dell'app web.
 - Su Windows si usa WASAPI (condiviso). ASIO è dietro la feature Cargo `asio`, spenta di default:
   - per provarlo: `scoop install llvm`, poi `npm run app:asio` (al primo avvio scarica l'SDK Steinberg in
     `%USERPROFILE%\.asio_sdk`, fuori dal repo perché non è ridistribuibile);
-  - per un installer: `LIVETOOLS_ASIO=1 npm run installer`. **Prima di pubblicarlo** serve una delle due licenze
+  - per un installer personale: `npm run installer:asio`. Lo mette in `release/personal/` e lo toglie dalla
+    cartella del bundle, così `release:publish` non può caricarlo; `installer` e `release` rifiutano
+    `LIVETOOLS_ASIO=1`. Un aggiornamento dall'app installa la versione pubblica, senza ASIO: dopo ogni release
+    rilancia `npm run installer:asio`. **Prima di pubblicarlo** serve una delle due licenze
     dell'SDK: l'accordo firmato da entrambe le parti (`Steinberg ASIO Licensing Agreement.pdf` nell'SDK, gratuito), oppure
     il rilascio dell'app sotto GPLv3. Un repo pubblico senza licenza non basta. Il nome o il logo ASIO seguono le
     *Usage Guidelines* con entrambe;

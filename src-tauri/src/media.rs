@@ -141,6 +141,48 @@ pub async fn media_info(app: AppHandle) -> Result<MediaInfo, String> {
     .map_err(|e| e.to_string())?
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiskSpace {
+    path: String,
+    free: u64,
+    total: u64,
+}
+
+/// Free space on the disk of the media folder (controllo pre-concerto); None where it cannot be read.
+#[tauri::command]
+pub fn disk_space(app: AppHandle) -> Result<Option<DiskSpace>, String> {
+    let root = media_root(&app)?;
+    let _ = fs::create_dir_all(&root);
+    Ok(free_space(&root).map(|(free, total)| DiskSpace { path: root.to_string_lossy().into_owned(), free, total }))
+}
+
+#[cfg(windows)]
+fn free_space(dir: &Path) -> Option<(u64, u64)> {
+    use windows::core::HSTRING;
+    use windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
+    let (mut free, mut total) = (0u64, 0u64);
+    unsafe { GetDiskFreeSpaceExW(&HSTRING::from(dir.as_os_str()), Some(&mut free), Some(&mut total), None) }.ok()?;
+    Some((free, total))
+}
+
+#[cfg(unix)]
+fn free_space(dir: &Path) -> Option<(u64, u64)> {
+    use std::os::unix::ffi::OsStrExt;
+    let path = std::ffi::CString::new(dir.as_os_str().as_bytes()).ok()?;
+    let mut st: libc::statvfs = unsafe { std::mem::zeroed() };
+    if unsafe { libc::statvfs(path.as_ptr(), &mut st) } != 0 {
+        return None;
+    }
+    let block = st.f_frsize as u64;
+    Some((st.f_bavail as u64 * block, st.f_blocks as u64 * block))
+}
+
+#[cfg(not(any(windows, unix)))]
+fn free_space(_dir: &Path) -> Option<(u64, u64)> {
+    None
+}
+
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct MoveProgress {
@@ -465,6 +507,36 @@ pub fn store_media_done(app: AppHandle, path: String, size: u64) -> Result<Strin
     Ok(dest.to_string_lossy().into_owned())
 }
 
+/// Deletes a file from this device together with what was made from it next
+/// to it: `<name>.peaks`, `<name>.sync.json`, the transposed copies
+/// `<name>.k…r….wav` and a half download `.part`. Then the folders left empty
+/// (the song's folder once its last file is gone).
+fn remove_with_derived(app: &AppHandle, path: &str) -> Result<(), String> {
+    let file = local_path(app, path)?;
+    let mut failed = None;
+    let mut remove = |p: &Path| {
+        if let Err(e) = fs::remove_file(p) {
+            if e.kind() != std::io::ErrorKind::NotFound && failed.is_none() {
+                failed = Some(format!("{}: {e}", p.display()));
+            }
+        }
+    };
+    remove(&file);
+    remove(&file.with_extension("part"));
+    if let (Some(dir), Some(name)) = (file.parent(), file.file_name().and_then(|n| n.to_str())) {
+        let prefix = format!("{name}.");
+        if let Ok(entries) = fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                if entry.file_name().to_str().is_some_and(|n| n.starts_with(&prefix)) {
+                    remove(&entry.path());
+                }
+            }
+        }
+    }
+    prune(&media_root(app)?);
+    failed.map_or(Ok(()), |e| Err(format!("File non eliminato dal dispositivo ({e})")))
+}
+
 /// Deletes a file of the Free plan (paths `local/…`): it exists only in this
 /// cache, so removing the stem removes the file.
 #[tauri::command]
@@ -472,9 +544,39 @@ pub fn delete_local_media(app: AppHandle, path: String) -> Result<(), String> {
     if !path.starts_with("local/") {
         return Err(format!("Non è un file locale: {path}"));
     }
-    let local = local_path(&app, &path)?;
-    match fs::remove_file(&local) {
-        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.to_string()),
-        _ => Ok(()),
+    remove_with_derived(&app, &path)
+}
+
+/// Deletes the live cue tracks of a song made on this computer
+/// (`local/cues/{id}-{hash}.wav` and what was made from them), except `keep`:
+/// every edit of the cues makes a new one.
+#[tauri::command]
+pub fn delete_live_cues(app: AppHandle, id: String, keep: Option<String>) -> Result<(), String> {
+    if id.is_empty() || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
+        return Err(format!("Id non valido: {id}"));
     }
+    let dir = media_root(&app)?.join("local").join("cues");
+    let Ok(entries) = fs::read_dir(&dir) else { return Ok(()) };
+    let keep = keep.as_deref().and_then(|k| Path::new(k).file_name().and_then(|n| n.to_str()).map(String::from));
+    let prefix = format!("{id}-");
+    let mut failed = None;
+    for entry in entries.flatten() {
+        let Some(name) = entry.file_name().to_str().map(String::from) else { continue };
+        if !name.starts_with(&prefix) || keep.as_deref().is_some_and(|k| name.starts_with(k)) {
+            continue;
+        }
+        if let Err(e) = fs::remove_file(entry.path()) {
+            if e.kind() != std::io::ErrorKind::NotFound && failed.is_none() {
+                failed = Some(format!("{name}: {e}"));
+            }
+        }
+    }
+    failed.map_or(Ok(()), |e| Err(format!("Traccia cue non eliminata dal dispositivo ({e})")))
+}
+
+/// Deletes the copy of a cloud file downloaded here, once the file has been
+/// deleted from the cloud.
+#[tauri::command]
+pub fn delete_cached_media(app: AppHandle, path: String) -> Result<(), String> {
+    remove_with_derived(&app, &path)
 }

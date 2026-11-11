@@ -10,6 +10,7 @@
 // analysis, which lands where the reference stem enters: with an intro without
 // it, bar 1 goes back to where the audio starts (see lib/arrange.js leadToAudio).
 import { invoke } from '@tauri-apps/api/core';
+import { tempoChangesOf } from '../shared/tempoMap.js';
 
 const KEY = 'livetools-desktop:sync';
 const CLICK_RE = /\b(click|clic|metro(nome)?)\b/i;
@@ -101,10 +102,21 @@ export const rangeKey = (item) => {
   return `${g.from ?? ''}|${g.to ?? ''}`;
 };
 
+// Seconds before the first tempo change of the song (Arrangement, lane Click · Tempo).
+function beforeFirstChange(item) {
+  const first = tempoChangesOf(item)[0];
+  const bpm = Number(item.bpm);
+  if (!first || !(bpm > 0)) return null;
+  const sig = sigInfo(item.timeSig);
+  return ((first.bar - 1) * sig.beats * 60) / bpm / (sig.compound ? 3 : 1);
+}
+
 export function analyze(item, source, local) {
   const sig = sigInfo(item.timeSig);
   const g = gridOf(item);
-  const section = source.mode === 'rhythm' && tempoChanges(item) ? firstSection(item) : null;
+  // A rhythm stem is measured where the tempo is the song's: before a change in the sections or in the tempo lane.
+  const limits = source.mode === 'rhythm' ? [tempoChanges(item) ? firstSection(item) : null, beforeFirstChange(item)].filter((x) => x > 0) : [];
+  const section = limits.length ? Math.min(...limits) : null;
   return invoke('analyze_sync', {
     request: {
       path: local,
