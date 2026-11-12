@@ -48,12 +48,19 @@ pub struct VideoSource {
     pub fade_in: f64,
     #[serde(default, rename = "fadeOut")]
     pub fade_out: f64,
+    /// Where the picture stops (seconds of the video, 0 = the end of the file): black after.
+    #[serde(default)]
+    pub end: f64,
 }
 
 /// Level of the picture at `t` seconds of a video `duration` long (as fadeLevel in media.js).
 #[cfg_attr(not(windows), allow(dead_code))]
-fn fade_level(t: f64, duration: f64, fade_in: f64, fade_out: f64) -> f32 {
+fn fade_level(t: f64, duration: f64, fade_in: f64, fade_out: f64, end: f64) -> f32 {
     let mut g = 1f64;
+    let duration = if end > 0.0 { if duration > 0.0 { duration.min(end) } else { end } } else { duration };
+    if end > 0.0 && t >= duration {
+        return 0.0;
+    }
     if fade_in > 0.0 {
         g = g.min(t / fade_in);
     }
@@ -207,7 +214,7 @@ fn video_loop(sender: Sender, stop: Arc<AtomicBool>, shared: Arc<Shared>, monito
             // The video keeps its own times, slaved to the engine like the video window.
             let frame = decoder.as_mut().and_then(|(d, s)| {
                 let t = monitor.position() - s.offset;
-                let level = fade_level(t, d.duration(), s.fade_in, s.fade_out);
+                let level = fade_level(t, d.duration(), s.fade_in, s.fade_out, s.end);
                 d.frame_at(t).map(|f| (f, level))
             });
             match frame {

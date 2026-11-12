@@ -19,7 +19,8 @@ import InsertBarsModal from './InsertBarsModal';
 import { closeLeadingGap, leadToAudio, cutAt, keepGrid, moveSegment, removeSegment, segmentEnd, segmentIndexAt, snapToBeat, stemRegions, toggleSegmentMute, trimSegment } from '../lib/arrange';
 import { clearHistory, recordStep, travel, useHistory } from '../lib/arrangeHistory';
 import { discardDraft, editDraft, saveDraft, useDrafts } from '../lib/drafts';
-import { AUTO_MAX_DB, AUTO_MIN_DB, automationDb, automationOf, regionsOf, stemsOf } from '../shared/media.js';
+import { AUTO_MAX_DB, AUTO_MIN_DB, automationDb, automationMutedAt, automationOf, automationRead, muteAutomationOf, muteSpans, regionsOf, stemsOf } from '../shared/media.js';
+import { hasAutomation, toggleRead, toggleWrite, useAutoWrite, writeMute } from '../lib/autoWrite';
 import { TIME_SIGNATURES } from '../shared/setlists.js';
 import { cleanTempoChanges, MAX_BPM, MAX_RAMP, MIN_BPM, tempoChangesOf } from '../shared/tempoMap.js';
 import { writeMix } from '../lib/songMix';
@@ -46,7 +47,7 @@ const TOOLS = [
   ['cut', 'scissors', 'Taglia dove clicchi', '3', 'crosshair'],
   ['mute', 'x', 'Muta / riattiva un segmento', '4', 'pointer'],
   ['erase', 'eraser', 'Elimina un segmento', '5', 'not-allowed'],
-  ['auto', 'automation', 'Automazione del volume: clic aggiunge un punto, trascina per spostarlo, doppio clic o Alt+clic lo toglie', '6', 'crosshair'],
+  ['auto', 'automation', 'Automazione: clic aggiunge un punto del volume, trascina per spostarlo, doppio clic o Alt+clic lo toglie · Ctrl+clic muta o riattiva da lì (Ctrl+clic su un bordo del mute lo toglie)', '6', 'crosshair'],
 ];
 
 // Volume automation drawn in the lane of a track, under the strip with the name: the
@@ -233,18 +234,47 @@ function draw(canvas, { width, height, scroll, pps, t0, tempo, rows, peaks, dura
         }
       }
     });
-    if (r.kind === 'audio' && r.auto && (r.auto.length || (autoTool && !r.stem.live))) drawAutomation(ctx, { y, width, tStart, pps, x, points: r.auto, active: autoTool });
+    if (r.kind === 'audio' && r.auto && (r.auto.length || r.muteAuto?.length || (autoTool && !r.stem.live)))
+      drawAutomation(ctx, { y, width, tStart, tEnd, pps, x, points: r.auto, mutes: r.muteAuto || [], read: r.read !== false, active: autoTool });
   });
 
   if (warp) drawWarp(ctx, { width, height, x, tStart, tEnd, rows, warp });
 }
 
-// Volume automation of a track: the line over its clips, its points with the Automazione tool.
-function drawAutomation(ctx, { y, width, tStart, pps, x, points, active }) {
+// Automation of a track: the spans its mute automation silences (dark, a red
+// line under the name), the volume as a line over its clips, its points with the
+// Automazione tool; dashed and faint with the R of the channel off (not played).
+function drawAutomation(ctx, { y, width, tStart, tEnd, pps, x, points, mutes, read, active }) {
   ctx.save();
   ctx.beginPath();
   ctx.rect(0, y + 1, width, LANE_H - 2);
   ctx.clip();
+  if (!read) {
+    ctx.globalAlpha = 0.45;
+    ctx.setLineDash([4, 3]);
+  }
+  muteSpans(mutes).forEach(({ from, to }) => {
+    if (to < tStart || from > tEnd) return;
+    const x0 = Math.max(-2, x(from));
+    const x1 = Math.min(width + 2, to === Infinity ? width + 2 : x(to));
+    ctx.fillStyle = 'rgba(2,6,15,0.55)';
+    ctx.fillRect(x0, y + AUTO_TOP - 2, x1 - x0, LANE_H - AUTO_TOP + 1);
+    ctx.fillStyle = '#ef4444';
+    ctx.fillRect(x0, y + AUTO_TOP - 3, x1 - x0, 2);
+  });
+  if (active) {
+    // The edges of the mute, grabbed by Ctrl+click.
+    ctx.fillStyle = '#ef4444';
+    mutes.forEach((m) => {
+      const px = x(m.t);
+      if (px < -6 || px > width + 6) return;
+      ctx.beginPath();
+      ctx.moveTo(px - 4, y + AUTO_TOP - 7);
+      ctx.lineTo(px + 4, y + AUTO_TOP - 7);
+      ctx.lineTo(px, y + AUTO_TOP - 1);
+      ctx.fill();
+    });
+  }
   ctx.strokeStyle = active ? '#fbbf24' : 'rgba(251,191,36,0.6)';
   ctx.lineWidth = active ? 1.5 : 1;
   ctx.beginPath();
@@ -585,7 +615,16 @@ function TempoEditor({ mark, left, top, editable, ignored, onBpm, onRamp, onSig,
 
 // Volume, pan and destination of the tracks are in the Mixer (Dettaglio → Mixer, F3).
 // saved: the mute of the tracks is the song's (who can edit it), not this computer's.
-function TrackHeader({ row, index, solos, onTrack, selected, onSelect, saved }) {
+// M of a track lit by its mute automation where the song is now (R on, playing).
+function useAutoMuted(row) {
+  const on = row.kind === 'audio' && row.read !== false && !!row.muteAuto?.length;
+  return useEngineStatus((s) => on && s.playing && !s.waiting && automationMutedAt(row.muteAuto, Math.max(0, s.position)));
+}
+
+// auto: { song, canEdit } for R/W of the channel (as Cubase): R = its automations are played
+// (saved with the song), W = while it plays its M (and its fader in the Mixer) writes them.
+function TrackHeader({ row, index, solos, onTrack, selected, onSelect, saved, auto }) {
+  const autoMuted = useAutoMuted(row);
   if (row.kind === 'click') {
     return (
       <div className="t-header" style={{ '--lane-color': ROLE_COLORS.click }}>
@@ -622,7 +661,10 @@ function TrackHeader({ row, index, solos, onTrack, selected, onSelect, saved }) 
     );
   }
   const { stem } = row;
-  const mute = saved ? !!stem.muted : (getMix(stem.id).mute ?? !!stem.muted);
+  const own = saved ? !!stem.muted : (getMix(stem.id).mute ?? !!stem.muted);
+  const mute = own || autoMuted;
+  const rw = auto && !stem.live;
+  const can = rw && auto.canEdit;
   return (
     <div className={`t-header ${selected ? 'is-selected' : ''}`} style={{ '--lane-color': row.color }} onMouseDown={onSelect} title="Clic: seleziona la traccia (Ctrl+E taglia nel punto del cursore)">
       <span className="t-color" />
@@ -631,15 +673,43 @@ function TrackHeader({ row, index, solos, onTrack, selected, onSelect, saved }) 
       </span>
       <span className="t-btns">
         <button
-          className={`toggle mute ${mute ? 'is-on' : ''}`}
-          onClick={() => onTrack(stem, { mute: !mute })}
-          title={saved ? 'Muta la traccia nel brano (per tutta la band, con “Salva”)' : 'Muta la traccia su questo dispositivo'}
+          className={`toggle mute ${mute ? 'is-on' : ''} ${autoMuted && !own ? 'is-auto' : ''}`}
+          onClick={() => (can && writeMute(auto.song, stem)) || onTrack(stem, { mute: !own })}
+          title={
+            row.write
+              ? 'Mute: W attivo, mentre il brano suona scrive l’automazione del mute'
+              : autoMuted && !own
+                ? 'Mutata dall’automazione in questo punto'
+                : saved
+                  ? 'Muta la traccia nel brano (per tutta la band, con “Salva”)'
+                  : 'Muta la traccia su questo dispositivo'
+          }
         >
           M
         </button>
         <button className={`toggle solo ${solos[stem.id] ? 'is-on' : ''}`} onClick={() => onTrack(stem, { solo: !solos[stem.id] })}>
           S
         </button>
+        {rw && (
+          <>
+            <button
+              className={`toggle read ${row.read !== false && row.hasAuto ? 'is-on' : ''}`}
+              onClick={() => toggleRead(auto.song, stem)}
+              disabled={!can || !row.hasAuto}
+              title={row.hasAuto ? `Lettura automazione (R): ${row.read !== false ? 'attiva, volume e mute seguono le curve' : 'spenta, la traccia resta al fader'} · si salva con il brano` : 'Lettura automazione (R): la traccia non ha automazioni (W per scriverle, o lo strumento Automazione)'}
+            >
+              R
+            </button>
+            <button
+              className={`toggle write ${row.write ? 'is-on' : ''}`}
+              onClick={() => toggleWrite(auto.song, stem)}
+              disabled={!can}
+              title={can ? 'Scrittura automazione (W): mentre il brano suona, M di questa traccia e il suo fader nel Mixer scrivono l’automazione (poi “Salva”). Solo su questo dispositivo' : 'Solo chi può modificare il brano scrive le automazioni'}
+            >
+              W
+            </button>
+          </>
+        )}
       </span>
       <div className="t-row">
         <Meter track={index} horizontal />
@@ -701,6 +771,7 @@ export default function ArrangementView({ player, item, lanes, settings, update,
   const tool = TOOLS.some(([k]) => k === settings.arrTool) ? settings.arrTool : 'select';
   const songStems = new Map(stemsOf(song).map((s) => [s.id, s]));
   const mixSaved = !!player.mixSaved;
+  const writing = useAutoWrite(); // W of the channels
 
   const sec = useSections({ player, setlistId, canEdit, notify, quant: settings.jumpQuant });
   const { sections } = sec;
@@ -753,6 +824,10 @@ export default function ArrangementView({ player, item, lanes, settings, update,
         color: laneColor(lanes, t.stem),
         muted: mixSaved ? !!t.stem.muted : (getMix(t.stem.id).mute ?? !!t.stem.muted),
         auto: t.stem.live ? [] : autoDrag?.stemId === t.stem.id ? autoDrag.points : automationOf(songStems.get(t.stem.id)),
+        muteAuto: t.stem.live ? [] : muteAutomationOf(songStems.get(t.stem.id)),
+        read: t.stem.live || automationRead(songStems.get(t.stem.id)),
+        hasAuto: !t.stem.live && hasAutomation(songStems.get(t.stem.id)),
+        write: !!writing[t.stem.id],
         regions: t.stem.live
           ? stemRegions(null, '')
           : clipDrag?.stemId === t.stem.id
@@ -1031,9 +1106,19 @@ export default function ArrangementView({ player, item, lanes, settings, update,
     writeMix(song, { stems: stemsOf(song).map((x) => (x.id === stem.id ? { ...x, auto: clean.length ? clean : null } : x)) }, label);
     notify(`${label} · “Salva” per tenerla`);
   };
+  // Mute automation of a track: the same way.
+  const commitMuteAuto = (stem, points, label) => {
+    if (!song || !canEditSong) return;
+    const clean = muteAutomationOf({ muteAuto: points.map((pt) => ({ t: Math.round(Math.max(0, pt.t) * 1e4) / 1e4, on: !!pt.on })) });
+    writeMix(song, { stems: stemsOf(song).map((x) => (x.id === stem.id ? { ...x, muteAuto: clean.length ? clean : null } : x)) }, label);
+    notify(`${label} · “Salva” per tenerla`);
+  };
   const deleteSelected = () => {
     if (tool === 'auto' && canEditSong && selectedStem) {
-      if (automationOf(selectedStem).length && confirm(`Togliere tutta l’automazione del volume di “${selectedStem.name}”?`)) commitAuto(selectedStem, [], `Automazione di “${selectedStem.name}” tolta`);
+      if (hasAutomation(selectedStem) && confirm(`Togliere tutta l’automazione (volume e mute) di “${selectedStem.name}”?`)) {
+        writeMix(song, { stems: stemsOf(song).map((x) => (x.id === selectedStem.id ? { ...x, auto: null, muteAuto: null } : x)) }, `Automazione di “${selectedStem.name}” tolta`);
+        notify(`Automazione di “${selectedStem.name}” tolta · “Salva” per tenerla`);
+      }
       return;
     }
     if (!canEditSong || !selectedStem || selection.index == null) return;
@@ -1320,13 +1405,26 @@ export default function ArrangementView({ player, item, lanes, settings, update,
       const y0 = RULER_H + rows.indexOf(row) * LANE_H;
       const px = e.clientX - rect.left;
       const py = e.clientY - rect.top;
+      const snapT = (tt, ev) => Math.max(0, snap !== ev.shiftKey && tempo ? snapToBeat(tempo, tt) : tt);
+      // Ctrl+click: the mute from here flips (on an edge of the mute: that edge goes).
+      if (e.ctrlKey || e.metaKey) {
+        const mutes = row.muteAuto || [];
+        const edge = mutes.findIndex((m) => Math.abs((m.t - t0) * pps - px) <= AUTO_HIT);
+        if (edge >= 0) {
+          commitMuteAuto(stem, mutes.filter((_, i) => i !== edge), `Tolto un bordo del mute di “${stem.name}”`);
+          return;
+        }
+        const at = snapT(t, e);
+        const on = !automationMutedAt(mutes, at);
+        commitMuteAuto(stem, [...mutes, { t: at, on }], `${on ? 'Mute' : 'Fine del mute'} in “${stem.name}” a ${fmtTime(at)}`);
+        return;
+      }
       const pts = row.auto;
       const hit = pts.findIndex((pt) => Math.abs((pt.t - t0) * pps - px) <= AUTO_HIT && Math.abs(autoY(pt.db, y0) - py) <= AUTO_HIT);
       if (e.altKey) {
         if (hit >= 0) commitAuto(stem, pts.filter((_, i) => i !== hit), `Tolto un punto dell’automazione di “${stem.name}”`);
         return;
       }
-      const snapT = (tt, ev) => Math.max(0, snap !== ev.shiftKey && tempo ? snapToBeat(tempo, tt) : tt);
       const added = hit < 0;
       let list = pts;
       let index = hit;
@@ -1965,6 +2063,7 @@ export default function ArrangementView({ player, item, lanes, settings, update,
                 solos={player.solos}
                 onTrack={player.setTrack}
                 saved={mixSaved}
+                auto={song ? { song, canEdit: canEditSong } : null}
                 selected={r.kind === 'audio' && selection?.stemId === r.stem.id}
                 onSelect={r.kind === 'audio' && !r.stem.live ? () => setSelection((s) => (s?.stemId === r.stem.id ? s : { stemId: r.stem.id, index: null })) : undefined}
               />

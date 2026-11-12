@@ -2,7 +2,7 @@
 // heard, one after the other as the transitions chain them, with its waveform and
 // its sections, also for the songs not in the player.
 import { isSeparator } from '../shared/setlists.js';
-import { isVideoItem, padHoldOf, padLeadOf, regionsOf, stemsOf, videoAudioStem, videoOf } from '../shared/media.js';
+import { audioFades, fadeStop, isVideoItem, padHoldOf, padLeadOf, regionsOf, stemsOf, videoAudioStem, videoFades, videoOf } from '../shared/media.js';
 import { songSections } from './sections';
 import { isLinked, lastSectionStart, linkTiming, songChange, transitionOf } from './songChange';
 
@@ -82,10 +82,10 @@ export function songTracks(item, cache, loaded) {
   return list;
 }
 
-/** Where the files of a song play: the regions of the Arrangement, the sound of a video at its offset. */
+/** Where the files of a song play: the regions of the Arrangement, the sound of a video at its offset (to its end). */
 export function songRegions(item) {
   const video = isVideoItem(item) && videoOf(item);
-  return video ? { ...regionsOf(item), 'video-audio': [{ at: Number(video.offset) || 0, from: 0, len: null }] } : regionsOf(item);
+  return video ? { ...regionsOf(item), 'video-audio': [{ at: Number(video.offset) || 0, from: 0, len: audioFades(item).end }] } : regionsOf(item);
 }
 
 const audible = ({ stem }) => {
@@ -105,6 +105,10 @@ export function songLength(item, tracks, peaks, regions) {
       end = Math.max(end, (r.at || 0) + len);
     });
   });
+  // A video item lasts as the longer of picture and sound, each to its end.
+  const video = isVideoItem(item) && tracks.find((t) => t.stem.id === 'video-audio');
+  const file = video?.local && peaks[video.local]?.duration;
+  if (file) end = (Number(videoOf(item)?.offset) || 0) + Math.max(fadeStop(videoFades(item), file), fadeStop(audioFades(item), file));
   return end > 0 ? end : num(item.duration) || 180;
 }
 

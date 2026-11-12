@@ -11,7 +11,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { emit, listen } from '@tauri-apps/api/event';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
-import { cueTrackOf, instrumentOf, INSTRUMENTS, rehearsalGroup, STEM_ROLES, stemsOf } from '../shared/media.js';
+import { automationOf, automationRead, cueTrackOf, instrumentOf, INSTRUMENTS, muteAutomationOf, rehearsalGroup, STEM_ROLES, stemsOf } from '../shared/media.js';
+import { hasAutomation, isWriting, releaseTouch, toggleRead, toggleWrite, useAutoWrite, writeMute, writeVolume } from './autoWrite';
 import { channelActive, eqOf, flatEq, inputOf } from '../shared/eq.js';
 import { editDraft, isDirty, saveDraft, useDrafts } from './drafts';
 import { recordStep } from './arrangeHistory';
@@ -39,6 +40,8 @@ const INSTRUMENT_OPTIONS = Object.entries(INSTRUMENTS).map(([value, label]) => (
 export function useMixer({ player, lanes, canEdit: canEditSetlist, setlistId, notify }) {
   useMix(); // mute and outputs of this computer
   useDrafts();
+  useAutoWrite(); // W of the channels
+  const playing = useEngineStatus((s) => s.playing);
   const channels = useEngineStatus((s) => s.device?.channels ?? 2);
   const [saving, setSaving] = useState(false);
   const song = player.loadedItem;
@@ -73,6 +76,12 @@ export function useMixer({ player, lanes, canEdit: canEditSetlist, setlistId, no
       solo: !!player.solos[stem.id],
       out: !!player.leftOut[rehearsalGroup(stem)],
       route: m.route ? routeValue(m.route) : null,
+      // Automations (R/W, as Cubase): the strip moves its fader and M with them while it plays.
+      auto: stem.live ? [] : automationOf(stem),
+      muteAuto: stem.live ? [] : muteAutomationOf(stem),
+      hasAuto: !stem.live && hasAutomation(stem),
+      read: !stem.live && automationRead(stem),
+      write: !stem.live && isWriting(stem.id),
     };
   });
   const changed = strips.some((s) => s.gain !== 0 || s.pan !== 0);
@@ -115,6 +124,10 @@ export function useMixer({ player, lanes, canEdit: canEditSetlist, setlistId, no
     write({ stems: stemsOf(song).map((s) => (s.id === id ? { ...s, ...patch } : s)) }, label, live);
   };
   const stemOf = (id) => all.find((x) => x.id === id);
+  // Playback stopped: the fader being written lets go.
+  useEffect(() => {
+    if (!playing) releaseTouch();
+  }, [playing]);
   // Mute, solo, output: in the engine when the track is loaded, else only remembered here.
   const local = (stem, patch) => (index.has(stem.id) ? player.setTrack(stem, patch) : setMix(stem.id, patch));
 
@@ -122,6 +135,8 @@ export function useMixer({ player, lanes, canEdit: canEditSetlist, setlistId, no
     const stem = stemOf(a.id);
     switch (a.type) {
       case 'gain':
+        // W armed while it plays: the fader writes the volume automation.
+        if (canEdit && stem && !stem.live && writeVolume(song, stem, a.value)) break;
         if (canEdit && stem) setStem(a.id, { gain: Math.round(a.value * 10) / 10 }, `Volume ${stem.name}`, a.live);
         break;
       case 'pan':
@@ -134,6 +149,7 @@ export function useMixer({ player, lanes, canEdit: canEditSetlist, setlistId, no
         if (canEdit && stem) setStem(a.id, { eq: a.value || flatEq() }, `EQ ${stem.name}`, a.live);
         break;
       case 'end':
+        releaseTouch();
         end();
         break;
       case 'role':
@@ -149,7 +165,14 @@ export function useMixer({ player, lanes, canEdit: canEditSetlist, setlistId, no
       case 'route':
         if (stem) local(stem, { route: a.value ? parseRoute(a.value) : null });
         break;
+      case 'read':
+        if (canEdit && stem && !stem.live) toggleRead(song, stem);
+        break;
+      case 'write':
+        if (canEdit && stem && !stem.live) toggleWrite(song, stem);
+        break;
       case 'mute':
+        if (canEdit && stem && !stem.live && writeMute(song, stem)) break;
         if (stem?.live) {
           if (canEdit) setStem(a.id, { muted: !stem.muted }, stem.muted ? 'Traccia cue riattivata' : 'Traccia cue mutata', false);
         } else if (stem && canEdit) setStem(a.id, { muted: !stem.muted }, `${stem.muted ? 'Riattivata' : 'Mutata'} “${stem.name}”`, false);

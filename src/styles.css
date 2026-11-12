@@ -1264,6 +1264,26 @@ input[type='range'].slider:hover::-webkit-slider-thumb {
   color: var(--faint);
   margin: 0;
 }
+/* ASIO Compatible logo + Steinberg attribution (AsioMark.jsx). The logo is white on transparent:
+   on a light theme it sits on a dark plate, never recoloured. */
+.asio-mark {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--faint);
+}
+.asio-mark img {
+  height: 36px;
+  width: auto;
+  padding: 3px 4px;
+  border-radius: 4px;
+  background: #111;
+  flex: none;
+}
+.license-info p {
+  margin: 0 0 6px;
+}
 /* Notice of an interface just plugged in, on top of the audio settings. */
 .plugged {
   display: flex;
@@ -1350,12 +1370,20 @@ input[type='range'].slider:hover::-webkit-slider-thumb {
   grid-template: 100% / 100%;
   overflow: hidden;
 }
+/* On a projector: no pointer over the picture. */
+.video-window.is-shown {
+  cursor: none;
+}
 .video-window video {
   width: 100%;
   height: 100%;
   object-fit: contain;
   /* The video of the song and the one of a video item fading out, one over the other. */
   grid-area: 1 / 1;
+}
+/* The video item fading out stays over the next song's video (it comes first in the page). */
+.video-window video.video-tail {
+  z-index: 1;
 }
 /* Picture of the setlist when there is no video (ScreenImage.jsx). */
 .video-window .video-still {

@@ -64,6 +64,18 @@
       #splash .splash-credits p {
         margin: 0;
       }
+      /* ASIO Compatible logo, unaltered (Steinberg ASIO Usage Guidelines §1.e-f). */
+      #splash .splash-asio {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        margin-top: 4px;
+      }
+      #splash .splash-asio img {
+        height: 30px;
+        width: auto;
+      }
       @keyframes splash-in {
         from {
           opacity: 0;
@@ -91,12 +103,20 @@
           Inter · JetBrains Mono · Microsoft WebView2
         </p>
         <p>
-          <b>Audio e video</b> cpal · Symphonia · Signalsmith Stretch · rtrb · Media Foundation · NDI® Runtime
+          <b>Audio e video</b> cpal · Steinberg ASIO SDK (GPLv3) · Symphonia · Signalsmith Stretch · rtrb · midir · Media Foundation ·
+          NDI® Runtime
         </p>
         <p>
           <b>Librerie Rust</b> serde · parking_lot · ureq · url · sha2 · base64 · rand · libloading · windows-rs
         </p>
-        <p>NDI® è un marchio registrato di Vizrt NDI AB.</p>
+        <p>
+          <b>LiveTools</b> © 2026 simcario · software libero sotto licenza GNU GPL v3 o successiva, senza alcuna garanzia · codice
+          sorgente su github.com/simcario/LiveToolsDesktop
+        </p>
+        <p class="splash-asio">
+          <img src="/brand/asio-compatible.svg" alt="ASIO Compatible" />
+          <span>ASIO is a registered trademark of Steinberg Media Technologies GmbH. NDI® è un marchio registrato di Vizrt NDI AB.</span>
+        </p>
       </div>
     </div>
     <script>

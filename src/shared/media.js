@@ -176,7 +176,22 @@ export const isVideoItem = (item) => item?.playback === 'video';
 export const VIDEO_FADE_MAX = 30;
 export const PAD_LEAD_MAX = 120;
 const seconds = (v, fallback, max) => (v === null || v === undefined || v === '' ? fallback : Math.max(0, Math.min(max, Number(v) || 0)));
-export const videoFades = (item) => ({ in: seconds(item?.videoFadeIn, 0, VIDEO_FADE_MAX), out: seconds(item?.videoFadeOut, 3, VIDEO_FADE_MAX) });
+const endOf = (v) => (Number(v) > 0 ? Number(v) : null);
+// Picture and sound of a video item each have a fade in, a fade out and an end (`end`:
+// seconds of the video where it stops, null = the end of the file; the fade out ends
+// there). videoFadeIn / videoFadeOut / videoEnd are the picture; the sound follows
+// them unless `audioApart` (Transizioni page): then audioFadeIn / audioFadeOut / audioEnd.
+// So the picture can fade to the picture of the setlist while the sound goes on, or the
+// sound fade out under the picture.
+export const videoFades = (item) => ({ in: seconds(item?.videoFadeIn, 0, VIDEO_FADE_MAX), out: seconds(item?.videoFadeOut, 3, VIDEO_FADE_MAX), end: endOf(item?.videoEnd) });
+export const audioApart = (item) => !!item?.audioApart;
+export const audioFades = (item) => {
+  const pic = videoFades(item);
+  if (!audioApart(item)) return pic;
+  return { in: seconds(item.audioFadeIn, pic.in, VIDEO_FADE_MAX), out: seconds(item.audioFadeOut, pic.out, VIDEO_FADE_MAX), end: endOf(item.audioEnd) };
+};
+/** Where picture or sound stops (seconds of the video): its end, at most the length of the file. */
+export const fadeStop = (fades, duration) => (fades?.end > 0 ? (Number.isFinite(duration) && duration > 0 ? Math.min(duration, fades.end) : fades.end) : duration);
 export const padLeadOf = (item) => (isVideoItem(item) && Number(item?.padLead) > 0 ? Math.min(PAD_LEAD_MAX, Number(item.padLead)) : null);
 export const PAD_HOLD_MAX = 300;
 export const PAD_FADE_MAX = 30;
@@ -187,11 +202,14 @@ export const padHoldOf = (item) =>
     : null;
 // The sound of the video as a track: it plays from the video file itself.
 export const videoAudioStem = (item) => ({ id: 'video-audio', name: 'Audio del video', role: 'main', instrument: VIDEO_GROUP, gain: Number(item?.video?.gain) || 0, pan: 0 });
-/** Level of picture and sound (0..1) at `t` seconds of a video `duration` long, with its fades. */
+/** Level of picture or sound (0..1) at `t` seconds of a video `duration` long, with its fades (and end). */
 export function fadeLevel(t, duration, fades) {
   let g = 1;
+  const stop = fadeStop(fades, duration);
+  // Stopped before the end of the file: nothing after.
+  if (fades.end > 0 && t >= stop) return 0;
   if (fades.in > 0) g = Math.min(g, t / fades.in);
-  if (fades.out > 0 && Number.isFinite(duration) && duration > 0) g = Math.min(g, (duration - t) / fades.out);
+  if (fades.out > 0 && Number.isFinite(stop) && stop > 0) g = Math.min(g, (stop - t) / fades.out);
   return Math.max(0, Math.min(1, g));
 }
 
@@ -424,6 +442,68 @@ export const automationGain = (points, t) => {
 
 /** Points after second `t` moved by `delta` seconds (bars inserted, start of the song moved). */
 export const shiftAutomation = (points, t, delta) => (points || []).map((p) => (p.t >= t ? { ...p, t: Math.max(0, Math.round((p.t + delta) * 1e4) / 1e4) } : p));
+
+// Mute automation of a stem (R/W of the channel as in Cubase, or drawn with the
+// Automazione tool): stems[].muteAuto = [{ t, on }] = from second t of the song the
+// track is muted (on) or plays again; before the first point it plays.
+// stems[].autoRead === false = the R of the channel is off: its automations
+// (volume and mute) stay in the song but are not played.
+export const automationRead = (stem) => stem?.autoRead !== false;
+
+export function muteAutomationOf(stem) {
+  const list = (Array.isArray(stem?.muteAuto) ? stem.muteAuto : [])
+    .filter((p) => Number.isFinite(p?.t))
+    .map((p) => ({ t: Math.max(0, p.t), on: !!p.on }))
+    .sort((a, b) => a.t - b.t);
+  // Only the changes of state count.
+  const out = [];
+  list.forEach((p) => {
+    if (out.length && Math.abs(out[out.length - 1].t - p.t) < 1e-4) out.pop();
+    if (p.on !== (out.length ? out[out.length - 1].on : false)) out.push(p);
+  });
+  return out;
+}
+
+/** Muted by the mute automation at second t. */
+export function automationMutedAt(points, t) {
+  let on = false;
+  for (const p of points || []) {
+    if (p.t > t) break;
+    on = p.on;
+  }
+  return on;
+}
+
+/** Muted spans of the mute automation: [{ from, to }] (to = Infinity up to the end). */
+export const muteSpans = (points) =>
+  (points || []).reduce((spans, p) => {
+    if (p.on) spans.push({ from: p.t, to: Infinity });
+    else if (spans.length && spans[spans.length - 1].to === Infinity) spans[spans.length - 1].to = p.t;
+    return spans;
+  }, []);
+
+// A change of the mute is a 5 ms ramp (no click).
+const MUTE_RAMP = 0.005;
+
+/**
+ * The volume curve that is played (desktop engine, web rehearsal): the volume
+ * automation with the mute automation in it (silence where it mutes), [] with
+ * the R of the channel off or without automations.
+ */
+export function playedAutomation(stem) {
+  if (!automationRead(stem)) return [];
+  const vol = automationOf(stem);
+  const mutes = muteAutomationOf(stem);
+  if (!mutes.length) return vol;
+  const at = (t, on) => ({ t: Math.max(0, t), db: on ? AUTO_MIN_DB : automationDb(vol, t) });
+  const pts = vol.map((p) => at(p.t, automationMutedAt(mutes, p.t)));
+  mutes.forEach((m) => {
+    if (m.t >= MUTE_RAMP) pts.push(at(m.t - MUTE_RAMP, !m.on));
+    pts.push(at(m.t, m.on));
+  });
+  // Stable sort: at the same second the change of the mute comes after the ramp.
+  return pts.sort((a, b) => a.t - b.t);
+}
 
 /** Fields of the song's media document, saved together (one write). */
 export function saveMediaFields(db, target, fields) {

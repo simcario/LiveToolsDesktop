@@ -3,6 +3,8 @@ import ChannelPanel from './ChannelPanel';
 import Fader from './Fader';
 import Icon from './Icon';
 import Meter from './Meter';
+import { automationDb, automationMutedAt } from '../shared/media.js';
+import { useEngineStatus } from '../lib/engine';
 
 // The mixer of the song in the player, drawn the same in the Dettaglio tab and
 // in its own window (F3). `state` and `dispatch` come from lib/useMixer.js.
@@ -88,12 +90,48 @@ function useDrag(dispatch) {
   return { dragging, begin };
 }
 
+// R/W of the channel as in Cubase: with R on the fader and M follow the
+// automations while the song plays; W armed writes them (fader grabbed, M).
+function AutoButtons({ strip, state, dispatch }) {
+  if (strip.live) return <span className="mx-btns mx-rw is-blank" />;
+  const can = state.canEdit;
+  return (
+    <span className="mx-btns mx-rw">
+      <button
+        className={`st-solo mx-read ${strip.read && strip.hasAuto ? 'is-on' : ''}`}
+        onClick={() => dispatch({ type: 'read', id: strip.id })}
+        disabled={!can || !strip.hasAuto}
+        aria-pressed={strip.read}
+        title={strip.hasAuto ? `Lettura automazione (R): ${strip.read ? 'attiva, volume e mute seguono le curve' : 'spenta, la traccia resta al fader'} · si salva con il brano` : 'Lettura automazione (R): la traccia non ha automazioni (W per scriverle, o lo strumento Automazione)'}
+      >
+        R
+      </button>
+      <button
+        className={`st-solo mx-write ${strip.write ? 'is-on' : ''}`}
+        onClick={() => dispatch({ type: 'write', id: strip.id })}
+        disabled={!can}
+        aria-pressed={strip.write}
+        title={can ? 'Scrittura automazione (W): mentre il brano suona, il fader e M di questa traccia scrivono l’automazione (poi “Salva”). Solo su questo dispositivo' : 'Solo chi può modificare il brano scrive le automazioni'}
+      >
+        W
+      </button>
+    </span>
+  );
+}
+
 function Strip({ strip, state, dispatch, here, onOpen, open = false }) {
   const { dragging, begin } = useDrag(dispatch);
   const set = (type, value) => dispatch({ type, id: strip.id, value, live: dragging.current });
   const locked = !state.canEdit;
+  // Fader and M where the automations are now (R on, playing).
+  const follows = strip.read && strip.hasAuto;
+  const pos = useEngineStatus((s) => (follows && s.playing && !s.waiting ? Math.round(Math.max(0, s.position) * 25) / 25 : null));
+  const autoDb = pos != null && strip.auto.length ? automationDb(strip.auto, pos) : 0;
+  const level = Math.max(-60, Math.min(6, strip.gain + autoDb));
+  const autoMute = pos != null && automationMutedAt(strip.muteAuto, pos);
+  const mute = strip.mute || autoMute;
   return (
-    <div className={`st-strip mx-strip ${strip.mute || strip.out ? 'is-muted' : ''} ${strip.index < 0 ? 'is-absent' : ''} ${open ? 'is-open' : ''}`} style={{ '--sec': strip.color }}>
+    <div className={`st-strip mx-strip ${mute || strip.out ? 'is-muted' : ''} ${strip.index < 0 ? 'is-absent' : ''} ${open ? 'is-open' : ''}`} style={{ '--sec': strip.color }}>
       <RouteSelect strip={strip} state={state} dispatch={dispatch} here={here} />
       <InstrumentSelect strip={strip} state={state} dispatch={dispatch} />
       <span className="mx-pan" title={`Pan ${panText(strip.pan)} (doppio clic: centro)`}>
@@ -111,25 +149,32 @@ function Strip({ strip, state, dispatch, here, onOpen, open = false }) {
         />
         <span className="m-db">{panText(strip.pan)}</span>
       </span>
-      <span className="m-db">{dbText(strip.gain)}</span>
+      <span className={`m-db ${autoDb ? 'is-auto' : ''}`}>{dbText(level)}</span>
       <div className={`st-fader-row ${locked ? 'is-locked' : ''}`} onPointerDown={locked ? undefined : begin}>
         <Fader
-          value={strip.gain}
-          onChange={(v) => !locked && set('gain', v)}
+          value={level}
+          // W: the level where the fader is (written on top of its own); else the fader's own, under the automation.
+          onChange={(v) => !locked && set('gain', strip.write ? v : v - autoDb)}
           onReset={() => !locked && dispatch({ type: 'gain', id: strip.id, value: 0 })}
-          title={locked ? 'Solo chi può modificare il brano cambia i volumi' : `Volume ${strip.name} (doppio clic: 0 dB)`}
+          title={locked ? 'Solo chi può modificare il brano cambia i volumi' : strip.write ? `Volume ${strip.name}: W attivo, mentre suona il fader scrive l’automazione` : `Volume ${strip.name} (doppio clic: 0 dB)`}
           scale={false}
         />
         {strip.index >= 0 && <Meter track={strip.index} />}
       </div>
       <span className="mx-btns">
-        <button className={`st-solo mx-mute ${strip.mute ? 'is-on' : ''}`} onClick={() => dispatch({ type: 'mute', id: strip.id })} aria-pressed={strip.mute} title={`Mute (su ${here})`}>
+        <button
+          className={`st-solo mx-mute ${mute ? 'is-on' : ''} ${autoMute && !strip.mute ? 'is-auto' : ''}`}
+          onClick={() => dispatch({ type: 'mute', id: strip.id })}
+          aria-pressed={mute}
+          title={strip.write ? 'Mute: W attivo, mentre suona scrive l’automazione del mute' : autoMute && !strip.mute ? 'Mutata dall’automazione' : state.canEdit ? 'Mute (salvato con il brano)' : `Mute (su ${here})`}
+        >
           M
         </button>
         <button className={`st-solo ${strip.solo ? 'is-on' : ''}`} onClick={() => dispatch({ type: 'solo', id: strip.id })} disabled={strip.index < 0} aria-pressed={strip.solo} title="Solo">
           S
         </button>
       </span>
+      <AutoButtons strip={strip} state={state} dispatch={dispatch} />
       <button
         className={`st-name mx-name ${open ? 'is-open' : ''}`}
         onClick={onOpen}

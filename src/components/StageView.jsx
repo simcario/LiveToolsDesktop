@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { formatDuration, formatEventDate, isSeparator, PLAYBACK_TYPES } from '../shared/setlists.js';
-import { groupLabel, INSTRUMENTS, isVideoItem, PAD_FADE_MAX, PAD_HOLD_MAX, PAD_LEAD_MAX, padHoldOf, padLeadOf, regionsOf, rehearsalGroup, VIDEO_FADE_MAX, videoFades } from '../shared/media.js';
+import { audioApart, groupLabel, INSTRUMENTS, isVideoItem, PAD_FADE_MAX, PAD_HOLD_MAX, PAD_LEAD_MAX, padHoldOf, padLeadOf, regionsOf, rehearsalGroup, VIDEO_FADE_MAX, videoFades } from '../shared/media.js';
 import { groupMixKey } from '../lib/usePlayer';
 import { keyLabel } from '../shared/music.js';
 import { animateWhilePlaying, engine, engineStatus, livePosition, useEngineStatus } from '../lib/engine';
@@ -243,10 +243,12 @@ function TransitionMenu({ item, settings, onPick }) {
   );
 }
 
-// A video item: fades of picture and sound, and the pad of the next song's key
+// A video item: fades of picture and sound (of the picture only when the sound was set
+// apart in Transizioni), and the pad of the next song's key
 // before the end of the video (a song without intro can start straight away).
 function VideoMenu({ item, next, onChange }) {
   const fades = videoFades(item);
+  const apart = audioApart(item);
   const lead = padLeadOf(item) || 0;
   const hold = padHoldOf(item);
   const nextKey = next ? playedKey(next) : '';
@@ -266,13 +268,13 @@ function VideoMenu({ item, next, onChange }) {
   return (
     <div className="st-pop-list">
       <strong className="st-pop-title">{item.title}</strong>
-      {step('Entrata', fades.in, 's', (v) => onChange({ videoFadeIn: v }), { max: VIDEO_FADE_MAX, by: 0.5, off: 'Netta' })}
-      {step('Uscita', fades.out, 's', (v) => onChange({ videoFadeOut: v }), { max: VIDEO_FADE_MAX, by: 0.5, off: 'Netta' })}
+      {step(apart ? 'Entrata immagine' : 'Entrata', fades.in, 's', (v) => onChange({ videoFadeIn: v }), { max: VIDEO_FADE_MAX, by: 0.5, off: 'Netta' })}
+      {step(apart ? 'Uscita immagine' : 'Uscita', fades.out, 's', (v) => onChange({ videoFadeOut: v }), { max: VIDEO_FADE_MAX, by: 0.5, off: 'Netta' })}
       {step('Pad', lead, 's prima della fine', (v) => onChange({ padLead: v || null }), { max: PAD_LEAD_MAX, by: 1, off: 'No' })}
       {lead > 0 && step('Nel brano', hold?.hold || 0, 's poi sfuma', (v) => onChange({ padHold: v || null }), { max: PAD_HOLD_MAX, by: 1, off: 'Fino a PAD' })}
       {hold && step('Sfumatura', hold.fadeOut, 's', (v) => onChange({ padFadeOut: v }), { min: 0.5, max: PAD_FADE_MAX, by: 0.5 })}
       <p className="st-pop-hint">
-        Immagine e suono del video sfumano dal nero e verso il nero.{' '}
+        {apart ? 'L’immagine sfuma dal nero e verso il nero; l’audio ha valori suoi (pagina Transizioni).' : 'Immagine e suono del video sfumano dal nero e verso il nero (separali nella pagina Transizioni).'}{' '}
         {next
           ? nextKey
             ? `Il pad entra in ${keyLabel(nextKey)}, la tonalità di “${next.title}”, e continua nel brano: ${
@@ -1465,7 +1467,7 @@ export default function StageView({
         </>
       )}
       {transitions && (
-        <TransitionsView items={items} numbers={numbers} player={player} beats={beats} settings={settings} setlistId={setlistId} canEdit={canEdit} notify={notify} onClose={() => setTransitions(false)} />
+        <TransitionsView items={items} numbers={numbers} player={player} beats={beats} settings={settings} setlistId={setlistId} still={!!setlists?.find((s) => s.id === setlistId)?.screenImage?.path} canEdit={canEdit} notify={notify} onClose={() => setTransitions(false)} />
       )}
     </div>
   );

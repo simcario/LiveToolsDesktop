@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { engine, onDeviceChange } from '../lib/engine';
 import { OUTPUT_ROLES, outputOptions, parseRoute, routeValue } from '../lib/settings';
+import AsioMark from './AsioMark';
 import Icon from './Icon';
 import Meter from './Meter';
 
@@ -109,6 +110,7 @@ export default function SettingsModal({ settings, update, device, plugged, onUse
           {device?.info?.host === 'ASIO' && (
             <p className="hint">Con ASIO la frequenza di campionamento è quella impostata nel pannello del driver, e di solito nessun altro programma può usare la scheda.</p>
           )}
+          {asioDrivers?.length > 0 && <AsioMark />}
           <label className="check">
             <input type="checkbox" checked={settings.audioWatch} onChange={(e) => update({ audioWatch: e.target.checked })} />
             Rileva le schede audio collegate e scollegate

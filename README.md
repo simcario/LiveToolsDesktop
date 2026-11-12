@@ -4,7 +4,7 @@ Player di **sequenze multitraccia, click e video** per le scalette di LiveTools,
 Stesso progetto Firebase, stesso account Google e stessa grafica dell'app web (`../web`).
 
 Documentazione: [manuale d'uso](docs/MANUALE.md) · [come rilasciare una versione](docs/RELEASE.md) ·
-[changelog](CHANGELOG.md).
+[changelog](CHANGELOG.md) · [licenza](#licenza).
 
 - **Tauri 2**: backend in **Rust** (motore audio), interfaccia in React con il design system "Stage Obsidian Amber".
 - **Motore audio nativo** (`src-tauri/src/audio`): cpal (WASAPI / CoreAudio / ALSA-JACK) + Symphonia
@@ -222,17 +222,42 @@ Firebase riceve l'ID token: stesso utente dell'app web.
 ## Note e limiti di questa prima versione
 
 - L'audio del video non viene riprodotto (il video è muto, la colonna sonora sta negli stem).
-- Su Windows si usa WASAPI (condiviso). ASIO è dietro la feature Cargo `asio`, spenta di default:
-  - per provarlo: `scoop install llvm`, poi `npm run app:asio` (al primo avvio scarica l'SDK Steinberg in
-    `%USERPROFILE%\.asio_sdk`, fuori dal repo perché non è ridistribuibile);
-  - per un installer personale: `npm run installer:asio`. Lo mette in `release/personal/` e lo toglie dalla
-    cartella del bundle, così `release:publish` non può caricarlo; `installer` e `release` rifiutano
-    `LIVETOOLS_ASIO=1`. Un aggiornamento dall'app installa la versione pubblica, senza ASIO: dopo ogni release
-    rilancia `npm run installer:asio`. **Prima di pubblicarlo** serve una delle due licenze
-    dell'SDK: l'accordo firmato da entrambe le parti (`Steinberg ASIO Licensing Agreement.pdf` nell'SDK, gratuito), oppure
-    il rilascio dell'app sotto GPLv3. Un repo pubblico senza licenza non basta. Il nome o il logo ASIO seguono le
-    *Usage Guidelines* con entrambe;
+- Su Windows si usano WASAPI (condiviso) e i driver **ASIO®** (feature Cargo `asio`):
+  - l'SDK Steinberg è usato con la sua licenza GPLv3 (come tutta l'app, vedi [Licenza](#licenza)); le parti che si
+    compilano, la licenza, le *Usage Guidelines* e i loghi sono in `src-tauri/vendor/asiosdk`. `vendor/asio-sys` è
+    asio-sys 0.2.6 con una riga cambiata per MinGW;
+  - la build con ASIO richiede libclang (`scoop install llvm`): `npm run app` resta solo WASAPI, `npm run app:asio`
+    avvia l'app in sviluppo con ASIO, `npm run installer` e `npm run release` hanno sempre ASIO;
+  - il logo *ASIO Compatible* (non modificato, `public/brand/asio-compatible.svg`) con la frase
+    *ASIO is a registered trademark of Steinberg Media Technologies GmbH* sta nella schermata di avvio, in
+    *Audio & uscite* (la finestra che attiva ASIO), in *Impostazioni › Aggiornamenti › Licenza e crediti*, nel
+    manuale e sulle pagine del sito (*Steinberg ASIO Usage Guidelines*). La prima volta che un testo nomina ASIO
+    scrive **ASIO®**;
   - i driver a 24 bit impacchettati (`Int24`) non sono supportati da cpal 0.15: l'apertura dà errore.
 
-  ASIO is a trademark of Steinberg Media Technologies GmbH, registered in Europe and other countries.
+  ASIO is a registered trademark of Steinberg Media Technologies GmbH.
 - Le uscite che la scheda non possiede ricadono su Out 1-2 (utile per provare sul portatile).
+
+## Licenza
+
+LiveTools Desktop è software libero: Copyright © 2026 simcario, distribuito sotto la
+[GNU General Public License versione 3](LICENSE) o (a tua scelta) qualsiasi versione successiva, SENZA ALCUNA
+GARANZIA. Le note di ogni versione pubblicata hanno il link al suo codice sorgente (tag `v<x.y.z>`).
+
+Il codice in `src/shared` è copiato dall'app web (`npm run sync-shared`) ed è distribuito qui con la stessa licenza.
+
+Componenti di terze parti con la propria licenza, compatibile con la GPLv3:
+
+- **Steinberg ASIO SDK** 2.3 (`src-tauri/vendor/asiosdk`), usato con l'opzione GPLv3 della sua doppia licenza.
+  ASIO is a registered trademark of Steinberg Media Technologies GmbH.
+- **asio-sys** (Apache-2.0) e **Signalsmith Stretch** (MIT) in `src-tauri/vendor`; le altre dipendenze Rust e npm
+  hanno le licenze indicate dai loro pacchetti (MIT, Apache-2.0, BSD, ISC…).
+
+### Permesso aggiuntivo (GPLv3 §7)
+
+Come titolare del copyright del codice di LiveTools concedo il permesso aggiuntivo di collegare il programma, anche
+caricandole durante l'esecuzione, con le librerie del **NDI® Runtime** di Vizrt NDI AB e con i componenti del sistema
+operativo (Microsoft WebView2, Media Foundation, Visual C++ Runtime, Windows Runtime), e di distribuire le versioni
+così ottenute senza che quei componenti debbano essere distribuiti sotto GPL. Chi modifica il programma può togliere
+questo permesso dalla propria versione. Il permesso non riguarda il codice di terzi incluso nel programma, che resta
+sotto la sua licenza. NDI® è un marchio registrato di Vizrt NDI AB.

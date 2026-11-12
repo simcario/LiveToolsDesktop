@@ -49,7 +49,7 @@ export function useNdiOutputs(settings) {
 /** The video of the song loaded (the local file), see usePlayer. */
 export function setNdiVideoSource(video) {
   // Video item: fades from and to black, as the video window.
-  const source = video?.local ? { path: video.local, offset: video.offset || 0, fadeIn: video.fades?.in || 0, fadeOut: video.fades?.out || 0 } : null;
+  const source = video?.local ? { path: video.local, offset: video.offset || 0, fadeIn: video.fades?.in || 0, fadeOut: video.fades?.out || 0, end: video.fades?.end || 0 } : null;
   invoke('ndi_video_source', { source }).catch(() => {});
 }
 

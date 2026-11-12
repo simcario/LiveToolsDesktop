@@ -1,8 +1,10 @@
 [package]
 name = "livetools-desktop"
-version = "0.1.16"
+version = "0.1.18"
 description = "LiveTools Desktop: lettore di sequenze multitraccia e video per il live"
 edition = "2021"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/simcario/LiveToolsDesktop"
 
 [lib]
 name = "livetools_desktop_lib"
@@ -35,8 +37,9 @@ midir = "0.11"
 # Key and tempo changed offline (MIT), vendored without bindgen: see vendor/signalsmith-stretch.
 signalsmith-stretch = { path = "vendor/signalsmith-stretch" }
 
-# ASIO needs the Steinberg SDK and libclang to build (scripts/asio.mjs), and before an installer
-# is published Steinberg's signed license or a GPLv3 release of the app: off by default.
+# ASIO: the Steinberg SDK is used under its GPLv3 option (the app is GPLv3 too, see LICENSE) and
+# lives in vendor/asiosdk. Building it needs libclang (scripts/asio.mjs), so it stays off in
+# `npm run app`; the installers (scripts/release.mjs) always have it.
 [features]
 asio = ["cpal/asio", "dep:asio-sys"]
 

@@ -4,8 +4,16 @@
 // pulled by their handles, its start trimmed to a section; the type and the values
 // in the panel below. "Prova" plays the end of the song and the transition, in the
 // engine, as it will be live. Every change is written at once for the whole band.
+//
+// Picture over sound: with videos in the setlist every clip shows, over its waveform, what the
+// video output shows (frames of its video, else the picture of the setlist). A video item has its picture and its sound each
+// with a fade in, a fade out and an end (media.js audioFades): the picture can fade out
+// while the sound goes on, or the other way round; a monitor shows the output.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { isVideoItem } from '../shared/media.js';
+import { convertFileSrc } from '@tauri-apps/api/core';
+import { audioApart, audioFades, fadeLevel, fadeStop, isVideoItem, VIDEO_FADE_MAX, videoFades, videoOf } from '../shared/media.js';
+import { onThumbs, thumbAt, thumbRatio } from '../lib/videoThumbs';
+import VideoOutput from './VideoOutput';
 import { keyLabel } from '../shared/music.js';
 import { animateWhilePlaying, engine, engineStatus, livePosition, subscribeStatus, useEngineStatus } from '../lib/engine';
 import { itemCacheState, ensureItems, requestPeaks, useMediaCache, usePeaks } from '../lib/mediaCache';
@@ -18,6 +26,10 @@ const HEAD_H = 24; // title of the clip
 const SEC_H = 20; // row of the sections
 const LANE_GAP = 10;
 const PAD_H = 14;
+const VID_H = 44; // the picture strip of a clip, over its waveform
+const PIC_COLOR = '#f0abfc'; // line of the picture level
+const THUMB_STEPS = [0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300];
+const MONITOR_KEY = 'livetools.transitions.monitor';
 const PAD_X = 28; // px before the start of the setlist
 const MIN_PPS = 0.05;
 const MAX_PPS = 240;
@@ -32,19 +44,96 @@ const clockText = (sec) => {
   const s = Math.max(0, Math.round(sec));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 };
+// m:ss,d
+const clockTenths = (sec) => {
+  const t = Math.round(Math.max(0, sec) * 10) / 10;
+  const m = Math.floor(t / 60);
+  return `${m}:${(t - m * 60).toFixed(1).padStart(4, '0').replace('.', ',')}`;
+};
 const colorOf = (c) => (isVideoItem(c.item) ? VIDEO_COLOR : COLORS[c.index % COLORS.length]);
 const xfade = (x) => Math.sin(Math.max(0, Math.min(1, x)) * (Math.PI / 2));
 const round2 = (v) => Math.round(v * 100) / 100;
 
-// Gain of a clip at `x` seconds of the timeline: its fade in, its fade out under the next one.
-function gainAt(c, prev, x) {
+/**
+ * The video of every clip, for its picture strip: { src (null: not on this computer), offset,
+ * rate, file (s of the video), pic and sound (fades of a video item, null for the video of
+ * a song), a / b (timeline seconds where its picture is on the output) } or null.
+ * The picture of a video item goes on over the next song (the tail of the video output);
+ * the video of a song leaves the output when the next song takes over.
+ */
+function clipVideos(clips, cache, loaded, peaks) {
+  return clips.map((c, i) => {
+    const video = videoOf(c.item);
+    if (!video) return null;
+    const own = isVideoItem(c.item);
+    const offset = Number(video.offset) || 0;
+    const local = loaded?.itemId === c.item.id && loaded.video ? loaded.video.local : cache[video.path]?.ready ? cache[video.path].local : null;
+    const src = loaded?.itemId === c.item.id && loaded.video ? loaded.video.src : local ? convertFileSrc(local) : null;
+    const file = (local && peaks[local]?.duration) || Math.max(1, c.duration - offset);
+    const pic = own ? videoFades(c.item) : null;
+    const sound = own ? audioFades(c.item) : null;
+    const a = c.x0 + offset / c.rate;
+    let b = c.x0 + (offset + (pic ? fadeStop(pic, file) : file)) / c.rate;
+    const next = clips[i + 1];
+    if (!own && next && c.link?.at != null) b = Math.min(b, c.link.at);
+    return { src, offset, rate: c.rate, file, pic, sound, a, b: Math.max(a, b) };
+  });
+}
+
+// Level (0..1) of picture or sound of a video at `x` seconds of the timeline.
+function ownLevel(c, m, fades, x) {
+  if (!m || !fades) return 1;
+  const v = (x - c.x0) * c.rate - m.offset;
+  return v < 0 ? 0 : fadeLevel(v, m.file, fades);
+}
+
+// Gain of a clip at `x` seconds of the timeline: its fade in, its fade out under the next
+// one, the fades of the sound of a video item.
+function gainAt(c, prev, x, m) {
   if (x < c.from || x > c.until) return 0;
-  let g = 1;
+  let g = m?.sound ? ownLevel(c, m, m.sound, x) : 1;
   const fin = prev?.link?.timing?.fadeIn || 0;
   if (fin > 0) g = Math.min(g, xfade((x - c.from) / fin));
   const fout = c.link?.timing?.fadeOut || 0;
   if (fout > 0 && c.link.at != null && x > c.link.at) g = Math.min(g, xfade(1 - (x - c.link.at) / fout));
   return g;
+}
+
+// The sound set apart from the picture, from the values it has now (the ones of the picture).
+const apartFields = (item) => {
+  const p = videoFades(item);
+  return { audioApart: true, audioFadeIn: p.in, audioFadeOut: p.out, audioEnd: p.end };
+};
+const SOUND_TOGETHER = { audioApart: null, audioFadeIn: null, audioFadeOut: null, audioEnd: null };
+
+/**
+ * Fields of a fade or of the end of picture (pic*) or sound (snd*) of a video item, from a
+ * handle at `t` seconds of the song (or a step: `value` given directly). The sound follows
+ * the picture until it is moved by itself: then it is set apart (audioApart).
+ */
+function ownFadePatch(item, m, kind, t, snap) {
+  if (!m) return null;
+  const pic = kind.startsWith('pic');
+  const fades = pic ? m.pic : m.sound;
+  const stop = fadeStop(fades, m.file);
+  const q = snap ? 0.5 : 0.1;
+  const r = (n) => round2(Math.round(n / q) * q);
+  const v = t - m.offset; // seconds of the video
+  let key;
+  let val;
+  if (kind.endsWith('In')) {
+    key = 'FadeIn';
+    val = Math.max(0, Math.min(VIDEO_FADE_MAX, stop, r(v)));
+  } else if (kind.endsWith('Out')) {
+    key = 'FadeOut';
+    val = Math.max(0, Math.min(VIDEO_FADE_MAX, stop, r(stop - v)));
+  } else {
+    key = 'End';
+    const e = Math.max(1, Math.min(m.file, r(v)));
+    val = e >= m.file - 0.05 ? null : e;
+  }
+  if (pic) return { [`video${key}`]: val };
+  return { ...(audioApart(item) ? {} : apartFields(item)), [`audio${key}`]: val };
 }
 
 // Offset of the next song changed by a drag or a button: past the end it becomes a
@@ -86,7 +175,77 @@ function waitFor(test, ms) {
   });
 }
 
-function draw(canvas, { clips, width: w, height: h, left, pps, laneH, padLane, peaks, cache, loaded, selected, snapLines }) {
+// The picture strip of a clip, over its waveform (they move together): frames of its
+// video dimmed along the level of the picture, with its line; where the song has no
+// video, what the output shows instead (picture of the setlist, or black).
+function drawClipVideo(ctx, { c, m, top, w, X, pps, still, heardA, heardB, xa: clipA, xb: clipB }) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(clipA, top, clipB - clipA, VID_H);
+  ctx.clip();
+  ctx.font = '600 10px system-ui, sans-serif';
+  // Without video (or before it starts): the screen as it is without one.
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+  ctx.fillRect(heardA, top, heardB - heardA, VID_H);
+  const free = m ? X(m.a) - heardA : heardB - heardA;
+  if (free > 130) {
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.32)';
+    ctx.fillText(still ? 'Immagine della scaletta' : 'Schermo nero', Math.max(heardA, 0) + 8, top + VID_H / 2 + 4);
+  }
+  if (m) {
+    const xa = X(m.a);
+    const xb = X(m.b);
+    if (xb >= 0 && xa <= w && xb - xa >= 1) {
+      ctx.fillStyle = 'rgba(224, 79, 208, 0.18)';
+      ctx.fillRect(xa, top, xb - xa, VID_H);
+      // Frames side by side from the start of the picture; each the frame of its middle,
+      // rounded to a step of video seconds so that the same ones come back while scrolling.
+      if (m.src) {
+        const tw = (VID_H - 2) * thumbRatio(m.src);
+        const per = (tw / pps) * m.rate; // video seconds per frame drawn
+        const q = [...THUMB_STEPS].reverse().find((v) => v <= per) || THUMB_STEPS[0];
+        const n0 = Math.max(0, Math.floor(-xa / tw));
+        const n1 = Math.ceil((Math.min(w, xb) - xa) / tw);
+        for (let n = n0; n < n1; n += 1) {
+          const vt = Math.round(((((n + 0.5) * tw) / pps) * m.rate) / q) * q;
+          const img = thumbAt(m.src, Math.min(vt, Math.max(0, m.file - 0.1)));
+          if (img) ctx.drawImage(img, xa + n * tw, top + 1, tw, VID_H - 2);
+        }
+      } else if (xb - xa > 140) {
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
+        ctx.fillText('Video non scaricato su questo computer', Math.max(xa, 0) + 8, top + VID_H / 2 + 4);
+      }
+      // Dimmed where the picture fades, and its level as a line.
+      if (m.pic) {
+        const x0 = Math.max(0, Math.floor(xa));
+        const x1 = Math.min(w, Math.ceil(xb));
+        for (let x = x0; x <= x1; x += 2) {
+          const g = ownLevel(c, m, m.pic, (x - X(0)) / pps);
+          if (g < 0.999) {
+            ctx.fillStyle = `rgba(0, 0, 0, ${(1 - g) * 0.85})`;
+            ctx.fillRect(x, top, 2, VID_H);
+          }
+        }
+        ctx.beginPath();
+        for (let x = x0; x <= x1; x += 2) {
+          const y = top + 3 + (1 - ownLevel(c, m, m.pic, (x - X(0)) / pps)) * (VID_H - 6);
+          if (x === x0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.strokeStyle = PIC_COLOR;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        ctx.lineWidth = 1;
+      }
+    }
+  }
+  ctx.restore();
+  // Line between picture and sound.
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+  ctx.fillRect(clipA, top + VID_H, clipB - clipA, 1);
+}
+
+function draw(canvas, { clips, media, still, width: w, height: h, left, pps, laneH, vidLane, padLane, peaks, cache, loaded, selected, snapLines }) {
   if (!w || !h) return;
   canvas.style.width = `${w}px`;
   canvas.style.height = `${h}px`;
@@ -150,8 +309,9 @@ function draw(canvas, { clips, width: w, height: h, left, pps, laneH, padLane, p
     const prev = clips[i - 1];
     const color = colorOf(c);
     const top = laneTop(c.lane);
-    const waveTop = top + HEAD_H + SEC_H;
-    const waveH = laneH - HEAD_H - SEC_H;
+    const vidTop = top + HEAD_H + SEC_H;
+    const waveTop = vidTop + (vidLane ? VID_H : 0);
+    const waveH = laneH - (waveTop - top);
     const heardA = X(c.from);
     const heardB = X(c.until);
     const on = i === selected || i === selected + 1;
@@ -174,6 +334,8 @@ function draw(canvas, { clips, width: w, height: h, left, pps, laneH, padLane, p
       ctx.fillRect(sa, top + HEAD_H, 2, laneH - HEAD_H);
       ctx.globalAlpha = 1;
     });
+    // The picture over the sound, in the same clip.
+    if (vidLane) drawClipVideo(ctx, { c, m: media[i], top: vidTop, w, X, pps, still, heardA, heardB, xa, xb });
     // Bars of the song, when there is room for them.
     const bars = barsOf(c.beats);
     if (bars.length > 1 && ((bars[1].t - bars[0].t) / c.rate) * pps >= 7) {
@@ -196,7 +358,7 @@ function draw(canvas, { clips, width: w, height: h, left, pps, laneH, padLane, p
         if (v <= 0.002) continue;
         const x = px0 + k;
         const t = (x + left - PAD_X) / pps;
-        const g = gainAt(c, prev, t);
+        const g = gainAt(c, prev, t, media[i]);
         if (g <= 0) {
           ctx.fillStyle = 'rgba(244, 244, 245, 0.16)';
           const a = v * amp;
@@ -228,6 +390,23 @@ function draw(canvas, { clips, width: w, height: h, left, pps, laneH, padLane, p
     if (fin > 0) curve(c.from, fin, true);
     const fout = c.link?.timing?.fadeOut || 0;
     if (fout > 0 && c.link.at != null) curve(c.link.at, fout, false);
+    // The sound of a video item: its own fades and end.
+    const m = media[i];
+    if (m?.sound && (m.sound.in > 0 || m.sound.out > 0 || m.sound.end)) {
+      ctx.beginPath();
+      const s0 = Math.max(0, Math.floor(heardA));
+      // Up to where it is heard (a fade out of the transition may end it before).
+      const s1 = Math.min(w, Math.ceil(X(Math.min(c.until, c.x0 + (m.offset + fadeStop(m.sound, m.file)) / c.rate))));
+      for (let x = s0; x <= s1; x += 2) {
+        const y = waveTop + (1 - ownLevel(c, m, m.sound, (x + left - PAD_X) / pps)) * waveH;
+        if (x === s0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.strokeStyle = '#22d3ee';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.lineWidth = 1;
+    }
     // Outline of the part heard.
     ctx.strokeStyle = on ? color : 'rgba(255, 255, 255, 0.14)';
     ctx.strokeRect(Math.round(heardA) + 0.5, top + 0.5, Math.max(0, heardB - heardA - 1), laneH - 1);
@@ -260,7 +439,7 @@ function draw(canvas, { clips, width: w, height: h, left, pps, laneH, padLane, p
   }
 }
 
-export default function TransitionsView({ items, numbers, player, beats: loadedBeats, settings, setlistId, canEdit, notify, onClose }) {
+export default function TransitionsView({ items, numbers, player, beats: loadedBeats, settings, setlistId, still = false, canEdit, notify, onClose }) {
   const peaks = usePeaks();
   const cache = useMediaCache();
   const playing = useEngineStatus((s) => s.playing);
@@ -306,7 +485,33 @@ export default function TransitionsView({ items, numbers, player, beats: loadedB
   const clipsRef = useRef(clips);
   clipsRef.current = clips;
   const hasPad = clips.some((c) => c.pad);
-  const laneH = Math.max(70, Math.min(230, (size.h - RULER_H - LANE_GAP - (hasPad ? PAD_H : 0)) / 2));
+  const media = useMemo(() => clipVideos(clips, cache, loaded, peaks), [clips, cache, loaded, peaks]);
+  const mediaRef = useRef(media);
+  mediaRef.current = media;
+  // Picture strips in the clips when the setlist has videos.
+  const vidLane = media.some(Boolean);
+  // With videos every clip has its picture strip over the waveform: a little taller.
+  const laneH = Math.max(70 + (vidLane ? VID_H : 0), Math.min(230 + (vidLane ? VID_H : 0), (size.h - RULER_H - LANE_GAP - (hasPad ? PAD_H : 0)) / 2));
+  const vidTopOf = (lane) => laneTop(lane) + HEAD_H + SEC_H;
+  const waveTopOf = (lane) => vidTopOf(lane) + (vidLane ? VID_H : 0);
+  // Monitor of the video output, beside the panel (remembered on this computer).
+  const [monitor, setMonitor] = useState(() => {
+    try {
+      const v = localStorage.getItem(MONITOR_KEY);
+      return v == null ? null : v === '1';
+    } catch {
+      return null;
+    }
+  });
+  const monitorOn = monitor ?? (vidLane || still);
+  const toggleMonitor = () => {
+    setMonitor(!monitorOn);
+    try {
+      localStorage.setItem(MONITOR_KEY, monitorOn ? '0' : '1');
+    } catch {
+      // Only a convenience.
+    }
+  };
   const width = PAD_X * 2 + total * (pps || 1) + size.w * 0.4;
 
   // First transition shown: the one after the song in the player.
@@ -425,10 +630,12 @@ export default function TransitionsView({ items, numbers, player, beats: loadedB
   paint.current = () =>
     canvas.current &&
     pps &&
-    draw(canvas.current, { clips, width: size.w, height: size.h, left: left.current, pps, laneH, padLane: hasPad, peaks, cache, loaded, selected, snapLines });
+    draw(canvas.current, { clips, media, still, width: size.w, height: size.h, left: left.current, pps, laneH, vidLane, padLane: hasPad, peaks, cache, loaded, selected, snapLines });
   useEffect(() => {
     paint.current();
   });
+  // Frames of the videos as they are taken.
+  useEffect(() => onThumbs(() => paint.current()), []);
   const raf = useRef(0);
   useEffect(() => () => cancelAnimationFrame(raf.current), []);
   const onScroll = () => {
@@ -590,17 +797,21 @@ export default function TransitionsView({ items, numbers, player, beats: loadedB
     el.setPointerCapture(e.pointerId);
     const sx = e.clientX;
     const prev = clips[c.index - 1];
-    const a = kind === 'fadeOut' ? c : prev;
+    // pic* / snd*: picture or sound of the video item itself, not the transition.
+    const own = /^(pic|snd)/.test(kind);
+    const a = kind === 'fadeOut' || own ? c : prev;
     let moved = false;
     let fields = null;
-    const editable = canEdit && a?.link?.timing;
+    const editable = canEdit && (own || a?.link?.timing);
     const move = (ev) => {
       if (!moved && Math.abs(ev.clientX - sx) < 5) return;
       moved = true;
       if (!editable) return;
       userAt.current = performance.now();
       const x = timeAtClient(ev.clientX);
-      if (kind === 'body') {
+      if (own) {
+        fields = ownFadePatch(c.item, mediaRef.current[c.index], kind, (x - c.x0) * c.rate, snap);
+      } else if (kind === 'body') {
         const from = snapStart(a, c.from + (ev.clientX - sx) / pps);
         fields = offsetPatch(a.link.mode, from - (a.x0 + a.length));
         setSnapLines(snap ? barsOf(a.beats).map((b) => a.x0 + b.t / a.rate) : null);
@@ -637,7 +848,7 @@ export default function TransitionsView({ items, numbers, player, beats: loadedB
       }
       if (fields) {
         write(a.item.id, fields);
-        setSelected(a.index);
+        if (!own) setSelected(a.index);
       }
       // The saved values arrive with the next snapshot: the preview stays until then.
       setTimeout(() => setPatch(null), 400);
@@ -673,6 +884,9 @@ export default function TransitionsView({ items, numbers, player, beats: loadedB
         </span>
         <span className="tr-now ellipsis">{status || (nowClip ? <NowText clip={nowClip} /> : <span className="muted">Nessun brano caricato</span>)}</span>
         <span className="grow" />
+        <button className={`btn btn-sm ${monitorOn ? 'is-on' : ''}`} onClick={toggleMonitor} aria-pressed={monitorOn} title="Mostra qui quello che va sull’uscita video">
+          <Icon name="monitor" size={14} /> Monitor
+        </button>
         <button className={`btn btn-sm ${snap ? 'is-on' : ''}`} onClick={() => setSnap(!snap)} aria-pressed={snap} title="Il brano dopo si aggancia alle battute di quello prima, l’inizio alle battute del brano">
           <Icon name="grid" size={14} /> Aggancia
         </button>
@@ -780,7 +994,7 @@ export default function TransitionsView({ items, numbers, player, beats: loadedB
                 {after.from + (sel.link.timing.fadeIn || 0) <= after.until && (
                   <span
                     className="tr-handle tr-fade"
-                    style={{ left: X(after.from + (sel.link.timing.fadeIn || 0)), top: laneTop(after.lane) + HEAD_H + SEC_H }}
+                    style={{ left: X(after.from + (sel.link.timing.fadeIn || 0)), top: waveTopOf(after.lane) }}
                     onPointerDown={(e) => gesture(e, 'fadeIn', after)}
                     title={`Entrata: ${fmt(sel.link.timing.fadeIn || 0)} (trascina)`}
                   />
@@ -788,31 +1002,76 @@ export default function TransitionsView({ items, numbers, player, beats: loadedB
                 {sel.link.mode !== 'autolink' && (
                   <span
                     className="tr-handle tr-fade is-out"
-                    style={{ left: X(sel.link.at + (sel.link.timing.fadeOut || 0)), top: laneTop(sel.lane) + HEAD_H + SEC_H }}
+                    style={{ left: X(sel.link.at + (sel.link.timing.fadeOut || 0)), top: waveTopOf(sel.lane) }}
                     onPointerDown={(e) => gesture(e, 'fadeOut', sel)}
                     title={`Uscita: ${sel.link.timing.fadeOut ? fmt(sel.link.timing.fadeOut) : 'fino alla fine'} (trascina)`}
                   />
                 )}
               </>
             )}
+            {/* Video items of the transition chosen: fades and end of the picture (strip on top) and of the sound (waveform). */}
+            {pps &&
+              canEdit &&
+              [sel, after].map((c) => {
+                const m = c && isVideoItem(c.item) ? media[c.index] : null;
+                if (!m?.pic) return null;
+                const vx = (v) => X(c.x0 + (m.offset + v) / c.rate);
+                const pStop = fadeStop(m.pic, m.file);
+                const sStop = fadeStop(m.sound, m.file);
+                // Sound handles after the fade out of the transition: not heard, not shown.
+                const heard = (v) => c.x0 + (m.offset + v) / c.rate <= c.until + 0.01;
+                const waveTop = waveTopOf(c.lane);
+                const vidTop = vidTopOf(c.lane);
+                const name = `“${c.item.title}”`;
+                return (
+                  <span key={`own-${c.item.id}`} className="tr-own">
+                    <span className="tr-handle tr-fade is-pic" style={{ left: vx(m.pic.in), top: vidTop + 3 }} onPointerDown={(e) => gesture(e, 'picIn', c)} title={`Immagine di ${name}, entrata: ${fmt(m.pic.in)} (trascina)`} />
+                    <span className="tr-handle tr-fade is-pic is-out" style={{ left: vx(pStop - m.pic.out), top: vidTop + 3 }} onPointerDown={(e) => gesture(e, 'picOut', c)} title={`Immagine di ${name}, uscita: ${fmt(m.pic.out)} (trascina)`} />
+                    <span className="tr-handle tr-trim is-pic" style={{ left: vx(pStop), top: vidTop, height: VID_H }} onPointerDown={(e) => gesture(e, 'picEnd', c)} title={`Fine dell’immagine di ${name} (trascina: l’audio non cambia)`} />
+                    <span className="tr-handle tr-fade is-snd" style={{ left: vx(m.sound.in), top: waveTop }} onPointerDown={(e) => gesture(e, 'sndIn', c)} title={`Audio di ${name}, entrata: ${fmt(m.sound.in)} (trascina)`} />
+                    {heard(sStop - m.sound.out) && <span className="tr-handle tr-fade is-snd is-out" style={{ left: vx(sStop - m.sound.out), top: waveTop }} onPointerDown={(e) => gesture(e, 'sndOut', c)} title={`Audio di ${name}, uscita: ${fmt(m.sound.out)} (trascina)`} />}
+                    {heard(sStop) && <span
+                      className="tr-handle tr-trim is-snd"
+                      style={{ left: vx(sStop), top: waveTop, height: laneTop(c.lane) + laneH - waveTop }}
+                      onPointerDown={(e) => gesture(e, 'sndEnd', c)}
+                      title={`Fine dell’audio di ${name} (trascina: l’immagine non cambia)`}
+                    />}
+                  </span>
+                );
+              })}
             <span className="tr-head" ref={head} />
           </div>
         </div>
         {clips.length < 2 && <div className="tr-empty muted">Servono almeno due brani nella scaletta per una transizione.</div>}
       </div>
 
-      {sel && after && (
-        <Inspector
-          a={sel}
-          b={after}
-          canEdit={canEdit}
-          write={write}
-          preroll={preroll}
-          setPreroll={setPreroll}
-          onTry={() => tryIt(selected)}
-          onSeekB={(t) => seek(after, t)}
-          busy={!!status}
-        />
+      {((sel && after) || monitorOn) && (
+        <div className="tr-bottom">
+          {sel && after ? (
+            <Inspector
+              a={sel}
+              b={after}
+              media={media}
+              canEdit={canEdit}
+              write={write}
+              preroll={preroll}
+              setPreroll={setPreroll}
+              onTry={() => tryIt(selected)}
+              onSeekB={(t) => seek(after, t)}
+              busy={!!status}
+            />
+          ) : (
+            <span className="grow" />
+          )}
+          {monitorOn && (
+            <div className="tr-monitor" title="Uscita video: quello che vede il pubblico">
+              <VideoOutput className="tr-monitor-screen">
+                {({ source, tail }) => !source?.src && !source?.still && !tail && <span className="tr-monitor-empty">Schermo nero</span>}
+              </VideoOutput>
+              <span className="tr-monitor-label">Uscita video</span>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
@@ -860,7 +1119,50 @@ function Stepper({ label, text, onStep, bar, canEdit, min, max, value }) {
 }
 
 // The transition chosen: type, values, where the song after starts, and Prova.
-function Inspector({ a, b, canEdit, write, preroll, setPreroll, onTry, onSeekB, busy }) {
+// Picture and sound of a video item of the transition chosen: fade in, fade out and end
+// of each, together (the sound follows the picture) or apart.
+function OwnVideo({ c, m, canEdit, write }) {
+  const apart = audioApart(c.item);
+  const set = (fields) => canEdit && write(c.item.id, fields);
+  const step = (kind, fades, key, d) => {
+    const stop = fadeStop(fades, m.file);
+    // As a handle at the value it gives, in seconds of the song.
+    const at = key === 'In' ? fades.in + d : key === 'Out' ? stop - (fades.out + d) : stop + d;
+    set(ownFadePatch(c.item, m, kind + key, m.offset + at, false));
+  };
+  const row = (kind, label, fades, hint) => {
+    const stop = fadeStop(fades, m.file);
+    return (
+      <div className="tr-own-row" title={hint}>
+        <span className={`tr-own-name is-${kind}`}>{label}</span>
+        <Stepper label="Entrata" text={fades.in ? `${fmt(fades.in)}` : 'Netta'} value={fades.in} min={0} max={Math.min(VIDEO_FADE_MAX, stop)} canEdit={canEdit} onStep={(d) => step(kind, fades, 'In', d)} />
+        <Stepper label="Uscita" text={fades.out ? `${fmt(fades.out)}` : 'Netta'} value={fades.out} min={0} max={Math.min(VIDEO_FADE_MAX, stop)} canEdit={canEdit} onStep={(d) => step(kind, fades, 'Out', d)} />
+        <Stepper label="Finisce a" text={fades.end ? clockTenths(fades.end) : 'Fine del video'} value={stop} min={1} max={m.file} canEdit={canEdit} onStep={(d) => step(kind, fades, 'End', d)} />
+      </div>
+    );
+  };
+  return (
+    <div className="tr-own-video">
+      <div className="tr-own-head">
+        <Icon name="video" size={14} />
+        <b className="ellipsis">{c.item.title}</b>
+        <button
+          className={`btn btn-sm ${apart ? '' : 'is-on'}`}
+          onClick={() => set(apart ? SOUND_TOGETHER : apartFields(c.item))}
+          disabled={!canEdit}
+          aria-pressed={!apart}
+          title={apart ? 'Audio e immagine separati: premi perché l’audio segua di nuovo l’immagine' : 'L’audio segue l’immagine: premi per regolarli separatamente'}
+        >
+          <Icon name="link" size={13} /> {apart ? 'Separati' : 'Insieme'}
+        </button>
+      </div>
+      {row('pic', 'Immagine', m.pic, 'Dissolvenze e fine dell’immagine: dopo la fine si vede l’immagine della scaletta')}
+      {row('snd', 'Audio', m.sound, apart ? 'Dissolvenze e fine dell’audio del video' : 'Ora segue l’immagine: se lo cambi, l’audio diventa separato')}
+    </div>
+  );
+}
+
+function Inspector({ a, b, media, canEdit, write, preroll, setPreroll, onTry, onSeekB, busy }) {
   const mode = a.link.mode;
   const t = a.link.timing;
   const start = Number(a.item.linkStart) || 0;
@@ -948,6 +1250,7 @@ function Inspector({ a, b, canEdit, write, preroll, setPreroll, onTry, onSeekB, 
             </span>
           </div>
         )}
+        {[a, b].map((c) => (isVideoItem(c.item) && media?.[c.index]?.pic ? <OwnVideo key={c.item.id} c={c} m={media[c.index]} canEdit={canEdit} write={write} /> : null))}
         <span className="grow" />
         <div className="tr-try">
           <span className="tr-chips" role="group" aria-label="Da quanto prima">

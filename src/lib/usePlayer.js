@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { emit, listen } from '@tauri-apps/api/event';
 import { convertFileSrc } from '@tauri-apps/api/core';
-import { automationOf, cueTrackOf, isVideoItem, padHoldOf, padLeadOf, regionsOf, rehearsalGroup, stemsOf, videoAudioStem, videoFades, videoOf } from '../shared/media.js';
+import { audioFades, cueTrackOf, fadeStop, isVideoItem, padHoldOf, padLeadOf, playedAutomation, regionsOf, rehearsalGroup, stemsOf, videoAudioStem, videoFades, videoOf } from '../shared/media.js';
 import { tempoSections } from '../shared/tempoMap.js';
 import { writeMix } from './songMix';
 import { isSeparator } from '../shared/setlists.js';
@@ -58,8 +58,9 @@ function trackMix(stem, settings, solo, mix) {
     solo: !!solo,
     outStart: route.start,
     outMode: route.mode,
-    // Volume automation drawn in the Arrangement ([] clears it in the engine).
-    auto: automationOf(stem).map((p) => [p.t, p.db]),
+    // Volume automation of the Arrangement with the mute automation in it, if the R of
+    // the channel is on ([] clears it in the engine).
+    auto: playedAutomation(stem).map((p) => [p.t, p.db]),
   };
 }
 
@@ -195,17 +196,19 @@ export function usePlayer({ user, setlist, items, settings, canDrive, canEdit, n
     const sync = await analyzeSource(item, available, getSyncChoice(item.id), ui.setBusy);
     if (!alive()) return null;
     spec.sync = syncSpec(item, sync.analysis, sync.choice, refRegions(item, sync));
-    // Video item: its sound is a track read from the video file, with the fades
-    // of the item; the song lasts as the video, with or without sound.
+    // Video item: its sound is a track read from the video file, with its fades and end
+    // (the ones of the picture unless set apart); the song lasts as the longer of
+    // picture and sound, with or without sound.
     const fades = isVideoItem(item) ? videoFades(item) : null;
     if (fades && videoLocal) {
       const at = Number(video.offset) || 0;
+      const sound = audioFades(item);
       const stem = videoAudioStem(item);
       available.push({ stem, local: videoLocal });
-      spec.tracks = [...spec.tracks, { ...specOf({ stem, local: videoLocal }), regions: [{ at, from: 0, len: null, fadeIn: fades.in, fadeOut: fades.out }] }];
+      spec.tracks = [...spec.tracks, { ...specOf({ stem, local: videoLocal }), regions: [{ at, from: 0, len: sound.end, fadeIn: sound.in, fadeOut: sound.out }] }];
       const length = await videoLength(convertFileSrc(videoLocal));
       if (!alive()) return null;
-      if (length) spec.length = at + length;
+      if (length) spec.length = at + Math.max(fadeStop(fades, length), fadeStop(sound, length));
     }
     const withCues = () => {
       if (!cueLocal) return;
@@ -450,7 +453,7 @@ export function usePlayer({ user, setlist, items, settings, canDrive, canEdit, n
   const mixSheet = cueTrackOf(mixSong);
   const mixJson = mixSong
     ? JSON.stringify([
-        stemsOf(mixSong).map((s) => [s.id, s.gain, s.pan, s.role, s.instrument, s.input, s.eq, !!s.muted, s.auto]),
+        stemsOf(mixSong).map((s) => [s.id, s.gain, s.pan, s.role, s.instrument, s.input, s.eq, !!s.muted, s.auto, s.muteAuto, s.autoRead]),
         mixSheet.gain,
         mixSheet.pan,
         mixSheet.input,
@@ -471,12 +474,12 @@ export function usePlayer({ user, setlist, items, settings, canDrive, canEdit, n
     l.tracks.forEach(({ stem }) => {
       const src = stem.live ? { gain: sheet.gain, pan: sheet.pan, input: sheet.input, eq: sheet.eq, role: stem.role, instrument: stem.instrument, muted: sheet.muted } : byId.get(stem.id);
       if (!src) return;
-      const now = { ...stem, gain: Number(src.gain) || 0, pan: Number(src.pan) || 0, input: src.input, eq: src.eq, role: src.role, instrument: src.instrument, muted: !!src.muted, auto: src.auto };
+      const now = { ...stem, gain: Number(src.gain) || 0, pan: Number(src.pan) || 0, input: src.input, eq: src.eq, role: src.role, instrument: src.instrument, muted: !!src.muted, auto: src.auto, muteAuto: src.muteAuto, autoRead: src.autoRead };
       const same =
         ['gain', 'pan', 'role', 'instrument', 'muted'].every((k) => now[k] === stem[k]) &&
         now.input === stem.input &&
         JSON.stringify(now.eq) === JSON.stringify(stem.eq) &&
-        JSON.stringify(now.auto) === JSON.stringify(stem.auto);
+        JSON.stringify([now.auto, now.muteAuto, now.autoRead]) === JSON.stringify([stem.auto, stem.muteAuto, stem.autoRead]);
       if (!same) next.set(stem.id, now);
       const sent = trackMix(now, ctx.current.settings, !!ctx.current.solos[stem.id], mix);
       const key = JSON.stringify(sent);
@@ -864,7 +867,8 @@ export function usePlayer({ user, setlist, items, settings, canDrive, canEdit, n
   const video = loaded?.video;
   const shownVideo = useRef(null);
   useEffect(() => {
-    const payload = video ? { src: video.src, offset: video.offset || 0, name: video.name, fades: video.fades || null, still } : { src: null, still };
+    const song = ctx.current.loaded?.itemId || null;
+    const payload = video ? { src: video.src, offset: video.offset || 0, name: video.name, fades: video.fades || null, song, still } : { src: null, still };
     const prev = shownVideo.current;
     shownVideo.current = video ? { ...video, itemId: ctx.current.loaded?.itemId } : null;
     // A video item still playing when the next song took over: its picture fades out by itself.

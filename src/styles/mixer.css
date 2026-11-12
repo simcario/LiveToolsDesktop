@@ -302,3 +302,28 @@
 .mx.is-compact .ch-vslider {
   width: 30px;
 }
+.mx-btns.mx-rw {
+  margin-top: -2px;
+}
+.mx-btns.mx-rw.is-blank {
+  height: 20px;
+}
+.mx-strip .m-db.is-auto {
+  color: var(--yes);
+}
+/* R/W of the channel (automation read / write, as Cubase). */
+.mx-btns .mx-read.is-on {
+  background: var(--yes);
+  border-color: var(--yes);
+  color: #04130a;
+}
+.mx-btns .mx-write.is-on {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+/* M lit by the mute automation (not by the M of the track). */
+.mx-btns .mx-mute.is-auto {
+  opacity: 0.75;
+  background-image: repeating-linear-gradient(135deg, rgba(0, 0, 0, 0.18) 0 3px, transparent 3px 6px);
+}

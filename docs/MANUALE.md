@@ -64,6 +64,8 @@ Con più computer o la band in rete: chi guida preme **Guida**, gli altri **Segu
    si aprono con tutto il loro materiale, anche se appartengono a un account a pagamento.
 
 La schermata di avvio elenca in basso il software di terze parti usato dall'app, con le sue licenze.
+LiveTools per Windows è software libero sotto licenza GNU GPL versione 3: licenza e link al codice sorgente sono in
+**Impostazioni › Aggiornamenti › Licenza e crediti**.
 
 ### Requisiti del computer
 
@@ -470,6 +472,21 @@ pannello in basso il tipo di transizione, la sezione da cui parte il brano dopo 
 Le regolazioni valgono per tutta la band e si salvano subito, come il tipo di transizione. Durante una pausa il click
 tace. Per gli elementi *Video* la timeline mostra anche quando entra il **pad** (corsia viola in basso).
 
+**Immagine e monitor** (dalla prossima versione). Se la scaletta ha dei video, ogni brano mostra sopra la forma
+d'onda una striscia con quello che va sull'uscita video: i fotogrammi del suo video (più scuri dove l'immagine sfuma,
+con la sua linea rosa) oppure *Immagine della scaletta* o *Schermo nero*. Immagine e audio stanno nello stesso
+blocco e si spostano insieme.
+L'immagine di un elemento *Video* continua sopra il brano dopo fino alla sua fine, anche se il suono è già sfumato.
+Il pulsante **Monitor** in alto mostra accanto al pannello una piccola uscita video, che segue la testina e **Prova**.
+
+**Immagine e audio separati.** Per un elemento *Video* immagine e suono hanno ciascuno **entrata**, **uscita** e
+**fine**. Di serie vanno insieme; si regolano trascinando le maniglie rosa (immagine, nella striscia in alto) e
+azzurre tonde (audio, sulla forma d'onda) — il **bordo** a destra di ciascuna è la fine — oppure con − e + nel riquadro del
+video nel pannello. Toccare l'audio lo separa dall'immagine (*Separati*); **Insieme** lo fa tornare a seguirla.
+Così puoi, per esempio, sfumare l'immagine sul logo mentre l'intervista continua a sentirsi, o sfumare l'audio
+lasciando l'immagine fino alla fine. L'elemento dura quanto il più lungo dei due: se accorci entrambi, il brano dopo
+parte prima.
+
 **Tonalità e tempo.** Il pulsante con i cursori di una tessera cambia la tonalità (fino a 6 semitoni sopra o sotto) e il
 tempo (fino a 20 BPM in più o in meno, se il brano ha un BPM) del brano in questa scaletta, come in Playback. Le tracce si
 rielaborano una volta su ogni computer, alla prima apertura. Mentre l'app lavora la barra in basso mostra quante ne ha
@@ -631,13 +648,16 @@ Tutto questo si può spegnere con la casella **Rileva le schede audio collegate 
 (dalla prossima versione). Da spenta non compaiono avvisi e la scheda non cambia mai da sola: se quella in uso si
 scollega, il suono si ferma e scegli tu un'altra scheda qui.
 
-LiveTools usa l'audio standard di Windows: la scheda resta disponibile anche per gli altri programmi. Il supporto ASIO è in preparazione e non è ancora incluso nelle versioni
-pubblicate. Nelle versioni che lo includono, i driver installati compaiono nel gruppo **ASIO** dell'elenco delle
-schede: la frequenza di campionamento è quella impostata nel pannello del driver e, di solito, nessun altro
-programma può usare la scheda nel frattempo. Se il driver scelto non è disponibile all'apertura (scheda scollegata o occupata)
-LiveTools mostra l'errore nella barra di stato: scegli un'altra scheda per tornare a suonare.
+Di base LiveTools usa l'audio standard di Windows: la scheda resta disponibile anche per gli altri programmi.
+Se la scheda ha un driver **ASIO®** (dalla prossima versione), lo trovi nel gruppo **ASIO** dell'elenco delle
+schede: il suono arriva prima e con meno ritardo, la frequenza di campionamento è quella impostata nel pannello del
+driver e, di solito, nessun altro programma può usare la scheda nel frattempo. Se il driver scelto non è
+disponibile all'apertura (scheda scollegata o occupata) LiveTools mostra l'errore nella barra di stato: scegli
+un'altra scheda per tornare a suonare.
 
-*ASIO is a trademark of Steinberg Media Technologies GmbH, registered in Europe and other countries.*
+![ASIO Compatible](img/asio-compatible.png)
+
+*ASIO is a registered trademark of Steinberg Media Technologies GmbH.*
 
 ### 4.5 Rehearsal
 
@@ -838,7 +858,7 @@ Strumenti nella barra dell'Arrangement (tasti **1–6**):
 | 3 | Taglia | taglia dove clicchi |
 | 4 | Muta | muta / riattiva un segmento |
 | 5 | Elimina | elimina un segmento |
-| 6 | Automazione | disegna la curva del volume della traccia (dalla prossima versione, vedi sotto) |
+| 6 | Automazione | disegna la curva del volume della traccia e i tratti in cui tace (dalla prossima versione, vedi sotto) |
 
 Altre azioni: **Ctrl+E** taglia la traccia selezionata alla testina, **Canc** elimina, **X** muta,
 **Ctrl+Z / Ctrl+Shift+Z** annulla / ripeti.
@@ -859,6 +879,27 @@ Tra due punti il volume cambia gradualmente; prima del primo e dopo l'ultimo res
 del Mixer e alla sezione canale. Con gli altri strumenti la linea resta visibile, più chiara. Si salva con il brano
 (**Salva**, Ctrl+Z annulla), la suonano Palco, Arrangement, tablet e la prova sul web, ed è legata al tempo del brano:
 non segue lo spostamento delle clip, ma *Aggiungi → Battute…* sposta i punti che vengono dopo.
+
+**Automazione del mute** (dalla prossima versione). Una traccia può anche tacere in alcuni tratti del brano e
+riprendere da sola: i tratti muti si vedono scuri, con una riga rossa sotto il nome. Con lo strumento **Automazione**,
+**Ctrl+clic** nella corsia muta la traccia da quel punto (o la riattiva, se lì è già muta) fino al cambio successivo;
+**Ctrl+clic** su un bordo del tratto (il triangolino rosso) lo toglie. **Canc** con la traccia selezionata toglie
+tutte le sue automazioni, volume e mute. Durante l'esecuzione la **M** si accende da sola nei tratti muti (a righe,
+per distinguerla dal mute fisso della traccia, che resta più forte di tutto).
+
+**R e W, lettura e scrittura delle automazioni** (dalla prossima versione), come in Cubase. Nell'intestazione di ogni
+traccia dell'Arrangement e sotto M e S di ogni striscia del Mixer:
+
+- **R** (verde) *legge* le automazioni: volume e mute seguono le curve. Spenta, le curve restano nel brano (tratteggiate)
+  ma la traccia suona al suo fader. Si salva con il brano, quindi vale per tutta la band; è accesa da sola appena una
+  traccia ha un'automazione.
+- **W** (rossa) *scrive*: mentre il brano suona, premi **M** e il cambio di mute viene scritto in quel punto; afferra il
+  **fader** nel Mixer e il volume viene scritto finché lo tieni, poi torna alla curva che c'era (come il modo *Touch* di
+  Cubase). Il fader e la M seguono la curva mentre il brano va, così vedi cosa stai sovrascrivendo. Ogni gesto è un
+  passo di Ctrl+Z e va nella bozza: **Salva** per tenerlo. W resta solo su questo computer e si spegne alla chiusura
+  dell'app: non rischi di scrivere per sbaglio durante il concerto. Accendere W accende anche R.
+
+R e W ci sono per chi può modificare il brano; la traccia cue dal vivo non ha automazioni.
 
 **Traccia Gobbo** (dalla prossima versione). Se il brano ha i cambi del gobbo registrati, nell'Arrangement c'è la
 traccia **Gobbo**: un blocco per slide, del colore della slide, fino al cambio dopo. Se il brano è cambiato dopo
@@ -1052,7 +1093,8 @@ Un elemento di tipo **Video** (vedi 3.3) è un video da solo, con il suo suono, 
 Nel Palco la sua tessera ha l'icona del video; il pulsante con i cursori apre, al posto di tonalità e tempo:
 
 - **Entrata** e **Uscita** — dissolvenza dal nero e verso il nero, di immagine e suono insieme (di serie: entrata netta,
-  uscita in 3 secondi). Vale per la finestra video e per l'uscita NDI.
+  uscita in 3 secondi). Vale per la finestra video e per l'uscita NDI. Nella pagina *Transizioni* (Modifica) immagine e
+  audio si possono separare, ciascuno con la sua entrata, uscita e fine: allora qui si regola solo l'immagine.
 - **Pad** — quanti secondi prima della fine del video entra il **pad**, nella tonalità del brano dopo: così un brano
   che parte senza intro ha già la sua nota.
 - **Nel brano** — quanti secondi il pad continua dentro il brano dopo prima di sfumare; **Sfumatura** è la durata della

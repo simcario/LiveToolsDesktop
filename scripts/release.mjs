@@ -1,13 +1,15 @@
 // Builds the Windows installer and publishes it as an app update.
 //
 //   npm run installer                    installer of the current version (release/v<x.y.z>/)
-//   npm run installer:asio               personal installer with ASIO (release/personal/), never published
 //   npm run release -- patch|minor|major|<x.y.z> [--notes "..." | --notes-file f.md]
 //                                        bump the version, build, publish the update
 //   npm run release:publish [-- --notes "..."]
 //                                        publish the installer already built for the current version
 //
-// Updates are GitHub Releases of a public repo (only installers there, the code
+// Every installer has ASIO: the Steinberg SDK is used under GPLv3, like the app (LICENSE, README.md).
+// Building it needs libclang (scripts/asio.mjs).
+//
+// Updates are GitHub Releases of a public repo (only installers there, the source code, GPLv3,
 // is in simcario/LiveToolsDesktop): the app reads releases/latest/download/latest.json, see
 // plugins.updater in tauri.conf.json.
 //
@@ -16,13 +18,15 @@
 //   github-token        GitHub token with "Contents: read & write" on the releases repo
 //                       (or the GITHUB_TOKEN env variable; to create the repo, a classic token with "repo")
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { asioEnv } from './asio.mjs';
 
 const RELEASES_REPO = 'simcario/LiveTools-releases';
+// The source code of every published installer (GPLv3 §6): linked from the release notes.
+const SOURCE_REPO = 'simcario/LiveToolsDesktop';
 const PRODUCT = 'LiveTools';
 // The Visual Studio install on the dev PC can't link MSVC binaries: build with the GNU toolchain.
 const TOOLCHAIN = process.env.LIVETOOLS_TOOLCHAIN || 'stable-x86_64-pc-windows-gnu';
@@ -120,7 +124,7 @@ async function fetchRedist() {
   }
 }
 
-function build(version, { asio = false } = {}) {
+function build(version) {
   if (!existsSync(paths.key)) fail(`Chiave di firma degli aggiornamenti mancante: ${paths.key}\n  Creala con: npx tauri signer generate -w "${paths.key}"`);
   step(`Build di ${PRODUCT} ${version} (${TOOLCHAIN})`);
   const env = {
@@ -133,40 +137,26 @@ function build(version, { asio = false } = {}) {
     const key = Object.keys(env).find((k) => k.toLowerCase() === 'path') || 'PATH';
     env[key] = `${MINGW_BIN};${env[key]}`;
   }
-  // Only in the personal installer: publishing ASIO needs one of the SDK's two licenses (see README.md).
-  if (asio) Object.assign(env, asioEnv(TOOLCHAIN));
-  const r = spawnSync(`npx tauri build${asio ? ' --features asio' : ''}`, { cwd: root, env, stdio: 'inherit', shell: true });
+  Object.assign(env, asioEnv(TOOLCHAIN));
+  const r = spawnSync('npx tauri build --features asio', { cwd: root, env, stdio: 'inherit', shell: true });
   if (r.status !== 0) fail('Build non riuscita');
-  return asio ? personal(version) : collect(version);
-}
-
-/**
- * Moves the ASIO installer out of the bundle folder into release/personal/, so "publish"
- * can't find it and upload it as an update.
- */
-function personal(version) {
-  const nsis = join(tauriDir, 'target', 'release', 'bundle', 'nsis');
-  const setup = join(nsis, `${PRODUCT}_${version}_x64-setup.exe`);
-  const out = join(root, 'release', 'personal');
-  mkdirSync(out, { recursive: true });
-  const dest = join(out, `${PRODUCT}_${version}_x64-asio-setup.exe`);
-  copyFileSync(setup, dest);
-  for (const f of [setup, `${setup}.sig`]) if (existsSync(f)) rmSync(f);
-  console.log(`\n✔ Installer personale con ASIO: ${dest} (${(statSync(dest).size / 1024 ** 2).toFixed(1)} MB)`);
-  console.log('  Solo per questo PC: non va pubblicato né dato ad altri finché non c’è la licenza Steinberg.');
-  return { setup: dest };
+  return collect(version);
 }
 
 /** Copies installer and signature into release/v<version>/ next to the update manifest. */
 function collect(version, notes) {
   const nsis = join(tauriDir, 'target', 'release', 'bundle', 'nsis');
   const setup = join(nsis, `${PRODUCT}_${version}_x64-setup.exe`);
-  if (!existsSync(setup) || !existsSync(`${setup}.sig`)) fail(`Installer della ${version} non trovato in ${nsis}: lancia prima "npm run installer"`);
   const out = join(root, 'release', `v${version}`);
-  mkdirSync(out, { recursive: true });
   const files = { setup: join(out, basename(setup)), sig: join(out, `${basename(setup)}.sig`), manifest: join(out, 'latest.json') };
-  copyFileSync(setup, files.setup);
-  copyFileSync(`${setup}.sig`, files.sig);
+  // The bundle folder has the latest build; without it, the copy already in release/v<version>/.
+  const fresh = existsSync(setup) && existsSync(`${setup}.sig`);
+  if (!fresh && !(existsSync(files.setup) && existsSync(files.sig))) fail(`Installer della ${version} non trovato in ${nsis}: lancia prima "npm run installer"`);
+  mkdirSync(out, { recursive: true });
+  if (fresh) {
+    copyFileSync(setup, files.setup);
+    copyFileSync(`${setup}.sig`, files.sig);
+  }
   writeJson(files.manifest, {
     version,
     notes: notes ?? (existsSync(files.manifest) ? readJson(files.manifest).notes : `${PRODUCT} ${version}`),
@@ -207,6 +197,19 @@ async function gh(method, url, body, headers = {}) {
   return res.status === 204 ? {} : res.json();
 }
 
+async function uploadAssets(repo, release, files) {
+  for (const file of files) {
+    const name = basename(file);
+    const old = release.assets.find((a) => a.name === name);
+    if (old) await gh('DELETE', `/repos/${repo}/releases/assets/${old.id}`);
+    const data = readFileSync(file);
+    process.stdout.write(`  ↑ ${name} (${(data.length / 1024 ** 2).toFixed(1)} MB)… `);
+    const url = `https://uploads.github.com/repos/${repo}/releases/${release.id}/assets?name=${encodeURIComponent(name)}`;
+    await gh('POST', url, data, { 'Content-Type': 'application/octet-stream', 'Content-Length': String(data.length) });
+    console.log('ok');
+  }
+}
+
 async function ensureRepo() {
   if (await gh('GET', `/repos/${RELEASES_REPO}`)) return;
   step(`Creazione del repo pubblico ${RELEASES_REPO}`);
@@ -215,6 +218,12 @@ async function ensureRepo() {
   const body = { name, private: false, auto_init: true, description: `${PRODUCT} Desktop: installer e aggiornamenti` };
   await gh('POST', me.login === owner ? '/user/repos' : `/orgs/${owner}/repos`, body);
 }
+
+/** Release notes plus what the GPL and the ASIO guidelines ask to state next to the download. */
+const releaseBody = (version, notes) =>
+  `${notes}\n\n---\nLiveTools è software libero sotto licenza GPL-3.0-or-later. Codice sorgente di questa versione: ` +
+  `https://github.com/${SOURCE_REPO}/tree/v${version}\n\n` +
+  'Supporta i driver ASIO®. ASIO is a registered trademark of Steinberg Media Technologies GmbH.';
 
 async function publish(version, files) {
   const manifest = readJson(files.manifest);
@@ -226,25 +235,16 @@ async function publish(version, files) {
   step(`Pubblicazione della v${version} su ${RELEASES_REPO}`);
   // Draft until every file is up: the apps must never see a latest.json without its installer.
   let release = (await gh('GET', `/repos/${RELEASES_REPO}/releases?per_page=30`)).find((r) => r.tag_name === `v${version}`);
-  if (release) release = await gh('PATCH', `/repos/${RELEASES_REPO}/releases/${release.id}`, { draft: true, body: manifest.notes });
+  if (release) release = await gh('PATCH', `/repos/${RELEASES_REPO}/releases/${release.id}`, { draft: true, body: releaseBody(version, manifest.notes) });
   else
     release = await gh('POST', `/repos/${RELEASES_REPO}/releases`, {
       tag_name: `v${version}`,
       name: `${PRODUCT} ${version}`,
-      body: manifest.notes,
+      body: releaseBody(version, manifest.notes),
       draft: true,
     });
 
-  for (const file of [files.setup, files.sig, files.manifest]) {
-    const name = basename(file);
-    const old = release.assets.find((a) => a.name === name);
-    if (old) await gh('DELETE', `/repos/${RELEASES_REPO}/releases/assets/${old.id}`);
-    const data = readFileSync(file);
-    process.stdout.write(`  ↑ ${name} (${(data.length / 1024 ** 2).toFixed(1)} MB)… `);
-    const url = `https://uploads.github.com/repos/${RELEASES_REPO}/releases/${release.id}/assets?name=${encodeURIComponent(name)}`;
-    await gh('POST', url, data, { 'Content-Type': 'application/octet-stream', 'Content-Length': String(data.length) });
-    console.log('ok');
-  }
+  await uploadAssets(RELEASES_REPO, release, [files.setup, files.sig, files.manifest]);
   await gh('PATCH', `/repos/${RELEASES_REPO}/releases/${release.id}`, { draft: false, make_latest: 'true' });
   console.log(`\n✔ Aggiornamento ${version} pubblicato: https://github.com/${RELEASES_REPO}/releases/tag/v${version}`);
   console.log('  Le app installate lo vedranno al prossimo avvio (o da Impostazioni › Aggiornamenti).');
@@ -254,13 +254,7 @@ async function publish(version, files) {
 
 const notes = opt('notes-file') ? readFileSync(opt('notes-file'), 'utf8').trim() : opt('notes');
 
-if (process.env.LIVETOOLS_ASIO === '1' && command !== 'personal')
-  fail('ASIO non entra negli installer pubblicabili finché non c’è la licenza Steinberg: usa "npm run installer:asio"');
-
-if (command === 'personal') {
-  await fetchRedist();
-  build(currentVersion(), { asio: true });
-} else if (command === 'installer') {
+if (command === 'installer') {
   await fetchRedist();
   const version = currentVersion();
   build(version);
@@ -274,10 +268,11 @@ if (command === 'personal') {
   build(version);
   const files = collect(version, notes);
   await publish(version, files);
-  console.log(`\n  Ricordati di fare commit del cambio di versione: git commit -am "v${version}" && git tag v${version}`);
+  console.log(`\n  Ricordati di fare commit del cambio di versione: git commit -am "v${version}" && git tag v${version} && git push --follow-tags`);
+  console.log(`  Il link al codice sorgente nelle note punta al tag v${version} di ${SOURCE_REPO}: va pubblicato.`);
 } else if (command === 'publish') {
   const version = currentVersion();
   await publish(version, collect(version, notes));
 } else {
-  fail('Comando sconosciuto: usa installer, personal, release o publish');
+  fail('Comando sconosciuto: usa installer, release o publish');
 }

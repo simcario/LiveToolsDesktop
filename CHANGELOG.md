@@ -5,6 +5,18 @@ versioni [SemVer](https://semver.org/lang/it/). Procedura di rilascio: [docs/REL
 
 ## [Non rilasciato]
 
+### Driver ASIO® e licenza GPL
+- **Driver ASIO** in tutti gli installer: in *Audio & uscite* le schede con driver ASIO compaiono nel gruppo
+  **ASIO**. Gli aggiornamenti dall'app hanno ASIO anche loro (prima solo un installer personale).
+- LiveTools Desktop è ora **software libero sotto GNU GPL v3 o successiva** (file `LICENSE`, mostrata anche
+  dall'installer), con un permesso aggiuntivo per il NDI® Runtime e i componenti di Windows. L'SDK ASIO di
+  Steinberg è usato con la sua licenza GPLv3 ed è nel repo (`src-tauri/vendor/asiosdk`): non si scarica più.
+- Logo *ASIO Compatible* e nota sul marchio nella schermata di avvio, in *Audio & uscite* e nella nuova voce
+  **Impostazioni › Aggiornamenti › Licenza e crediti** (licenza, link al codice sorgente).
+- Le note di ogni versione pubblicata hanno il link al codice sorgente di quella versione.
+
+ASIO is a registered trademark of Steinberg Media Technologies GmbH.
+
 ### Più leggero (benchmark del 2026-11-11)
 - **Uscite NDI**: un'uscita accesa non comprime più 30 immagini Full HD al secondo quando nessuno la riceve
   (aspetta un ricevitore). Da fermo l'app passa da circa 16% a 1% di un core.

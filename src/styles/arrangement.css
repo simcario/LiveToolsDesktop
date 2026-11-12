@@ -408,3 +408,20 @@
 .arr-tempo-pop .btn {
   align-self: flex-start;
 }
+
+/* R/W of a channel (automation read / write, as Cubase) in the track header. */
+.t-header .toggle.read.is-on {
+  background: var(--yes);
+  border-color: var(--yes);
+  color: #04130a;
+}
+.t-header .toggle.write.is-on {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+/* M lit by the mute automation (not by the M of the track). */
+.t-header .toggle.mute.is-auto {
+  opacity: 0.75;
+  background-image: repeating-linear-gradient(135deg, rgba(0, 0, 0, 0.18) 0 3px, transparent 3px 6px);
+}

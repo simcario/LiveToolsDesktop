@@ -31,6 +31,7 @@ import {
   usageOf,
 } from '../shared/plans.js';
 import { driveReady, MEDIA_FORMATS, mediaFormatOf, saveMediaFormat } from '../shared/planGuard.js';
+import AsioMark from './AsioMark';
 import Icon from './Icon';
 
 // Account page of the web app, where plans are bought (Stripe).
@@ -302,7 +303,18 @@ const SETTINGS = [
     keywords: 'update automatico',
     Control: UpdateCheck,
   },
+  {
+    id: 'updates.license',
+    section: 'updates',
+    category: 'Aggiornamenti',
+    title: 'Licenza e crediti',
+    description: 'LiveTools è software libero: puoi usarlo, studiarlo, modificarlo e ridistribuirlo secondo la licenza GNU GPL versione 3 o successiva.',
+    keywords: 'licenza gpl codice sorgente informazioni about crediti asio steinberg',
+    Control: LicenseInfo,
+  },
 ];
+
+const SOURCE_URL = 'https://github.com/simcario/LiveToolsDesktop';
 
 const matches = (s, q) => `${s.category} ${s.title} ${s.description} ${s.keywords || ''}`.toLowerCase().includes(q);
 
@@ -995,6 +1007,32 @@ function UpdateCheck({ settings, update, onBusy, ...item }) {
         <input type="checkbox" checked={settings.updateCheck} onChange={(e) => update({ updateCheck: e.target.checked })} />
         Cerca aggiornamenti all’avvio
       </label>
+    </PrefItem>
+  );
+}
+
+function LicenseInfo({ settings, update, onBusy, ...item }) {
+  return (
+    <PrefItem {...item}>
+      <div className="license-info hint">
+        <p>
+          Copyright © 2026 simcario. Questo programma è distribuito SENZA ALCUNA GARANZIA. Il codice sorgente di ogni versione è
+          pubblico.
+        </p>
+        <div className="pref-row">
+          <button className="btn btn-sm" onClick={() => openUrl(SOURCE_URL).catch(() => {})}>
+            Codice sorgente
+          </button>
+          <button className="btn btn-sm" onClick={() => openUrl('https://www.gnu.org/licenses/gpl-3.0.html').catch(() => {})}>
+            Testo della licenza
+          </button>
+        </div>
+        <p>
+          Usa l’ASIO SDK di Steinberg Media Technologies GmbH (licenza GPLv3) per il supporto ai driver ASIO®. Il resto del software di
+          terze parti è elencato nella schermata di avvio.
+        </p>
+      </div>
+      <AsioMark />
     </PrefItem>
   );
 }

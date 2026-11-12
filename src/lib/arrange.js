@@ -2,7 +2,7 @@
 // off) the grid and bars inserted at the playhead. Stems are placed by
 // regions (shared/media.js regionsOf): the engine plays each file through
 // them, so no audio file is ever rewritten.
-import { automationOf, cueTrackOf, regionsOf, shiftAutomation, stemsOf, videoOf } from '../shared/media.js';
+import { automationOf, cueTrackOf, muteAutomationOf, regionsOf, shiftAutomation, stemsOf, videoOf } from '../shared/media.js';
 import { shiftTempoChanges, tempoChangesOf } from '../shared/tempoMap.js';
 import { recordStep } from './arrangeHistory';
 import { editDraft } from './drafts';
@@ -12,11 +12,18 @@ import { sheetKey } from './cueTrack';
 
 const WHOLE = [{ at: 0, from: 0, len: null }];
 
-// The stems with their volume automation after second t moved by delta (null: no automation to move).
+// The stems with their automations (volume, mute) after second t moved by delta (null: no automation to move).
+const hasAuto = (s) => automationOf(s).length || muteAutomationOf(s).length;
 function stemsShifted(item, t, delta) {
   const stems = stemsOf(item);
-  if (!stems.some((s) => automationOf(s).length)) return null;
-  return stems.map((s) => (automationOf(s).length ? { ...s, auto: shiftAutomation(automationOf(s), t, delta) } : s));
+  if (!stems.some(hasAuto)) return null;
+  return stems.map((s) => {
+    if (!hasAuto(s)) return s;
+    const next = { ...s };
+    if (automationOf(s).length) next.auto = shiftAutomation(automationOf(s), t, delta);
+    if (muteAutomationOf(s).length) next.muteAuto = shiftAutomation(muteAutomationOf(s), t, delta);
+    return next;
+  });
 }
 
 // regions._grid = { stemId, regions }: placement of the grid's reference stem
