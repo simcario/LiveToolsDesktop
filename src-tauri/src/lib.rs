@@ -164,6 +164,11 @@ fn engine_set_sync(engine: State<'_, Engine>, sync: Option<SyncSpec>) -> Option<
 }
 
 #[tauri::command]
+fn engine_set_click_mute(engine: State<'_, Engine>, spans: Vec<[f64; 2]>) {
+    engine.0.lock().set_click_mute(spans)
+}
+
+#[tauri::command]
 fn engine_set_sections(engine: State<'_, Engine>, sections: Vec<audio::tempo::SectionSpec>) -> Option<TempoMap> {
     engine.0.lock().set_sections(sections)
 }
@@ -249,6 +254,7 @@ pub fn run() {
             engine_preview_click,
             engine_set_sync,
             engine_set_sections,
+            engine_set_click_mute,
             engine_set_regions,
             engine_replace_track,
             engine_fade,

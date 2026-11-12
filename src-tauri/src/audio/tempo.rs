@@ -445,6 +445,7 @@ impl TempoMap {
     /// the song changed, the sample rate divided by the speed.
     pub fn frames_per(&self, sr: f64) -> TempoFrames {
         TempoFrames {
+            mute: Vec::new(),
             segs: self
                 .segments
                 .iter()
@@ -474,9 +475,24 @@ pub struct SegFrames {
 
 pub struct TempoFrames {
     segs: Vec<SegFrames>,
+    /// Spans [from, to) in frames where the click of the song is silent (its mute
+    /// automation, Arrangement); the count-in always sounds.
+    mute: Vec<(f64, f64)>,
 }
 
 impl TempoFrames {
+    /// With the spans of the song (seconds, `to` past the end = to the end) where the click is silent.
+    pub fn with_click_mute(mut self, spans: &[[f64; 2]], sr: f64) -> Self {
+        self.mute = spans.iter().filter(|s| s[1] > s[0]).map(|s| (s[0] * sr, s[1] * sr)).collect();
+        self
+    }
+
+    /// The click at this frame is silenced by its mute automation.
+    pub fn click_muted(&self, frame: i64) -> bool {
+        let f = frame as f64;
+        self.mute.iter().any(|&(a, b)| f >= a && f < b)
+    }
+
     /// Calls `f(frame, kind, in_count_in)` for each click in [from, to). No allocations.
     /// `sub` = 2 adds the eighths between the beats of simple metres (not in the count-in,
     /// nor in compound metres, whose clicks are already eighths).
@@ -523,6 +539,17 @@ impl TempoFrames {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn click_mute_spans() {
+        let map = TempoMap::build(Some(120.0), Some("4/4"), 0, &[]);
+        let frames = map.frames(1000).with_click_mute(&[[2.0, 4.0], [10.0, 1e9]], 1000.0);
+        assert!(!frames.click_muted(1999));
+        assert!(frames.click_muted(2000));
+        assert!(frames.click_muted(3999));
+        assert!(!frames.click_muted(4000));
+        assert!(frames.click_muted(50_000));
+    }
 
     #[test]
     fn ramps_go_click_by_click() {

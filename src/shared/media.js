@@ -200,8 +200,13 @@ export const padHoldOf = (item) =>
   padLeadOf(item) != null && Number(item?.padHold) > 0
     ? { hold: Math.min(PAD_HOLD_MAX, Number(item.padHold)), fadeOut: Math.max(0.5, seconds(item?.padFadeOut, 4, PAD_FADE_MAX)) }
     : null;
-// The sound of the video as a track: it plays from the video file itself.
-export const videoAudioStem = (item) => ({ id: 'video-audio', name: 'Audio del video', role: 'main', instrument: VIDEO_GROUP, gain: Number(item?.video?.gain) || 0, pan: 0 });
+// The sound of the video as a track: it plays from the video file itself. Its strip in
+// the desktop Mixer saves volume, pan, mute and channel section on the video (video.gain…).
+export const VIDEO_AUDIO_ID = 'video-audio';
+export const videoAudioStem = (item) => {
+  const v = item?.video || {};
+  return { id: VIDEO_AUDIO_ID, name: 'Audio del video', role: 'main', instrument: VIDEO_GROUP, gain: Number(v.gain) || 0, pan: Number(v.pan) || 0, input: v.input, eq: v.eq, muted: !!v.muted };
+};
 /** Level of picture or sound (0..1) at `t` seconds of a video `duration` long, with its fades (and end). */
 export function fadeLevel(t, duration, fades) {
   let g = 1;
@@ -481,6 +486,17 @@ export const muteSpans = (points) =>
     else if (spans.length && spans[spans.length - 1].to === Infinity) spans[spans.length - 1].to = p.t;
     return spans;
   }, []);
+
+// Mute automation of the system click (lane Click · Tempo of the desktop Arrangement):
+// item.clickAuto = { muteAuto: [{ t, on }], autoRead } as a stem's, for instance
+// to stop the click at the end of a song and leave the tempo free.
+export const clickAutoOf = (item) => (item?.clickAuto && typeof item.clickAuto === 'object' ? item.clickAuto : {});
+
+/** Spans [{ from, to }] (seconds of the song) where the click is silent; [] with R off. */
+export const clickMuteSpans = (item) => (automationRead(clickAutoOf(item)) ? muteSpans(muteAutomationOf(clickAutoOf(item))) : []);
+
+/** The click is silenced at second t (spans of clickMuteSpans). */
+export const clickMutedIn = (spans, t) => spans.some((s) => t >= s.from && t < s.to);
 
 // A change of the mute is a 5 ms ramp (no click).
 const MUTE_RAMP = 0.005;

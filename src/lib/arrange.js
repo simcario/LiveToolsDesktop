@@ -2,7 +2,7 @@
 // off) the grid and bars inserted at the playhead. Stems are placed by
 // regions (shared/media.js regionsOf): the engine plays each file through
 // them, so no audio file is ever rewritten.
-import { automationOf, cueTrackOf, muteAutomationOf, regionsOf, shiftAutomation, stemsOf, videoOf } from '../shared/media.js';
+import { automationOf, clickAutoOf, cueTrackOf, muteAutomationOf, regionsOf, shiftAutomation, stemsOf, videoOf } from '../shared/media.js';
 import { shiftTempoChanges, tempoChangesOf } from '../shared/tempoMap.js';
 import { recordStep } from './arrangeHistory';
 import { editDraft } from './drafts';
@@ -14,6 +14,8 @@ const WHOLE = [{ at: 0, from: 0, len: null }];
 
 // The stems with their automations (volume, mute) after second t moved by delta (null: no automation to move).
 const hasAuto = (s) => automationOf(s).length || muteAutomationOf(s).length;
+// The mute automation of the click after second t moved by delta (null: nothing to move).
+const clickShifted = (item, t, delta) => (muteAutomationOf(clickAutoOf(item)).length ? { ...clickAutoOf(item), muteAuto: shiftAutomation(muteAutomationOf(clickAutoOf(item)), t, delta) } : null);
 function stemsShifted(item, t, delta) {
   const stems = stemsOf(item);
   if (!stems.some(hasAuto)) return null;
@@ -102,6 +104,8 @@ export function closeLeadingGap(item, all = regionsOf(item), origin = null) {
   if (grid.anchors.length) fields.grid = { ...item.grid, anchors: grid.anchors.map((a) => ({ ...a, t: r4(a.t - gap) })) };
   if (item.prompter?.cues?.length) fields.prompter = { ...item.prompter, cues: item.prompter.cues.map((c) => ({ ...c, t: Math.max(0, r4(c.t - gap)) })) };
   if (item.duration) fields.duration = Math.max(0, Math.round(item.duration - gap));
+  const click = clickShifted(item, -Infinity, -gap);
+  if (click) fields.clickAuto = click;
   return { gap, media, fields };
 }
 
@@ -243,6 +247,8 @@ export async function insertBars({ item, tempo, position, n }) {
   if (sections) fields.sections = sections;
   // The tempo changes from that bar on move with the music; the new bars keep the tempo they are in.
   if (tempoChangesOf(item).some((c) => c.bar >= bar.bar)) fields.tempoChanges = shiftTempoChanges(tempoChangesOf(item), bar.bar, n);
+  const click = clickShifted(item, p, d);
+  if (click) fields.clickAuto = click;
   if (item.duration) fields.duration = Math.round(item.duration + d);
   // Into the song's draft, saved with "Salva".
   editDraft(item.id, { media, item: fields });

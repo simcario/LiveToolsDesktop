@@ -36,6 +36,8 @@ export const SONG_FIELDS = [
   'sections',
   // Tempo changes inside the song (desktop Arrangement), see tempo-map.js.
   'tempoChanges',
+  // Mute automation of the system click (desktop Arrangement), see media.js clickAutoOf.
+  'clickAuto',
 ];
 
 const LIST_FIELDS = ['midi', 'sections', 'tempoChanges'];

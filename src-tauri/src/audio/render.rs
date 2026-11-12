@@ -1109,7 +1109,9 @@ impl Renderer {
             let mut count = 0;
             tempo.clicks_in(pos, pos + frames as i64, click.subdivide, |f, kind, in_count_in| {
                 // A requested count-in always sounds, even with the click off.
-                if (click.enabled || (count_in && in_count_in)) && count < triggers.len() {
+                // The mute automation of the click (Arrangement) silences it, not the count-in.
+                let on = click.enabled && (in_count_in || !tempo.click_muted(f));
+                if (on || (count_in && in_count_in)) && count < triggers.len() {
                     triggers[count] = ((f - pos) as usize, kind);
                     count += 1;
                 }

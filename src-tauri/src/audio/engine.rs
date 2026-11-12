@@ -20,7 +20,7 @@ use super::eq::EqSpec;
 use super::device::{AudioHost, DeviceEntry, DeviceInfo};
 use super::render::{ClickParams, Garbage, NextSong, PadParams, Renderer, RtCmd, RtTrack, Shared, TrackControl, OUT_MONO, OUT_OFF, OUT_STEREO};
 use super::stream::{self, DecoderHandle, Region, TrackStream};
-use super::tempo::{ClickKind, SectionSpec, SyncSpec, TempoMap};
+use super::tempo::{ClickKind, SectionSpec, SyncSpec, TempoFrames, TempoMap};
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -77,6 +77,10 @@ pub struct SongSpec {
     /// lasts as its video, also when the video has no sound.
     #[serde(default)]
     pub length: Option<f64>,
+    /// Spans [from, to] (seconds of the song) where the click is silent: its mute
+    /// automation in the Arrangement (R on).
+    #[serde(default)]
+    pub click_mute: Vec<[f64; 2]>,
 }
 
 impl SongSpec {
@@ -632,7 +636,7 @@ impl Controller {
         let (song, rt, result) = self.open_song(spec, 0.0);
         self.publish(&song);
         self.send(RtCmd::Tracks { tracks: Box::new(rt), position: 0 });
-        self.send(RtCmd::Tempo(Some(Box::new(song.tempo.frames_per(self.fps(song.rate))))));
+        self.send(RtCmd::Tempo(Some(Box::new(self.tempo_frames(&song)))));
         self.send(RtCmd::Duration((song.duration * sr as f64) as i64));
         // Old readers stop when their handles drop.
         self.song = Some(song);
@@ -670,7 +674,7 @@ impl Controller {
         let from = (t.start.max(0.0) / spec.rate()).min(3600.0);
         let (song, rt, result) = self.open_song(spec, from);
         let from = from.min(song.duration);
-        let tempo = song.tempo.frames_per(self.fps(song.rate));
+        let tempo = self.tempo_frames(&song);
         self.jump_seq += 1;
         let id = self.jump_seq;
         *self.monitor.next.write() = Some(NextInfo { song_id: song.spec.id.clone(), mode: t.mode.clone(), at });
@@ -866,13 +870,18 @@ impl Controller {
         Some(original)
     }
 
+    /// The tempo map of a song for the audio thread, with the spans where its click is silent.
+    fn tempo_frames(&self, song: &Loaded) -> TempoFrames {
+        let fps = self.fps(song.rate);
+        song.tempo.frames_per(fps).with_click_mute(&song.spec.click_mute, fps)
+    }
+
     fn send_tempo(&mut self) -> Option<TempoMap> {
         let song = self.song.as_mut()?;
         let tempo = song.spec.tempo();
         song.tempo = tempo.clone();
-        let rate = song.rate;
         *self.monitor.tempo.write() = Some(tempo.clone());
-        let frames = tempo.frames_per(self.fps(rate));
+        let frames = self.tempo_frames(self.song.as_ref()?);
         self.send(RtCmd::Tempo(Some(Box::new(frames))));
         Some(tempo)
     }
@@ -881,6 +890,14 @@ impl Controller {
     pub fn set_sync(&mut self, sync: Option<SyncSpec>) -> Option<TempoMap> {
         self.song.as_mut()?.spec.sync = sync;
         self.send_tempo()
+    }
+
+    /// New spans where the click is silent (its mute automation), heard at once.
+    pub fn set_click_mute(&mut self, spans: Vec<[f64; 2]>) {
+        if let Some(song) = self.song.as_mut() {
+            song.spec.click_mute = spans;
+            self.send_tempo();
+        }
     }
 
     /// New sections of the song, heard at once: only the tempo map changes, not the tracks.

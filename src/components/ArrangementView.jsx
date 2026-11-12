@@ -19,8 +19,8 @@ import InsertBarsModal from './InsertBarsModal';
 import { closeLeadingGap, leadToAudio, cutAt, keepGrid, moveSegment, removeSegment, segmentEnd, segmentIndexAt, snapToBeat, stemRegions, toggleSegmentMute, trimSegment } from '../lib/arrange';
 import { clearHistory, recordStep, travel, useHistory } from '../lib/arrangeHistory';
 import { discardDraft, editDraft, saveDraft, useDrafts } from '../lib/drafts';
-import { AUTO_MAX_DB, AUTO_MIN_DB, automationDb, automationMutedAt, automationOf, automationRead, muteAutomationOf, muteSpans, regionsOf, stemsOf } from '../shared/media.js';
-import { hasAutomation, toggleRead, toggleWrite, useAutoWrite, writeMute } from '../lib/autoWrite';
+import { AUTO_MAX_DB, AUTO_MIN_DB, automationDb, automationMutedAt, automationOf, automationRead, muteAutomationOf, muteSpans, regionsOf, stemsOf, VIDEO_AUDIO_ID, clickAutoOf } from '../shared/media.js';
+import { CLICK_ID, hasAutomation, setClickMute, toggleClickRead, toggleClickWrite, toggleRead, toggleWrite, useAutoWrite, writeClickMute, writeMute } from '../lib/autoWrite';
 import { TIME_SIGNATURES } from '../shared/setlists.js';
 import { cleanTempoChanges, MAX_BPM, MAX_RAMP, MIN_BPM, tempoChangesOf } from '../shared/tempoMap.js';
 import { writeMix } from '../lib/songMix';
@@ -178,6 +178,7 @@ function draw(canvas, { width, height, scroll, pps, t0, tempo, rows, peaks, dura
         ctx.fillRect(Math.round(x(b.t)), y + LANE_H - 9 - h, 2, h);
       });
       drawTempoLane(ctx, { y, width, x, beats, ...tempoLane });
+      if (r.muteAuto?.length) drawAutomation(ctx, { y, width, tStart, tEnd, pps, x, points: [], mutes: r.muteAuto, read: r.read !== false, active: autoTool });
       return;
     }
     // Audio: one clip per region (moved, or cut by inserted bars); video: one clip at its offset.
@@ -274,6 +275,10 @@ function drawAutomation(ctx, { y, width, tStart, tEnd, pps, x, points, mutes, re
       ctx.lineTo(px, y + AUTO_TOP - 1);
       ctx.fill();
     });
+  }
+  if (!points.length && mutes.length) {
+    ctx.restore();
+    return;
   }
   ctx.strokeStyle = active ? '#fbbf24' : 'rgba(251,191,36,0.6)';
   ctx.lineWidth = active ? 1.5 : 1;
@@ -617,7 +622,7 @@ function TempoEditor({ mark, left, top, editable, ignored, onBpm, onRamp, onSig,
 // saved: the mute of the tracks is the song's (who can edit it), not this computer's.
 // M of a track lit by its mute automation where the song is now (R on, playing).
 function useAutoMuted(row) {
-  const on = row.kind === 'audio' && row.read !== false && !!row.muteAuto?.length;
+  const on = (row.kind === 'audio' || row.kind === 'click') && row.read !== false && !!row.muteAuto?.length;
   return useEngineStatus((s) => on && s.playing && !s.waiting && automationMutedAt(row.muteAuto, Math.max(0, s.position)));
 }
 
@@ -636,9 +641,39 @@ function TrackHeader({ row, index, solos, onTrack, selected, onSelect, saved, au
               <Icon name="plus" size={11} />
             </button>
           )}
-          <button className={`toggle ${row.enabled ? 'is-on' : ''}`} onClick={row.onToggle}>
+          <button
+            className={`toggle ${row.enabled && !autoMuted ? 'is-on' : ''} ${row.enabled && autoMuted ? 'mute is-auto' : ''}`}
+            onClick={() => (row.write && auto?.canEdit && writeClickMute(auto.song)) || row.onToggle()}
+            title={
+              row.write
+                ? 'W attivo: mentre il brano suona, On ferma o fa ripartire il click da questo punto (automazione)'
+                : autoMuted
+                  ? 'Click fermato dall’automazione in questo punto'
+                  : 'Click acceso o spento (per tutti i brani)'
+            }
+          >
             On
           </button>
+          {auto && (
+            <>
+              <button
+                className={`toggle read ${row.read !== false && row.hasAuto ? 'is-on' : ''}`}
+                onClick={() => toggleClickRead(auto.song)}
+                disabled={!auto.canEdit || !row.hasAuto}
+                title={row.hasAuto ? `Lettura automazione del click (R): ${row.read !== false ? 'attiva, il click tace nei tratti segnati' : 'spenta, il click suona sempre'} · si salva con il brano` : 'Lettura automazione del click (R): nessun tratto senza click (W per scriverli, o Ctrl+clic con lo strumento Automazione)'}
+              >
+                R
+              </button>
+              <button
+                className={`toggle write ${row.write ? 'is-on' : ''}`}
+                onClick={() => toggleClickWrite(auto.song)}
+                disabled={!auto.canEdit}
+                title={auto.canEdit ? 'Scrittura automazione del click (W): mentre il brano suona, On ferma o fa ripartire il click in quel punto (poi “Salva”). Solo su questo dispositivo' : 'Solo chi può modificare il brano scrive le automazioni'}
+              >
+                W
+              </button>
+            </>
+          )}
         </span>
         <div className="t-row small muted">{row.info}</div>
       </div>
@@ -663,7 +698,7 @@ function TrackHeader({ row, index, solos, onTrack, selected, onSelect, saved, au
   const { stem } = row;
   const own = saved ? !!stem.muted : (getMix(stem.id).mute ?? !!stem.muted);
   const mute = own || autoMuted;
-  const rw = auto && !stem.live;
+  const rw = auto && !stem.live && stem.id !== VIDEO_AUDIO_ID;
   const can = rw && auto.canEdit;
   return (
     <div className={`t-header ${selected ? 'is-selected' : ''}`} style={{ '--lane-color': row.color }} onMouseDown={onSelect} title="Clic: seleziona la traccia (Ctrl+E taglia nel punto del cursore)">
@@ -848,6 +883,11 @@ export default function ArrangementView({ player, item, lanes, settings, update,
     rows.push({
       kind: 'click',
       enabled: settings.click.enabled,
+      // Mute automation of the click (R/W, Ctrl+click with the Automazione tool).
+      muteAuto: muteAutomationOf(clickAutoOf(song)),
+      read: automationRead(clickAutoOf(song)),
+      hasAuto: muteAutomationOf(clickAutoOf(song)).length > 0,
+      write: !!writing[CLICK_ID],
       onToggle: () => update({ click: { ...settings.click, enabled: !settings.click.enabled } }),
       onAddTempo: canEditSong ? () => addTempoAt(Math.max(0, engineStatus().position)) : null,
       info: seg ? `${Math.round(seg.bpm * 100) / 100} BPM · ${seg.timeSig}${tempoChanges.length ? ` · ${tempoChanges.length === 1 ? '1 cambio' : `${tempoChanges.length} cambi`}` : ''}` : '',
@@ -1351,6 +1391,28 @@ export default function ArrangementView({ player, item, lanes, settings, update,
     // moves (on the beats with "Griglia", Shift = the other way), scissors
     // cut where clicked, X mutes / unmutes, eraser deletes.
     const row = rows[Math.floor((e.clientY - rect.top - RULER_H) / LANE_H)];
+    // Lane Click · Tempo with the Automazione tool: Ctrl+click stops or restarts the click from
+    // there (on an edge of a silent span: that edge goes).
+    if (row?.kind === 'click' && !warpOn && tool === 'auto' && (e.ctrlKey || e.metaKey)) {
+      if (!canEditSong) {
+        notify('Solo chi può modificare il brano può disegnare l’automazione', true);
+        return;
+      }
+      const px = e.clientX - rect.left;
+      const mutes = row.muteAuto || [];
+      const edge = mutes.findIndex((m) => Math.abs((m.t - t0) * pps - px) <= AUTO_HIT);
+      if (edge >= 0) {
+        setClickMute(song, mutes.filter((_, i) => i !== edge), 'Tolto un bordo del tratto senza click');
+        notify('Tolto un bordo del tratto senza click · “Salva” per tenerlo');
+        return;
+      }
+      const at = Math.max(0, snap !== e.shiftKey && tempo ? snapToBeat(tempo, t) : t);
+      const on = !automationMutedAt(mutes, at);
+      const label = `${on ? 'Click fermato' : 'Click ripartito'} a ${fmtTime(at)}`;
+      setClickMute(song, [...mutes, { t: at, on }], label);
+      notify(`${label} · “Salva” per tenerlo`);
+      return;
+    }
     // Lane Click · Tempo: a change is dragged to another bar, a touch on it opens its editor.
     if (row?.kind === 'click' && !warpOn) {
       const m = tempoMarkAt(t);

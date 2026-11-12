@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { emit, listen } from '@tauri-apps/api/event';
 import { convertFileSrc } from '@tauri-apps/api/core';
-import { audioFades, cueTrackOf, fadeStop, isVideoItem, padHoldOf, padLeadOf, playedAutomation, regionsOf, rehearsalGroup, stemsOf, videoAudioStem, videoFades, videoOf } from '../shared/media.js';
+import { audioFades, clickMuteSpans, cueTrackOf, fadeStop, isVideoItem, padHoldOf, padLeadOf, playedAutomation, regionsOf, rehearsalGroup, stemsOf, VIDEO_AUDIO_ID, videoAudioStem, videoFades, videoOf } from '../shared/media.js';
 import { tempoSections } from '../shared/tempoMap.js';
 import { writeMix } from './songMix';
 import { isSeparator } from '../shared/setlists.js';
@@ -114,8 +114,12 @@ function songSpec(item, tracks, settings) {
     timeSig: item.timeSig || null,
     countInBars: countInOf(settings),
     sections: sectionSpecs(item),
+    clickMute: clickMuteOf(item),
   };
 }
+
+// Spans where the click of the song is silent, for the engine (to the end = far away).
+const clickMuteOf = (item) => clickMuteSpans(item).map((s) => [s.from, Number.isFinite(s.to) ? s.to : 1e9]);
 
 // Analyses the reference stem chosen for the grid (click or rhythm).
 async function analyzeSource(item, available, choice, setBusy) {
@@ -406,6 +410,18 @@ export function usePlayer({ user, setlist, items, settings, canDrive, canEdit, n
     });
   }, [sectionsJson]);
 
+  // Mute automation of the click changed (Arrangement, R/W, undo): heard at once.
+  const clickMuteJson = loadedSections ? JSON.stringify(clickMuteOf(loadedSections)) : null;
+  const sentClickMute = useRef(null);
+  useEffect(() => {
+    const id = ctx.current.loaded?.itemId;
+    if (!clickMuteJson || !id) return;
+    const key = `${id}|${clickMuteJson}`;
+    if (sentClickMute.current === key) return;
+    sentClickMute.current = key;
+    engine.setClickMute(JSON.parse(clickMuteJson)).catch(() => {});
+  }, [clickMuteJson]);
+
   // Cues edited in the Arrangement: the cue track is remade and swapped in the
   // engine, heard at once without reloading the song. Adding the first cue,
   // removing them all, a new mixdown or its file deleted reload the song.
@@ -459,6 +475,8 @@ export function usePlayer({ user, setlist, items, settings, canDrive, canEdit, n
         mixSheet.input,
         mixSheet.eq,
         mixSheet.muted,
+        // The sound of a video item (its strip in the Mixer).
+        isVideoItem(mixSong) ? [mixSong.video?.gain, mixSong.video?.pan, mixSong.video?.input, mixSong.video?.eq, mixSong.video?.muted] : null,
         editableSong(mixSong, canEdit),
       ])
     : null;
@@ -472,7 +490,11 @@ export function usePlayer({ user, setlist, items, settings, canDrive, canEdit, n
     const mix = mixFor(item);
     const next = new Map();
     l.tracks.forEach(({ stem }) => {
-      const src = stem.live ? { gain: sheet.gain, pan: sheet.pan, input: sheet.input, eq: sheet.eq, role: stem.role, instrument: stem.instrument, muted: sheet.muted } : byId.get(stem.id);
+      const src = stem.live
+        ? { gain: sheet.gain, pan: sheet.pan, input: sheet.input, eq: sheet.eq, role: stem.role, instrument: stem.instrument, muted: sheet.muted }
+        : stem.id === VIDEO_AUDIO_ID
+          ? videoAudioStem(item)
+          : byId.get(stem.id);
       if (!src) return;
       const now = { ...stem, gain: Number(src.gain) || 0, pan: Number(src.pan) || 0, input: src.input, eq: src.eq, role: src.role, instrument: src.instrument, muted: !!src.muted, auto: src.auto, muteAuto: src.muteAuto, autoRead: src.autoRead };
       const same =
@@ -537,6 +559,9 @@ export function usePlayer({ user, setlist, items, settings, canDrive, canEdit, n
     if (mute !== undefined && !stem.live && editableSong(song, ce) && stemsOf(song).some((s) => s.id === stem.id)) {
       // Into the draft: the mix effect above sends it to the engine.
       writeMix(song, { stems: stemsOf(song).map((s) => (s.id === stem.id ? { ...s, muted: !!mute } : s)) }, `${mute ? 'Mutata' : 'Riattivata'} “${stem.name}”`);
+    } else if (mute !== undefined && stem.id === VIDEO_AUDIO_ID && editableSong(song, ce) && song.video) {
+      // The sound of a video item: its mute is saved on the video.
+      writeMix(song, { video: { ...song.video, muted: !!mute } }, `${mute ? 'Mutato' : 'Riattivato'} l’audio del video`);
     } else if (mute !== undefined) persist.mute = mute;
     if (Object.keys(persist).length) setMix(stem.id, persist);
     if (solo !== undefined) setSolos((s) => ({ ...s, [stem.id]: solo }));

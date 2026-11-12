@@ -582,7 +582,7 @@ della testina. Le modifiche si salvano con **Salva**.
 
 **Mixer** (dalla prossima versione). Nel Dettaglio, tab **Mixer**, oppure in una finestra separata come la MixConsole di
 Cubase: **F3** o il pulsante **Mixer** della barra dell'Arrangement (di nuovo F3 per chiuderla). Una striscia per **ogni traccia del
-multitraccia**, nell'ordine della sequenza, più la traccia cue live; le tracce non ancora scaricate compaiono sbiadite e
+multitraccia**, nell'ordine della sequenza, più la traccia cue live e, per un elemento video, l'**Audio del video** (volume, pan, mute, gain ed EQ salvati con il video); le tracce non ancora scaricate compaiono sbiadite e
 senza meter, ma si possono già regolare:
 
 ![Il mixer nel Dettaglio: una striscia per traccia con ruolo, strumento, pan, fader, M e nome; a sinistra la tab Sezioni del Browser](img/arrangement-mixer.png)
@@ -899,7 +899,20 @@ traccia dell'Arrangement e sotto M e S di ogni striscia del Mixer:
   passo di Ctrl+Z e va nella bozza: **Salva** per tenerlo. W resta solo su questo computer e si spegne alla chiusura
   dell'app: non rischi di scrivere per sbaglio durante il concerto. Accendere W accende anche R.
 
-R e W ci sono per chi può modificare il brano; la traccia cue dal vivo non ha automazioni.
+R e W ci sono per chi può modificare il brano; la traccia cue dal vivo e l'audio del video non hanno automazioni.
+
+**Automazione del click** (dalla prossima versione). Anche la traccia **Click · Tempo** ha **R** e **W**, per esempio
+per fermare il click alla fine del brano e lasciare il tempo libero (un finale rallentato, una corona). Il click tace
+nei tratti segnati in rosso e riparte da solo dove finiscono; il count-in suona sempre. Per segnarli:
+
+- con lo strumento **Automazione**, **Ctrl+clic** nella corsia del click lo ferma da quel punto (o lo fa ripartire, se
+  lì è già fermo); **Ctrl+clic** su un bordo del tratto lo toglie; con *Griglia* attiva il punto si aggancia ai
+  movimenti;
+- oppure con **W** accesa: mentre il brano suona, **On** ferma o fa ripartire il click in quel punto.
+
+**On** resta l'interruttore del click per tutti i brani (Impostazioni › Click); nei tratti fermati dall'automazione
+appare a righe. Il tratto si salva con il brano (**Salva**), vale per tutta la band e anche nella prova sul web, e
+*Aggiungi → Battute…* lo sposta insieme alla musica.
 
 **Traccia Gobbo** (dalla prossima versione). Se il brano ha i cambi del gobbo registrati, nell'Arrangement c'è la
 traccia **Gobbo**: un blocco per slide, del colore della slide, fino al cambio dopo. Se il brano è cambiato dopo

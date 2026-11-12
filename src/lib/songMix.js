@@ -22,6 +22,15 @@ export function writeMix(song, media, label, live = false) {
   recordStep(song.id, { label, before: { media: before, item: {} }, after: { media, item: {} } });
 }
 
+/** Fields of the setlist item (and of its library song) into the draft, one undo step. */
+export function writeItem(song, item, label) {
+  if (!song) return;
+  endMix();
+  const before = Object.fromEntries(Object.keys(item).map((k) => [k, song[k] ?? null]));
+  editDraft(song.id, { item });
+  recordStep(song.id, { label, before: { media: {}, item: before }, after: { media: {}, item } });
+}
+
 /** End of a drag: its undo step. */
 export function endMix() {
   const p = pending;

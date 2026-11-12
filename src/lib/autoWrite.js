@@ -7,9 +7,9 @@
 // then back to the curve that was there) and its M writes a change of the mute
 // at that second. Everything goes into the song's draft ("Salva"), one undo step per gesture.
 import { useSyncExternalStore } from 'react';
-import { AUTO_MAX_DB, AUTO_MIN_DB, automationDb, automationMutedAt, automationOf, automationRead, muteAutomationOf, stemsOf } from '../shared/media.js';
+import { AUTO_MAX_DB, AUTO_MIN_DB, automationDb, automationMutedAt, automationOf, automationRead, clickAutoOf, muteAutomationOf, stemsOf } from '../shared/media.js';
 import { engineStatus, livePosition } from './engine';
-import { endMix, writeMix } from './songMix';
+import { endMix, writeItem, writeMix } from './songMix';
 
 let writing = {}; // stem id → true
 const listeners = new Set();
@@ -34,6 +34,41 @@ function withPatch(stem, patch) {
   const next = { ...stem, ...patch };
   Object.keys(patch).forEach((k) => patch[k] === undefined && delete next[k]);
   return next;
+}
+
+// The system click (lane Click · Tempo): only the mute, as item.clickAuto; its W is under CLICK_ID.
+export const CLICK_ID = 'click';
+const writeClick = (song, patch, label) => {
+  const next = { ...clickAutoOf(song), ...patch };
+  Object.keys(patch).forEach((k) => patch[k] === undefined && delete next[k]);
+  const empty = !muteAutomationOf(next).length && next.autoRead !== false;
+  writeItem(song, { clickAuto: empty ? null : { ...next, muteAuto: muteAutomationOf(next) } }, label);
+};
+
+/** Mute points of the click into the song (Ctrl+click with the Automazione tool, Canc). */
+export const setClickMute = (song, points, label) => writeClick(song, { muteAuto: points }, label);
+
+/** R of the click. */
+export function toggleClickRead(song) {
+  const on = !automationRead(clickAutoOf(song));
+  writeClick(song, { autoRead: on ? undefined : false }, `Lettura automazione del click ${on ? 'attiva' : 'spenta'}`);
+}
+
+/** W of the click (here only); arming it turns on R too. */
+export function toggleClickWrite(song) {
+  const on = !writing[CLICK_ID];
+  setWriting(CLICK_ID, on);
+  if (on && !automationRead(clickAutoOf(song))) writeClick(song, { autoRead: undefined }, 'Lettura automazione del click attiva');
+}
+
+/** "On" of the click with W armed while the song plays: a change of its mute here. false = not handled. */
+export function writeClickMute(song) {
+  const t = writeTime();
+  if (!song || t == null || !writing[CLICK_ID]) return false;
+  const pts = muteAutomationOf(clickAutoOf(song));
+  const on = !automationMutedAt(pts, t);
+  writeClick(song, { muteAuto: [...pts.filter((p) => Math.abs(p.t - t) > 0.02), { t: Math.round(t * 1e4) / 1e4, on }], autoRead: undefined }, `${on ? 'Click fermato' : 'Click ripartito'} a ${t.toFixed(1)} s`);
+  return true;
 }
 
 /** Has volume or mute automation. */

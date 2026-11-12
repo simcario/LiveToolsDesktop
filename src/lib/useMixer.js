@@ -11,7 +11,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { emit, listen } from '@tauri-apps/api/event';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
-import { automationOf, automationRead, cueTrackOf, instrumentOf, INSTRUMENTS, muteAutomationOf, rehearsalGroup, STEM_ROLES, stemsOf } from '../shared/media.js';
+import { automationOf, automationRead, cueTrackOf, instrumentOf, INSTRUMENTS, muteAutomationOf, rehearsalGroup, STEM_ROLES, stemsOf, VIDEO_AUDIO_ID, videoAudioStem } from '../shared/media.js';
 import { hasAutomation, isWriting, releaseTouch, toggleRead, toggleWrite, useAutoWrite, writeMute, writeVolume } from './autoWrite';
 import { channelActive, eqOf, flatEq, inputOf } from '../shared/eq.js';
 import { editDraft, isDirty, saveDraft, useDrafts } from './drafts';
@@ -53,7 +53,9 @@ export function useMixer({ player, lanes, canEdit: canEditSetlist, setlistId, no
   // downloaded or not played), then the live cue track; values of the song, draft included.
   const index = new Map((loaded?.tracks || []).map((tr, i) => [tr.stem.id, i]));
   const live = loaded?.tracks.find((tr) => tr.stem.live)?.stem;
-  const all = [...stemsOf(song), ...(live ? [{ ...live, gain: sheet.gain, pan: sheet.pan, input: sheet.input, eq: sheet.eq, muted: sheet.muted }] : [])];
+  // The sound of a video item, when it is loaded: its values are those of the video.
+  const videoSound = index.has(VIDEO_AUDIO_ID) ? [videoAudioStem(song)] : [];
+  const all = [...stemsOf(song), ...videoSound, ...(live ? [{ ...live, gain: sheet.gain, pan: sheet.pan, input: sheet.input, eq: sheet.eq, muted: sheet.muted }] : [])];
   const strips = all.map((stem) => {
     const m = getMix(stem.id);
     return {
@@ -63,6 +65,8 @@ export function useMixer({ player, lanes, canEdit: canEditSetlist, setlistId, no
       index: index.has(stem.id) ? index.get(stem.id) : -1,
       color: laneColor(lanes, stem),
       live: !!stem.live,
+      // The sound of the video: role, instrument and automations stay as they are.
+      video: stem.id === VIDEO_AUDIO_ID,
       role: stem.role || 'main',
       instrument: instrumentOf(stem),
       gain: Number(stem.gain) || 0,
@@ -81,7 +85,7 @@ export function useMixer({ player, lanes, canEdit: canEditSetlist, setlistId, no
       muteAuto: stem.live ? [] : muteAutomationOf(stem),
       hasAuto: !stem.live && hasAutomation(stem),
       read: !stem.live && automationRead(stem),
-      write: !stem.live && isWriting(stem.id),
+      write: !stem.live && stem.id !== VIDEO_AUDIO_ID && isWriting(stem.id),
     };
   });
   const changed = strips.some((s) => s.gain !== 0 || s.pan !== 0);
@@ -121,6 +125,10 @@ export function useMixer({ player, lanes, canEdit: canEditSetlist, setlistId, no
       write({ cueTrack: { ...(song.cueTrack || {}), ...patch } }, label, live);
       return;
     }
+    if (id === VIDEO_AUDIO_ID) {
+      if (song.video) write({ video: { ...song.video, ...patch } }, label, live);
+      return;
+    }
     write({ stems: stemsOf(song).map((s) => (s.id === id ? { ...s, ...patch } : s)) }, label, live);
   };
   const stemOf = (id) => all.find((x) => x.id === id);
@@ -136,7 +144,7 @@ export function useMixer({ player, lanes, canEdit: canEditSetlist, setlistId, no
     switch (a.type) {
       case 'gain':
         // W armed while it plays: the fader writes the volume automation.
-        if (canEdit && stem && !stem.live && writeVolume(song, stem, a.value)) break;
+        if (canEdit && stem && !stem.live && stem.id !== VIDEO_AUDIO_ID && writeVolume(song, stem, a.value)) break;
         if (canEdit && stem) setStem(a.id, { gain: Math.round(a.value * 10) / 10 }, `Volume ${stem.name}`, a.live);
         break;
       case 'pan':
@@ -153,26 +161,26 @@ export function useMixer({ player, lanes, canEdit: canEditSetlist, setlistId, no
         end();
         break;
       case 'role':
-        if (canEdit && stem && !stem.live) {
+        if (canEdit && stem && !stem.live && stem.id !== VIDEO_AUDIO_ID) {
           setStem(a.id, { role: a.value }, `${stem.name} → ${STEM_ROLES[a.value]?.label || a.value}`, false);
           // Back on a role: the output follows it again.
           if (getMix(a.id).route) local(stem, { route: null });
         }
         break;
       case 'instrument':
-        if (canEdit && stem && !stem.live) setStem(a.id, { instrument: a.value }, `${stem.name} → ${INSTRUMENTS[a.value] || a.value}`, false);
+        if (canEdit && stem && !stem.live && stem.id !== VIDEO_AUDIO_ID) setStem(a.id, { instrument: a.value }, `${stem.name} → ${INSTRUMENTS[a.value] || a.value}`, false);
         break;
       case 'route':
         if (stem) local(stem, { route: a.value ? parseRoute(a.value) : null });
         break;
       case 'read':
-        if (canEdit && stem && !stem.live) toggleRead(song, stem);
+        if (canEdit && stem && !stem.live && stem.id !== VIDEO_AUDIO_ID) toggleRead(song, stem);
         break;
       case 'write':
-        if (canEdit && stem && !stem.live) toggleWrite(song, stem);
+        if (canEdit && stem && !stem.live && stem.id !== VIDEO_AUDIO_ID) toggleWrite(song, stem);
         break;
       case 'mute':
-        if (canEdit && stem && !stem.live && writeMute(song, stem)) break;
+        if (canEdit && stem && !stem.live && stem.id !== VIDEO_AUDIO_ID && writeMute(song, stem)) break;
         if (stem?.live) {
           if (canEdit) setStem(a.id, { muted: !stem.muted }, stem.muted ? 'Traccia cue riattivata' : 'Traccia cue mutata', false);
         } else if (stem && canEdit) setStem(a.id, { muted: !stem.muted }, `${stem.muted ? 'Riattivata' : 'Mutata'} “${stem.name}”`, false);
@@ -185,6 +193,7 @@ export function useMixer({ player, lanes, canEdit: canEditSetlist, setlistId, no
         if (!canEdit || !song) break;
         const media = { stems: stemsOf(song).map((s) => ({ ...s, gain: 0, pan: 0 })) };
         if (song.cueTrack) media.cueTrack = { ...song.cueTrack, gain: 0, pan: 0 };
+        if (song.video && index.has(VIDEO_AUDIO_ID)) media.video = { ...song.video, gain: 0, pan: 0 };
         write(media, 'Volumi ripristinati', false);
         notify(`“${song.title}”: volumi a 0 dB e pan al centro. “Salva” per tenerli, Ctrl+Z nell’Arrangement per annullare`);
         break;

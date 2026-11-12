@@ -30,7 +30,7 @@ function RouteSelect({ strip, state, dispatch, here }) {
     >
       <optgroup label="Ruolo">
         {state.roles.map((r) => (
-          <option key={r.value} value={`r:${r.value}`} disabled={!state.canEdit || (strip.live && r.value !== strip.role)}>
+          <option key={r.value} value={`r:${r.value}`} disabled={!state.canEdit || ((strip.live || strip.video) && r.value !== strip.role)}>
             {r.label}
           </option>
         ))}
@@ -48,7 +48,7 @@ function RouteSelect({ strip, state, dispatch, here }) {
 
 // Instrument of the track (Main and Monitor only): the Rehearsal of who plays it leaves it out.
 function InstrumentSelect({ strip, state, dispatch }) {
-  if (!strip.instrument || strip.live) return <span className="mx-instr is-blank" />;
+  if (!strip.instrument || strip.live || strip.video) return <span className="mx-instr is-blank" />;
   return (
     <select
       className="mx-route mx-instr"
@@ -93,10 +93,10 @@ function useDrag(dispatch) {
 // R/W of the channel as in Cubase: with R on the fader and M follow the
 // automations while the song plays; W armed writes them (fader grabbed, M).
 function AutoButtons({ strip, state, dispatch }) {
-  if (strip.live) return <span className="mx-btns mx-rw is-blank" />;
+  if (strip.live || strip.video) return null;
   const can = state.canEdit;
   return (
-    <span className="mx-btns mx-rw">
+    <>
       <button
         className={`st-solo mx-read ${strip.read && strip.hasAuto ? 'is-on' : ''}`}
         onClick={() => dispatch({ type: 'read', id: strip.id })}
@@ -115,7 +115,7 @@ function AutoButtons({ strip, state, dispatch }) {
       >
         W
       </button>
-    </span>
+    </>
   );
 }
 
@@ -173,8 +173,8 @@ function Strip({ strip, state, dispatch, here, onOpen, open = false }) {
         <button className={`st-solo ${strip.solo ? 'is-on' : ''}`} onClick={() => dispatch({ type: 'solo', id: strip.id })} disabled={strip.index < 0} aria-pressed={strip.solo} title="Solo">
           S
         </button>
+        <AutoButtons strip={strip} state={state} dispatch={dispatch} />
       </span>
-      <AutoButtons strip={strip} state={state} dispatch={dispatch} />
       <button
         className={`st-name mx-name ${open ? 'is-open' : ''}`}
         onClick={onOpen}
