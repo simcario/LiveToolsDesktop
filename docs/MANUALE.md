@@ -198,6 +198,33 @@ sinistra cambia l'ordine.*
 - **Scaletta** — modifica della scaletta (stessi dati del web).
 - **Brani** — la libreria dei brani riutilizzabili tra più scalette.
 
+### Menu del clic destro (dalla prossima versione)
+
+Un **clic destro** su un elemento apre un menu con le azioni che valgono lì. Le voci che non puoi usare
+(per esempio perché non hai i permessi per modificare il brano) non compaiono o sono in grigio. Il menu si
+chiude con **Esc** o con un clic fuori; si usa anche con le frecce **↑ ↓** e **Invio**. Con il menu aperto
+Spazio e Invio non fanno partire la musica.
+
+| Dove | Cosa trovi nel menu |
+|---|---|
+| **Palco › tessera di un brano** | Seleziona, *Carica nel player*, *Carica e suona* (o Play / Stop se è già caricato), *Tonalità e tempo…* (per un video: *Dissolvenze e pad…*), *Torna a tonalità e tempo originali*, *Transizione verso…* il brano dopo, *Scarica i file* se mancano |
+| **Palco › cerchio tra due tessere** | le transizioni, da scegliere direttamente: quella in uso ha la spunta |
+| **Palco › sezione** (fumetto o marker) | *Vai alla sezione* (o *Annulla il salto in coda*), *Loop ∞* e *Ripeti una volta* per la sezione in corso, *Rinomina…*, *Elimina la sezione* |
+| **Palco › forma d'onda** | *Sposta qui la testina*, *Aggiungi una sezione qui* o alla testina, *Modifica le sezioni*, Annulla e Salva mentre modifichi, *Griglia*, *Adatta il brano alla finestra* |
+| **Arrangement › clip di una traccia** | *Taglia qui*, *Muta* / *Riattiva il segmento*, *Elimina il segmento*, poi Muto, Solo, *Taglia alla testina*, lettura e rimozione dell'automazione della traccia |
+| **Arrangement › nome di una traccia** | Muto, Solo, *Taglia alla testina*, *Leggi l'automazione*, *Togli l'automazione*; sul Click: acceso/spento e cambio di tempo alla testina; sul video: *Sincronizza* e uscita video; sulle Cue: muto, quarti/ottavi, sposta tutte le cue di una battuta; sul Gobbo: sposta avanti/indietro di un movimento o di una battuta |
+| **Arrangement › corsia delle sezioni** | *Vai alla sezione*, *Rinomina…*, *Elimina la sezione*, *Aggiungi una sezione qui* |
+| **Arrangement › traccia cue** | *Metti una cue…* / *Cambia la cue…*, *Togli la cue*, *Conteggio 1-2-3-4 nella battuta* |
+| **Arrangement › corsia Click · Tempo** | *Cambio di tempo qui*; su un cambio esistente: modificalo o toglilo |
+| **Arrangement › ovunque** | *Sposta qui la testina*, Annulla / Ripeti (con il nome dell'ultima modifica), *Salva il brano* e *Scarta le modifiche* se ci sono modifiche non salvate |
+| **Mixer › canale** | *Volume a 0 dB*, *Pan al centro*, Muto, Solo, lettura (R) e scrittura (W) dell'automazione, *Sezione canale (gain, EQ)…*, *Salva il brano* |
+| **Browser › brano** | *Carica nel player*, *Carica e suona*, apri il brano in Palco, Arrangement, Gobbo, Spartito o nella pagina Scaletta, *Scarica i file* |
+| **Browser › scaletta** | Apri, apri nel Palco, modifica la scaletta, *Scarica tutta la scaletta* |
+| **Pagina Scaletta › riga** | Modifica, *Apri nel Gobbo*, Sposta su / giù / in cima / in fondo, *Elimina dalla scaletta* |
+
+Il clic destro su una barra di comandi apre come prima la personalizzazione della barra. Nei campi di testo resta il
+menu di Windows (copia, incolla).
+
 ---
 
 ## 3. Preparare una serata
@@ -272,6 +299,15 @@ perché si annullano con Ctrl+Z e restano in bozza finché non premi *Salva*.
 
 Per il video: un file per brano, con **offset** rispetto all'audio. Formati audio letti: wav, aiff, flac,
 mp3, ogg, m4a/aac, alac. Il video è muto (la colonna sonora sta negli stem).
+
+**Sincronizza il video** (dalla prossima versione). L'offset è il punto del brano in cui parte il video (negativo =
+il video comincia prima del brano e il suo inizio non si vede). Invece di cercarlo a mano, LiveTools lo trova da
+solo confrontando l'audio del video con le tracce *Main* del brano (senza click e guide), già al loro posto
+nell'Arrangement: quando carichi il video di un brano con le tracce ti chiede se sincronizzarlo, e puoi farlo
+quando vuoi con **Sincronizza** accanto all'offset nella scheda *Sequenze & Video* oppure con la bacchetta sulla
+traccia video dell'Arrangement (lì finisce nella bozza: *Salva* per tenerlo, Ctrl+Z per tornare indietro). Il
+video deve avere l'audio del brano; se la corrispondenza è incerta (brano molto ripetitivo, video con altro
+audio) te lo dice e puoi correggere l'offset a mano.
 
 **Elementi solo video** (dalla prossima versione). Un elemento della scaletta può essere solo un video, per esempio il
 video d'ingresso: nella scheda del brano scegli il tipo di esecuzione **Video** e carica il video, senza stem. Qui si

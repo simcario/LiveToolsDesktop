@@ -12,6 +12,8 @@ import './styles/arrangement.css';
 import './styles/mixer.css';
 import './styles/preflight.css';
 import './styles/history.css';
+import './styles/contextmenu.css';
+import { ContextMenuHost } from './components/ContextMenu';
 
 // The same bundle serves the main window and the output windows
 // (index.html?view=video / ?view=prompter / ?view=mixer), which never load Firebase.
@@ -23,7 +25,17 @@ if (view === 'video') {
 } else if (view === 'prompter') {
   import('./PrompterWindow.jsx').then(({ default: PrompterWindow }) => root.render(<PrompterWindow />));
 } else if (view === 'mixer') {
-  import('./MixerWindow.jsx').then(({ default: MixerWindow }) => root.render(<MixerWindow />));
+  import('./MixerWindow.jsx').then(({ default: MixerWindow }) => root.render(
+      <>
+        <MixerWindow />
+        <ContextMenuHost />
+      </>,
+    ));
 } else {
-  import('./App.jsx').then(({ default: App }) => root.render(<App />));
+  import('./App.jsx').then(({ default: App }) => root.render(
+      <>
+        <App />
+        <ContextMenuHost />
+      </>,
+    ));
 }

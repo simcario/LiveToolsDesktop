@@ -110,6 +110,9 @@ export function ensureFile(entry) {
 /** The files not on disk yet, among [{ path, size }]. */
 export const missingFiles = (files) => files.filter((f) => !state[f.path]?.ready);
 
+/** Why the last download of a file failed (null if it didn't). */
+export const downloadError = (path) => state[path]?.error || null;
+
 /** How much of these files is done, 0..1, weighted by size (failed ones count as done). */
 export function downloadProgress(files, cache = state) {
   let done = 0;

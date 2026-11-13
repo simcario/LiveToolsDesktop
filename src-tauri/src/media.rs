@@ -365,7 +365,13 @@ fn download(app: &AppHandle, url: &str, bearer: Option<&str>, path: &str, dest: 
     if let Some(dir) = dest.parent() {
         fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
-    let mut req = ureq::get(url).timeout(Duration::from_secs(30));
+    // No limit on the whole download (a big video takes minutes): only on connecting
+    // and on each read, so a stalled connection still fails.
+    let agent = ureq::AgentBuilder::new()
+        .timeout_connect(Duration::from_secs(30))
+        .timeout_read(Duration::from_secs(60))
+        .build();
+    let mut req = agent.get(url);
     if let Some(token) = bearer {
         req = req.set("Authorization", &format!("Bearer {token}"));
     }
@@ -384,12 +390,26 @@ fn download(app: &AppHandle, url: &str, bearer: Option<&str>, path: &str, dest: 
     let mut buf = vec![0u8; 256 * 1024];
     let mut received = 0u64;
     let mut last = Instant::now();
+    // A broken download leaves no half file behind.
+    let fail = |e: String| {
+        let _ = fs::remove_file(&part);
+        e
+    };
     loop {
-        let n = reader.read(&mut buf).map_err(|e| e.to_string())?;
+        let n = match reader.read(&mut buf) {
+            Ok(n) => n,
+            Err(e) => {
+                drop(file);
+                return Err(fail(format!("Download interrotto: {e}")));
+            }
+        };
         if n == 0 {
             break;
         }
-        file.write_all(&buf[..n]).map_err(|e| e.to_string())?;
+        if let Err(e) = file.write_all(&buf[..n]) {
+            drop(file);
+            return Err(fail(e.to_string()));
+        }
         received += n as u64;
         if last.elapsed() > Duration::from_millis(150) {
             last = Instant::now();

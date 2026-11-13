@@ -31,6 +31,7 @@ import { deleteLiveCues } from '../lib/cueTrack';
 import { explainDenied, songLimitError } from '../shared/planGuard.js';
 import Icon from './Icon';
 import Toolbar, { ToolGroup } from './Toolbar';
+import { openContextMenu } from './ContextMenu';
 import HistoryModal from './HistoryModal';
 import { ZoneResizer } from './Zones';
 import MediaFields, { ScoreFile } from './MediaFields';
@@ -952,6 +953,26 @@ export default function SetlistEditor({ user, setlist, items, itemDocs, numbers,
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  // Right click on a row: edit, move, gobbo, delete.
+  const rowMenu = (e, it, i) => {
+    const sep = isSeparator(it);
+    openContextMenu(
+      e,
+      [
+        { label: 'Modifica', icon: 'edit', onSelect: () => select(it) },
+        !sep && { label: 'Apri nel Gobbo', icon: 'lyrics', onSelect: () => onOpenPrompter(it.id) },
+        '-',
+        canEdit && { label: 'Sposta su', icon: 'chevron-up', disabled: i === 0, onSelect: () => reorder(i, i - 1) },
+        canEdit && { label: 'Sposta giù', icon: 'chevron-down', disabled: i === items.length - 1, onSelect: () => reorder(i, i + 1) },
+        canEdit && { label: 'Sposta in cima', disabled: i === 0, onSelect: () => reorder(i, 0) },
+        canEdit && { label: 'Sposta in fondo', disabled: i === items.length - 1, onSelect: () => reorder(i, items.length - 1) },
+        '-',
+        canEdit && { label: 'Elimina dalla scaletta', icon: 'trash', danger: true, onSelect: () => removeItem(it) },
+      ],
+      { title: sep ? it.title : `${numbers[it.id]} · ${it.title}` },
+    );
+  };
+
   const grid = { gridTemplateColumns: `52px minmax(180px, 1fr) 64px 84px 56px ${tableCols.map(() => 'minmax(70px, 120px)').join(' ')} ${canEdit ? '28px' : ''}` };
   const dropClass = (i) => {
     if (!drag || drag.before === drag.from || drag.before === drag.from + 1) return '';
@@ -1036,7 +1057,7 @@ export default function SetlistEditor({ user, setlist, items, itemDocs, numbers,
               );
               if (sep) {
                 return (
-                  <div key={it.id} data-row className={cls} style={grid} onClick={() => select(it)}>
+                  <div key={it.id} data-row className={cls} style={grid} onClick={() => select(it)} onContextMenu={(e) => rowMenu(e, it, i)}>
                     {lead}
                     <span className="se-break" style={{ gridColumn: `2 / ${canEdit ? -2 : -1}` }}>
                       <Icon name={BREAK_KINDS[it.kind || 'section']?.icon || 'minus'} size={13} />
@@ -1048,7 +1069,7 @@ export default function SetlistEditor({ user, setlist, items, itemDocs, numbers,
                 );
               }
               return (
-                <div key={it.id} data-row className={cls} style={grid} onClick={() => select(it)}>
+                <div key={it.id} data-row className={cls} style={grid} onClick={() => select(it)} onContextMenu={(e) => rowMenu(e, it, i)}>
                   {lead}
                   <span className="se-title-cell">
                     <span className="ellipsis se-song-title">{it.title}</span>

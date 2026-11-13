@@ -19,12 +19,14 @@ import InsertBarsModal from './InsertBarsModal';
 import { closeLeadingGap, leadToAudio, cutAt, keepGrid, moveSegment, removeSegment, segmentEnd, segmentIndexAt, snapToBeat, stemRegions, toggleSegmentMute, trimSegment } from '../lib/arrange';
 import { clearHistory, recordStep, travel, useHistory } from '../lib/arrangeHistory';
 import { discardDraft, editDraft, saveDraft, useDrafts } from '../lib/drafts';
-import { AUTO_MAX_DB, AUTO_MIN_DB, automationDb, automationMutedAt, automationOf, automationRead, muteAutomationOf, muteSpans, regionsOf, stemsOf, VIDEO_AUDIO_ID, clickAutoOf } from '../shared/media.js';
+import { AUTO_MAX_DB, AUTO_MIN_DB, automationDb, automationMutedAt, automationOf, automationRead, muteAutomationOf, muteSpans, regionsOf, stemsOf, VIDEO_AUDIO_ID, clickAutoOf, videoOf } from '../shared/media.js';
+import { alignText, alignVideo, canAlignVideo } from '../lib/videoAlign';
 import { CLICK_ID, hasAutomation, setClickMute, toggleClickRead, toggleClickWrite, toggleRead, toggleWrite, useAutoWrite, writeClickMute, writeMute } from '../lib/autoWrite';
 import { TIME_SIGNATURES } from '../shared/setlists.js';
 import { cleanTempoChanges, MAX_BPM, MAX_RAMP, MIN_BPM, tempoChangesOf } from '../shared/tempoMap.js';
 import { writeMix } from '../lib/songMix';
 import Toolbar, { ToolGroup } from './Toolbar';
+import { longPressed, openContextMenu } from './ContextMenu';
 import { normalizePrompter, slideColor, slideName } from '../lib/prompter';
 
 // The gobbo moved by `delta` seconds, all its changes together.
@@ -628,11 +630,11 @@ function useAutoMuted(row) {
 
 // auto: { song, canEdit } for R/W of the channel (as Cubase): R = its automations are played
 // (saved with the song), W = while it plays its M (and its fader in the Mixer) writes them.
-function TrackHeader({ row, index, solos, onTrack, selected, onSelect, saved, auto }) {
+function TrackHeader({ row, index, solos, onTrack, selected, onSelect, saved, auto, onMenu }) {
   const autoMuted = useAutoMuted(row);
   if (row.kind === 'click') {
     return (
-      <div className="t-header" style={{ '--lane-color': ROLE_COLORS.click }}>
+      <div className="t-header" style={{ '--lane-color': ROLE_COLORS.click }} onContextMenu={onMenu}>
         <span className="t-color" />
         <span className="t-name">Click · Tempo</span>
         <span className="t-btns">
@@ -681,17 +683,22 @@ function TrackHeader({ row, index, solos, onTrack, selected, onSelect, saved, au
   }
   if (row.kind === 'video') {
     return (
-      <div className="t-header" style={{ '--lane-color': ROLE_COLORS.video }}>
+      <div className="t-header" style={{ '--lane-color': ROLE_COLORS.video }} onContextMenu={onMenu}>
         <span className="t-color" />
         <span className="t-name">{row.name}</span>
         <span className="t-btns">
+          {row.onAlign && (
+            <button className="toggle" onClick={row.onAlign} disabled={row.aligning} title="Sincronizza: confronta l’audio del video con le tracce e sposta il video nel punto giusto">
+              <Icon name="wand" size={12} />
+            </button>
+          )}
           {row.onOutput && (
             <button className="toggle" onClick={row.onOutput} title="Apri l’uscita video (proiettore / secondo schermo)">
               <Icon name="monitor" size={12} />
             </button>
           )}
         </span>
-        <div className="t-row small muted">Video · offset {(row.offset || 0).toFixed(2)} s</div>
+        <div className="t-row small muted">{row.aligning ? 'Sincronizzo con le tracce…' : `Video · offset ${(row.offset || 0).toFixed(2)} s`}</div>
       </div>
     );
   }
@@ -701,7 +708,7 @@ function TrackHeader({ row, index, solos, onTrack, selected, onSelect, saved, au
   const rw = auto && !stem.live && stem.id !== VIDEO_AUDIO_ID;
   const can = rw && auto.canEdit;
   return (
-    <div className={`t-header ${selected ? 'is-selected' : ''}`} style={{ '--lane-color': row.color }} onMouseDown={onSelect} title="Clic: seleziona la traccia (Ctrl+E taglia nel punto del cursore)">
+    <div className={`t-header ${selected ? 'is-selected' : ''}`} style={{ '--lane-color': row.color }} onMouseDown={onSelect} onContextMenu={onMenu} title="Clic: seleziona la traccia (Ctrl+E taglia nel punto del cursore)">
       <span className="t-color" />
       <span className="t-name" title={stem.file}>
         {stem.name}
@@ -842,8 +849,37 @@ export default function ArrangementView({ player, item, lanes, settings, update,
   };
   const tempoMarkAt = (t) => tempoMarks.find((m) => m.t != null && Math.abs(m.t - t) <= TEMPO_HIT / pps);
 
+  // “Sincronizza” on the video track: its offset from its sound against the stems, into the draft.
+  const [aligning, setAligning] = useState(false);
+  const alignLoadedVideo = async () => {
+    if (!song || aligning) return;
+    setAligning(true);
+    try {
+      const res = await alignVideo(song);
+      const video = { ...videoOf(song), offset: res.offset };
+      editDraft(song.id, { media: { video } });
+      recordStep(song.id, { label: 'Video sincronizzato', reload: true, before: { media: { video: song.video ?? null }, item: {} }, after: { media: { video }, item: {} } });
+      player.reload();
+      notify(`${alignText(song.title, res)} · “Salva” per tenerlo`, !res.sure);
+    } catch (e) {
+      notify(`Video di “${song.title}” non sincronizzato: ${e?.message || e}`, true);
+    } finally {
+      setAligning(false);
+    }
+  };
+
   const rows = [];
-  if (loaded?.video) rows.push({ kind: 'video', name: loaded.video.name, offset: loaded.video.offset, duration: loaded.duration, color: ROLE_COLORS.video, onOutput: onVideoOutput });
+  if (loaded?.video)
+    rows.push({
+      kind: 'video',
+      name: loaded.video.name,
+      offset: loaded.video.offset,
+      duration: loaded.duration,
+      color: ROLE_COLORS.video,
+      onOutput: onVideoOutput,
+      onAlign: canEditSong && canAlignVideo(song) ? alignLoadedVideo : null,
+      aligning,
+    });
   loaded?.tracks.forEach(
     (t, i) =>
       // The live track of the cues is mixed from the cue track's header; the
@@ -1700,7 +1736,7 @@ export default function ArrangementView({ player, item, lanes, settings, update,
     };
     const up = (ev) => {
       done();
-      if (Math.abs(ev.clientX - x0) < TAP_SLOP && Math.abs(ev.clientY - y0) < TAP_SLOP) player.locate(t);
+      if (Math.abs(ev.clientX - x0) < TAP_SLOP && Math.abs(ev.clientY - y0) < TAP_SLOP && !longPressed()) player.locate(t);
     };
     el.addEventListener('pointerup', up);
     el.addEventListener('pointercancel', done);
@@ -1735,6 +1771,168 @@ export default function ArrangementView({ player, item, lanes, settings, update,
     if (!line || line.anchor) return;
     const bpm = grid.bpm ?? tempo?.segments?.find((s) => !s.countIn)?.bpm ?? null;
     commitGrid({ ...grid, bpm, anchors: moveAnchor(grid.anchors, line.g, line.t, tempo?.origin) });
+  };
+
+  // ---------- Context menus: right click, long press on touch screens ----------
+
+  // Cut one track at t (scissors, Ctrl+E, menu).
+  const cutStem = (stem, t) => {
+    const res = cutAt(stemRegions(song, stem.id), t, fileSeconds(stem.id));
+    if (!res) {
+      notify(`Il punto scelto non è sopra una clip di “${stem.name}”`, true);
+      return;
+    }
+    commitRegions(stem, res.regions, `Tagliata “${stem.name}” a ${fmtTime(Math.max(0, t))}`);
+    setSelection({ stemId: stem.id, index: res.index });
+  };
+  const removeAuto = (stem) => {
+    if (!confirm(`Togliere tutta l’automazione (volume e mute) di “${stem.name}”?`)) return;
+    writeMix(song, { stems: stemsOf(song).map((x) => (x.id === stem.id ? { ...x, auto: null, muteAuto: null } : x)) }, `Automazione di “${stem.name}” tolta`);
+    notify(`Automazione di “${stem.name}” tolta · “Salva” per tenerla`);
+  };
+  const trackItems = (r) => {
+    if (r.kind === 'audio') {
+      const { stem } = r;
+      const live = stem.live;
+      return [
+        { label: 'Muto', checked: r.muted, onSelect: () => player.setTrack(stem, { mute: !r.muted }) },
+        { label: 'Solo', checked: !!player.solos[stem.id], onSelect: () => player.setTrack(stem, { solo: !player.solos[stem.id] }) },
+        !live && canEditSong && { label: 'Taglia alla testina', icon: 'scissors', keys: 'Ctrl+E', onSelect: () => cutStem(stem, engineStatus().position) },
+        !live && canEditSong && r.hasAuto && { label: 'Leggi l’automazione', checked: r.read !== false, keys: 'R', onSelect: () => toggleRead(song, stem) },
+        !live && canEditSong && r.hasAuto && { label: 'Togli l’automazione', icon: 'trash', danger: true, onSelect: () => removeAuto(stem) },
+      ];
+    }
+    if (r.kind === 'click') {
+      return [
+        { label: 'Click acceso', checked: r.enabled, keys: 'C', onSelect: r.onToggle },
+        r.onAddTempo && { label: 'Cambio di tempo alla testina', icon: 'metronome', onSelect: r.onAddTempo },
+      ];
+    }
+    if (r.kind === 'video') {
+      return [
+        r.onAlign && { label: 'Sincronizza il video con le tracce', icon: 'wand', disabled: r.aligning, onSelect: r.onAlign },
+        r.onOutput && { label: videoOpen ? 'Chiudi l’uscita video' : 'Apri l’uscita video', icon: 'monitor', keys: 'F4', onSelect: r.onOutput },
+      ];
+    }
+    if (r.kind === 'cue') {
+      return [
+        { label: 'Cue mute', checked: cue.muted, onSelect: cue.toggleMute },
+        cue.canEdit && { label: cue.resolution === 8 ? 'Quadratini in quarti' : 'Quadratini in ottavi', icon: 'grid', onSelect: () => cue.setResolution(cue.resolution === 8 ? 4 : 8) },
+        cue.canEdit && cue.cues.length > 0 && { label: 'Tutte le cue avanti di una battuta', icon: 'chevron-right', onSelect: () => cue.shift(cue.barBeats * cue.cellStep) },
+        cue.canEdit && cue.cues.length > 0 && { label: 'Tutte le cue indietro di una battuta', icon: 'chevron-left', onSelect: () => cue.shift(-cue.barBeats * cue.cellStep) },
+      ];
+    }
+    if (r.kind === 'prompter' && canEditSong) {
+      return [
+        { label: 'Gobbo avanti di un movimento', icon: 'chevron-right', onSelect: () => prompterStep(1, false) },
+        { label: 'Gobbo indietro di un movimento', icon: 'chevron-left', onSelect: () => prompterStep(-1, false) },
+        { label: 'Gobbo avanti di una battuta', icon: 'chevron-right', onSelect: () => prompterStep(1, true) },
+        { label: 'Gobbo indietro di una battuta', icon: 'chevron-left', onSelect: () => prompterStep(-1, true) },
+      ];
+    }
+    return [];
+  };
+  const rowTitle = (r) => (r.kind === 'audio' ? r.name : r.kind === 'click' ? 'Click · Tempo' : r.kind === 'video' ? r.name : r.kind === 'cue' ? 'Cues' : r.kind === 'prompter' ? 'Gobbo' : undefined);
+  // On the name of a track.
+  const headerMenu = (e, r) => {
+    if (r.kind === 'audio' && !r.stem.live) setSelection((s) => (s?.stemId === r.stem.id ? s : { stemId: r.stem.id, index: null }));
+    openContextMenu(e, trackItems(r), { title: rowTitle(r) });
+  };
+  // On the timeline: what is under the pointer first, then the song.
+  const timelineMenu = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const t = (e.clientX - rect.left) / pps + t0;
+    const snapT = Math.max(0, snap && tempo ? snapToBeat(tempo, t) : t);
+    const at = { left: e.clientX - 20, bottom: e.clientY + 8 };
+    let title;
+    let head = [];
+    if (onLane(e)) {
+      const s = laneSection(t);
+      title = s?.label || 'Sezioni';
+      head = [
+        s && { label: 'Vai alla sezione', icon: 'skip-forward', onSelect: () => sec.go(s) },
+        s && sec.editable && { label: 'Rinomina…', icon: 'edit', onSelect: () => setSecName(s.index) },
+        s && sec.editable && { label: 'Elimina la sezione', icon: 'trash', danger: true, hint: 'La sezione prima prende le sue battute', onSelect: () => sec.remove(s.index) },
+      ];
+    } else if (!warpOn) {
+      const row = rows[Math.floor((e.clientY - rect.top - RULER_H) / LANE_H)];
+      title = row && rowTitle(row);
+      if (row?.kind === 'audio') {
+        const { stem } = row;
+        const index = stem.live ? -1 : segmentAt(row, t);
+        const seg = canEditSong && index >= 0;
+        if (index >= 0) setSelection({ stemId: stem.id, index });
+        else if (!stem.live) setSelection({ stemId: stem.id, index: null });
+        const muted = index >= 0 && !!row.regions[index]?.muted;
+        head = [
+          seg && { label: 'Taglia qui', icon: 'scissors', onSelect: () => cutStem(stem, snapT) },
+          seg && {
+            label: muted ? 'Riattiva il segmento' : 'Muta il segmento',
+            keys: 'X',
+            onSelect: () => commitRegions(stem, toggleSegmentMute(stemRegions(song, stem.id), index), `${muted ? 'Riattivato' : 'Mutato'} un segmento di “${stem.name}”`),
+          },
+          seg && {
+            label: 'Elimina il segmento',
+            icon: 'trash',
+            danger: true,
+            keys: 'Canc',
+            onSelect: () => {
+              commitRegions(stem, removeSegment(stemRegions(song, stem.id), index), `Eliminato un segmento di “${stem.name}”`);
+              setSelection({ stemId: stem.id, index: null });
+            },
+          },
+          '-',
+          ...trackItems(row),
+        ];
+      } else if (row?.kind === 'cue') {
+        const hit = cue.canEdit ? cueHit(e) : null;
+        const has = hit && cue.byG.has(hit.cell.g);
+        head = [
+          hit && { label: has ? 'Cambia la cue…' : 'Metti una cue…', icon: 'mic', onSelect: () => setPicking({ ...hit, rect: at }) },
+          has && { label: 'Togli la cue', icon: 'trash', danger: true, onSelect: () => cue.setCue(hit.cell.g, null) },
+          hit && { label: 'Conteggio 1-2-3-4 nella battuta', icon: 'metronome', onSelect: () => cue.countBar(hit.cell.bar) },
+          '-',
+          ...trackItems(row),
+        ];
+      } else if (row?.kind === 'click') {
+        const m = tempoMarkAt(t);
+        head = [
+          m && { label: `Cambio della battuta ${m.bar}…`, icon: 'edit', onSelect: () => setTempoEdit(m.bar) },
+          m &&
+            canEditSong && {
+              label: 'Togli il cambio di tempo',
+              icon: 'trash',
+              danger: true,
+              onSelect: () => {
+                if (!confirm(`Togliere il cambio della battuta ${m.bar}?`)) return;
+                commitTempo(
+                  tempoChanges.filter((c) => c.bar !== m.bar),
+                  `Tolto il cambio della battuta ${m.bar}`,
+                );
+                setTempoEdit(null);
+              },
+            },
+          !m && canEditSong && { label: 'Cambio di tempo qui', icon: 'metronome', onSelect: () => addTempoAt(t) },
+          '-',
+          ...trackItems(row),
+        ];
+      } else if (row) head = trackItems(row);
+    }
+    openContextMenu(
+      e,
+      [
+        ...head,
+        '-',
+        { label: 'Sposta qui la testina', icon: 'pointer', onSelect: () => player.locate(Math.max(0, t)) },
+        sec.editable && { label: 'Aggiungi una sezione qui', icon: 'marker-add', keys: 'Ins', onSelect: () => sec.add(nearestBarIndex(sec.bars, t)) },
+        '-',
+        canEditSong && { label: history.past.length ? `Annulla: ${history.past.at(-1).label}` : 'Annulla', icon: 'undo', keys: 'Ctrl+Z', disabled: !history.past.length, onSelect: () => goHistory(-1) },
+        canEditSong && { label: history.future.length ? `Ripeti: ${history.future.at(-1).label}` : 'Ripeti', icon: 'undo', keys: 'Ctrl+Maiusc+Z', disabled: !history.future.length, onSelect: () => goHistory(1) },
+        dirty && { label: 'Salva il brano', icon: 'check', keys: 'Ctrl+S', disabled: saving, onSelect: saveSong },
+        dirty && { label: 'Scarta le modifiche', icon: 'x', danger: true, disabled: saving, onSelect: discardSong },
+      ],
+      { title },
+    );
   };
 
   // Playhead and page-follow (Ableton style) at display rate.
@@ -2013,6 +2211,7 @@ export default function ArrangementView({ player, item, lanes, settings, update,
             style={{ width: contentW, height }}
             onPointerDown={onPointerDown}
             onDoubleClick={onDoubleClick}
+            onContextMenu={timelineMenu}
             onMouseMove={onMouseMove}
             onMouseLeave={() => setCueHover(null)}
           >
@@ -2096,9 +2295,9 @@ export default function ArrangementView({ player, item, lanes, settings, update,
           </div>
           {rows.map((r, i) =>
             r.kind === 'cue' ? (
-              <CueHeader key="cue" cue={cue} solos={player.solos} onTrack={player.setTrack} loadedTracks={loaded.tracks} />
+              <CueHeader key="cue" cue={cue} solos={player.solos} onTrack={player.setTrack} loadedTracks={loaded.tracks} onMenu={(e) => headerMenu(e, r)} />
             ) : r.kind === 'prompter' ? (
-              <div key="prompter" className="t-header" style={{ '--lane-color': '#f8fafc' }}>
+              <div key="prompter" className="t-header" style={{ '--lane-color': '#f8fafc' }} onContextMenu={(e) => headerMenu(e, r)}>
                 <span className="t-color" />
                 <span className="t-name" title="I cambi slide del gobbo: trascinali per riallinearli al brano">
                   Gobbo
@@ -2125,6 +2324,7 @@ export default function ArrangementView({ player, item, lanes, settings, update,
                 solos={player.solos}
                 onTrack={player.setTrack}
                 saved={mixSaved}
+                onMenu={(e) => headerMenu(e, r)}
                 auto={song ? { song, canEdit: canEditSong } : null}
                 selected={r.kind === 'audio' && selection?.stemId === r.stem.id}
                 onSelect={r.kind === 'audio' && !r.stem.live ? () => setSelection((s) => (s?.stemId === r.stem.id ? s : { stemId: r.stem.id, index: null })) : undefined}

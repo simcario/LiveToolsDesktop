@@ -272,11 +272,11 @@ function drawCueClip(ctx, { y, h, width, x, bars, byG, status, hover, nowG }) {
 }
 
 /** Header of the cue track: mix of its audio, resolution, render, remove. */
-export function CueHeader({ cue, solos, onTrack, loadedTracks }) {
+export function CueHeader({ cue, solos, onTrack, loadedTracks, onMenu }) {
   const track = cue.audioIndex >= 0 ? loadedTracks[cue.audioIndex] : null;
   const stem = track?.stem;
   return (
-    <div className="t-header t-header-cue" style={{ '--lane-color': CUE_COLOR }}>
+    <div className="t-header t-header-cue" style={{ '--lane-color': CUE_COLOR }} onContextMenu={onMenu}>
       <span className="t-color" />
       <span className="t-name" title="Traccia cue: guide vocali sulle battute">
         <span className="cue-badge">CUE</span> Cues

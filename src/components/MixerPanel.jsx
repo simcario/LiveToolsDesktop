@@ -3,6 +3,7 @@ import ChannelPanel from './ChannelPanel';
 import Fader from './Fader';
 import Icon from './Icon';
 import Meter from './Meter';
+import { openContextMenu } from './ContextMenu';
 import { automationDb, automationMutedAt } from '../shared/media.js';
 import { useEngineStatus } from '../lib/engine';
 
@@ -130,8 +131,28 @@ function Strip({ strip, state, dispatch, here, onOpen, open = false }) {
   const level = Math.max(-60, Math.min(6, strip.gain + autoDb));
   const autoMute = pos != null && automationMutedAt(strip.muteAuto, pos);
   const mute = strip.mute || autoMute;
+  // Right click / long press on the strip.
+  const menu = (e) => {
+    const auto = !strip.live && !strip.video && state.canEdit;
+    openContextMenu(
+      e,
+      [
+        { label: 'Volume a 0 dB', icon: 'undo', disabled: locked || strip.gain === 0, onSelect: () => dispatch({ type: 'gain', id: strip.id, value: 0 }) },
+        { label: 'Pan al centro', icon: 'undo', disabled: locked || strip.pan === 0, onSelect: () => dispatch({ type: 'pan', id: strip.id, value: 0 }) },
+        '-',
+        { label: 'Muto', checked: strip.mute, onSelect: () => dispatch({ type: 'mute', id: strip.id }) },
+        { label: 'Solo', checked: strip.solo, disabled: strip.index < 0, onSelect: () => dispatch({ type: 'solo', id: strip.id }) },
+        auto && strip.hasAuto && { label: 'Leggi l’automazione (R)', checked: strip.read, onSelect: () => dispatch({ type: 'read', id: strip.id }) },
+        auto && { label: 'Scrivi l’automazione (W)', checked: strip.write, onSelect: () => dispatch({ type: 'write', id: strip.id }) },
+        '-',
+        { label: open ? 'Chiudi la sezione canale' : 'Sezione canale (gain, EQ)…', icon: 'sliders', onSelect: onOpen },
+        state.dirty && { label: 'Salva il brano', icon: 'check', disabled: state.saving, onSelect: () => dispatch({ type: 'save' }) },
+      ],
+      { title: strip.name },
+    );
+  };
   return (
-    <div className={`st-strip mx-strip ${mute || strip.out ? 'is-muted' : ''} ${strip.index < 0 ? 'is-absent' : ''} ${open ? 'is-open' : ''}`} style={{ '--sec': strip.color }}>
+    <div onContextMenu={menu} className={`st-strip mx-strip ${mute || strip.out ? 'is-muted' : ''} ${strip.index < 0 ? 'is-absent' : ''} ${open ? 'is-open' : ''}`} style={{ '--sec': strip.color }}>
       <RouteSelect strip={strip} state={state} dispatch={dispatch} here={here} />
       <InstrumentSelect strip={strip} state={state} dispatch={dispatch} />
       <span className="mx-pan" title={`Pan ${panText(strip.pan)} (doppio clic: centro)`}>

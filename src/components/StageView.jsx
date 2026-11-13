@@ -5,7 +5,7 @@ import { groupMixKey } from '../lib/usePlayer';
 import { keyLabel } from '../shared/music.js';
 import { animateWhilePlaying, engine, engineStatus, livePosition, useEngineStatus } from '../lib/engine';
 import { laneColor } from '../lib/lanes';
-import { downloadProgress, itemCacheState, mediaOf, useMediaCache, usePeaks } from '../lib/mediaCache';
+import { downloadProgress, ensureItems, itemCacheState, mediaOf, useMediaCache, usePeaks } from '../lib/mediaCache';
 import { GRID_RESOLUTIONS, gridLines, jumpTime, jumpToSection, JUMP_QUANTS, nearestBarIndex, nearestLine, SECTION_NAMES, sectionIndexAt } from '../lib/sections';
 import { useSections } from '../lib/useSections';
 import { getMix, useMix } from '../lib/settings';
@@ -16,6 +16,7 @@ import { useOutputOpen } from '../lib/outputs';
 import Fader from './Fader';
 import Meter from './Meter';
 import Toolbar, { ToolGroup } from './Toolbar';
+import { longPressed, openContextMenu } from './ContextMenu';
 
 const same = (a, b) => a != null && b != null && Math.abs(a - b) < 1e-3;
 const clock = (sec) => {
@@ -366,6 +367,51 @@ function SetlistRow({ items, numbers, player, selectedId, liveItemId, onSelect, 
     const list = items.filter((i) => !isSeparator(i));
     return list[list.findIndex((i) => i.id === id) + 1] || null;
   };
+  // Right click / long press on the circle: the transitions straight away.
+  const transitionMenu = (e, it) =>
+    canEdit &&
+    openContextMenu(
+      e,
+      [
+        ...TRANSITIONS.map(([k, label, hint]) => ({ label, hint, icon: TRANSITION_ICON[k], checked: it.transition === k, onSelect: () => write(it.id, { transition: k, ...LINK_RESET }) })),
+        '-',
+        {
+          label: isVideoItem(it) ? 'Predefinita (AutoLink)' : 'Come l’auto-avanzamento',
+          icon: 'settings',
+          checked: !TRANSITIONS.some((t) => t[0] === it.transition),
+          onSelect: () => write(it.id, { transition: null, ...LINK_RESET }),
+        },
+      ],
+      { title: `Dopo “${it.title}”` },
+    );
+  // Right click / long press on a tile: load, play, key and tempo, transition, download.
+  const tileMenu = (e, it, isLoaded, st) => {
+    const anchor = e.currentTarget;
+    const change = songChange(it);
+    const video = isVideoItem(it);
+    const after = songAfter(it.id);
+    openContextMenu(
+      e,
+      [
+        { label: 'Seleziona', icon: 'pointer', onSelect: () => onSelect(it.id), disabled: it.id === selectedId },
+        !isLoaded && { label: 'Carica nel player', icon: 'download', onSelect: () => player.load(it), disabled: playing, hint: playing ? 'Ferma il brano in corso per caricarlo' : undefined },
+        isLoaded
+          ? { label: playing ? 'Stop' : 'Play', icon: playing ? 'stop' : 'play', keys: 'Spazio', onSelect: () => player.toggle(it) }
+          : { label: 'Carica e suona', icon: 'play', onSelect: () => player.launch(it), disabled: playing },
+        '-',
+        canEdit && { label: video ? 'Dissolvenze e pad…' : 'Tonalità e tempo…', icon: 'sliders', onSelect: () => setMenu({ kind: 'change', id: it.id, anchor }) },
+        canEdit && !video && change.changed && { label: 'Torna a tonalità e tempo originali', icon: 'undo', onSelect: () => write(it.id, { transpose: null, tempoBpm: null }) },
+        canEdit && after && { label: `Transizione verso “${after.title}”…`, icon: TRANSITION_ICON[transitionOf(it, settings)] || 'link', onSelect: () => setMenu({ kind: 'transition', id: it.id, anchor }) },
+        '-',
+        (st === 'partial' || st === 'error') && {
+          label: st === 'error' ? 'Riprova a scaricare i file' : 'Scarica i file su questo dispositivo',
+          icon: 'download',
+          onSelect: () => ensureItems([it]).catch((err) => notify(`Download non riuscito: ${err?.message || err}`, true)),
+        },
+      ],
+      { title: `${numbers[it.id]} · ${it.title}` },
+    );
+  };
   let prev = null;
   return (
     <nav className="st-tiles" ref={row} aria-label="Scaletta">
@@ -393,6 +439,7 @@ function SetlistRow({ items, numbers, player, selectedId, liveItemId, onSelect, 
           <div key={it.id} className="st-tile-wrap">
             {before && (
               <button
+                onContextMenu={(e) => transitionMenu(e, before)}
                 className={`st-link st-link-${mode} ${TRANSITIONS.some((t) => t[0] === before.transition) ? 'is-own' : ''} ${armed ? 'is-armed' : ''}`}
                 onClick={(e) =>
                   setMenu({
@@ -408,14 +455,14 @@ function SetlistRow({ items, numbers, player, selectedId, liveItemId, onSelect, 
                 <Icon name={TRANSITION_ICON[mode]} size={11} />
               </button>
             )}
-            <div className={`st-tile ${isLoaded ? 'is-loaded' : ''} ${it.id === selectedId ? 'is-selected' : ''} ${pct != null ? 'is-downloading' : ''}`}>
+            <div onContextMenu={(e) => tileMenu(e, it, isLoaded, st)} className={`st-tile ${isLoaded ? 'is-loaded' : ''} ${it.id === selectedId ? 'is-selected' : ''} ${pct != null ? 'is-downloading' : ''}`}>
               <button
                 className="st-tile-main"
                 onClick={() => tapTile(it, isLoaded)}
                 data-midi={`song.${numbers[it.id]}`}
                 data-midi-name={`Carica il brano ${numbers[it.id]}`}
                 data-midi-press="double"
-                title={playing && !isLoaded ? 'Il brano in corso continua: ferma per caricare questo' : `Doppio clic per caricare${st === 'partial' || st === 'error' ? ' (i file vengono scaricati)' : ''}`}
+                title={playing && !isLoaded ? 'Il brano in corso continua: ferma per caricare questo' : `Doppio clic per caricare · clic destro o tocco lungo: altre azioni${st === 'partial' || st === 'error' ? ' (i file vengono scaricati)' : ''}`}
               >
                 <span className="st-tile-top">
                   <span className="st-tile-num">{numbers[it.id]}</span>
@@ -562,7 +609,7 @@ function drawOverview(canvas, { tracks, peaks, regions, duration, width: w, heig
 
 // The waveform with the sections on it, as in Playback: a touch on a section
 // queues the jump there, the loop icon of the section in progress repeats it.
-function Overview({ loaded, item, sections, index, beats, jump, onSeek, onSection, onLoop, edit, settings, update }) {
+function Overview({ loaded, item, sections, index, beats, jump, onSeek, onSection, onLoop, edit, settings, update, onMenu, onSectionMenu }) {
   const peaks = usePeaks();
   const [drag, setDrag] = useState(null); // { index, bar } of the marker being dragged
   const canvas = useRef(null);
@@ -771,7 +818,7 @@ function Overview({ loaded, item, sections, index, beats, jump, onSeek, onSectio
       el.removeEventListener('pointerup', up);
       el.removeEventListener('pointercancel', up);
       setDrag(null);
-      if (afterPinch()) return;
+      if (afterPinch() || (bar == null && longPressed())) return;
       if (bar == null) edit.onSelect(s.index);
       else edit.onMove(s.index, bar);
     };
@@ -787,6 +834,7 @@ function Overview({ loaded, item, sections, index, beats, jump, onSeek, onSectio
           className="st-ov-track"
           style={{ width: `${zoom * 100}%` }}
           onClick={tap}
+          onContextMenu={(e) => duration && onMenu?.(e, timeAt(e, e.currentTarget))}
           title={
             settings.stageGrid ? 'Tocca per spostarti: la testina arriva alla linea della griglia più vicina (Ctrl+rotella o due dita: zoom)' : 'Tocca per spostarti: la testina arriva alla battuta più vicina (Ctrl+rotella o due dita: zoom)'
           }
@@ -821,6 +869,7 @@ function Overview({ loaded, item, sections, index, beats, jump, onSeek, onSectio
                 }}
               >
                 <button
+                  onContextMenu={(e) => onSectionMenu?.(e, s)}
                   className="st-bubble"
                   data-midi={edit ? undefined : `section.${n}`}
                   data-midi-name={`Salta alla sezione ${n}`}
@@ -866,6 +915,7 @@ function Overview({ loaded, item, sections, index, beats, jump, onSeek, onSectio
                   }}
                   onPointerDown={(e) => grab(e, s)}
                   onClick={(e) => e.stopPropagation()}
+                  onContextMenu={(e) => onSectionMenu?.(e, s)}
                   title={`${s.label}: trascina per spostarla, tocca per rinominarla`}
                 >
                   <i />
@@ -1408,6 +1458,52 @@ export default function StageView({
       }
     : null;
 
+  // Right click / long press on a section (bubble or marker).
+  const nameSection = (i) => {
+    setEditing(true);
+    setMarker(i);
+    setFresh(true);
+  };
+  const sectionMenu = (e, s) => {
+    const at = sections.indexOf(s);
+    const n = at + 1;
+    const queued = !jump.repeat && same(jump.to, s.start);
+    const looping = jump.repeat && same(jump.to, s.start);
+    openContextMenu(
+      e,
+      [
+        queued
+          ? { label: 'Annulla il salto in coda', icon: 'x', keys: 'Esc', onSelect: () => engine.cancelJump() }
+          : { label: 'Vai alla sezione', icon: 'skip-forward', keys: n <= 9 ? String(n) : undefined, onSelect: () => tapSection(s) },
+        at === index && { label: 'Loop ∞ della sezione', icon: 'repeat', keys: 'L', checked: looping, onSelect: () => loop(true) },
+        at === index && !looping && { label: 'Ripeti una volta', icon: 'repeat', onSelect: () => loop(false) },
+        '-',
+        editable && { label: 'Rinomina…', icon: 'edit', onSelect: () => nameSection(s.index) },
+        editable && { label: 'Elimina la sezione', icon: 'trash', danger: true, hint: 'La sezione prima prende le sue battute', onSelect: () => sec.remove(s.index) && setMarker(null) },
+      ],
+      { title: s.label },
+    );
+  };
+  // Right click / long press on the waveform.
+  const waveMenu = (e, t) => {
+    const addHere = () => {
+      const i = sec.add(nearestBarIndex(bars, t));
+      if (i != null) nameSection(i);
+    };
+    openContextMenu(e, [
+      { label: 'Sposta qui la testina', icon: 'pointer', onSelect: () => onSeek(t) },
+      editable && { label: 'Aggiungi una sezione qui', icon: 'marker-add', onSelect: addHere },
+      editable && { label: 'Aggiungi una sezione alla testina', icon: 'marker-add', onSelect: tools.addAtPlayhead },
+      '-',
+      editable && { label: 'Modifica le sezioni', icon: 'edit', checked: editing, onSelect: () => setEditing(!editing) },
+      editing && { label: tools.undoLabel ? `Annulla: ${tools.undoLabel}` : 'Annulla', icon: 'undo', keys: 'Ctrl+Z', disabled: !tools.canUndo, onSelect: () => goHistory(-1) },
+      editing && tools.dirty && { label: 'Salva le sezioni', icon: 'check', disabled: tools.saving, onSelect: tools.save },
+      '-',
+      { label: 'Griglia', icon: 'grid', checked: !!settings.stageGrid, onSelect: () => update({ stageGrid: !settings.stageGrid }) },
+      { label: 'Adatta il brano alla finestra', icon: 'maximize', disabled: clampZoom(settings.stageZoom) <= 1, onSelect: () => update({ stageZoom: 1 }) },
+    ]);
+  };
+
   const onSeek = (t) => {
     const st = engineStatus();
     const res = settings.stageGrid ? settings.stageGridRes : '1';
@@ -1456,6 +1552,8 @@ export default function StageView({
                   : tapSection
               }
               onLoop={loop}
+              onMenu={loaded ? waveMenu : null}
+              onSectionMenu={sectionMenu}
               edit={edit}
               settings={settings}
               update={update}

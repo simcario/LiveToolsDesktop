@@ -140,6 +140,14 @@ async fn analyze_sync(request: SyncRequest) -> Result<SyncAnalysis, String> {
         .map_err(|e| e.to_string())?
 }
 
+/// Where a song's video starts, from its sound matched against the stems.
+#[tauri::command]
+async fn align_video(request: audio::align::AlignRequest) -> Result<audio::align::AlignResult, String> {
+    tauri::async_runtime::spawn_blocking(move || audio::align::align(&request))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 /// Transients of a local file (warp magnet).
 #[tauri::command]
 async fn track_onsets(path: String) -> Result<Vec<f64>, String> {
@@ -264,6 +272,7 @@ pub fn run() {
             stretch_tracks,
             analyze_sync,
             track_onsets,
+            align_video,
             media::media_dir,
             media::media_info,
             media::disk_space,

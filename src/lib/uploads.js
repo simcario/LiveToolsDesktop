@@ -7,6 +7,7 @@ import { scoreOf } from '../shared/score.js';
 import { auth, db, storage } from './firebase';
 import { explainDenied, mediaDestination } from '../shared/planGuard.js';
 import { storeLocal } from './mediaCache';
+import { alignText, alignVideo } from './videoAlign';
 
 // [{ key, itemId, kind: 'stems' | 'video' | 'score', name, progress 0..1, phase: 'mp3' | 'upload', cancel }]
 let uploads = [];
@@ -28,8 +29,11 @@ export function useUploads() {
   );
 }
 
-/** onDone(text) for the history, onError(text) for the status bar. */
-export async function startUploads({ setlistId, item, kind, files, onDone, onError }) {
+/**
+ * onDone(text) for the history, onError(text) for the status bar. `align` (video):
+ * once uploaded, line the video up with the song's stems (videoAlign.js).
+ */
+export async function startUploads({ setlistId, item, kind, files, onDone, onError, align = false }) {
   const target = mediaTarget(setlistId, item);
   // LiveTools cloud or the owner's Google Drive, within the plan (planGuard.js).
   let dest;
@@ -65,9 +69,21 @@ export async function startUploads({ setlistId, item, kind, files, onDone, onErr
           onDone(`Caricato lo spartito di “${item.title}”`);
         } else {
           const previous = videoOf(item);
-          await saveVideo(db, target, { ...media, offset: previous?.offset || 0 });
+          const saved = { ...media, offset: previous?.offset || 0 };
+          await saveVideo(db, target, saved);
           if (previous) await deleteMediaFile(storage, previous.path, target).catch(() => {});
           onDone(`Caricato il video di “${item.title}”`);
+          // Asked before the upload: line it up with the multitrack from its sound.
+          if (align) {
+            patch(key, { phase: 'sync', progress: 1 });
+            try {
+              const res = await alignVideo({ ...item, video: saved }, await copy);
+              await saveVideo(db, target, { ...saved, offset: res.offset });
+              (res.sure ? onDone : onError)(alignText(item.title, res));
+            } catch (e) {
+              onError(`Video di “${item.title}” non sincronizzato: ${e?.message || e}`);
+            }
+          }
         }
       })
       .catch((e) => {

@@ -1,4 +1,5 @@
-﻿mod atomic;
+﻿pub mod align;
+mod atomic;
 pub mod beats;
 pub mod decode;
 pub mod device;

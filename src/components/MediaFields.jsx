@@ -22,6 +22,7 @@ import { isScoreFile, SCORE_ACCEPT, SCORE_ONLY, scoreOf } from '../shared/score.
 import { db, storage } from '../lib/firebase';
 import { useMediaCache } from '../lib/mediaCache';
 import { startUploads, useUploads } from '../lib/uploads';
+import { alignText, alignVideo, canAlignVideo } from '../lib/videoAlign';
 import { CacheState } from './DetailView';
 import Icon from './Icon';
 
@@ -113,6 +114,7 @@ function UploadRow({ upload }) {
         <span className="small ellipsis">
           {upload.name}
           {upload.phase === 'mp3' && <span className="muted"> · conversione in MP3</span>}
+          {upload.phase === 'sync' && <span className="muted"> · sincronizzazione con il multitraccia…</span>}
         </span>
         <span className="bar-progress">
           <span style={{ width: `${Math.round(upload.progress * 100)}%` }} />
@@ -193,7 +195,27 @@ export default function MediaFields({ setlistId, item, canEdit: canEditSetlist, 
       notify(kind === 'stems' ? 'Solo file audio (wav, aiff, flac, mp3…)' : 'Solo file video (mp4, mov, webm)', true);
     }
     if (!ok.length) return;
-    startUploads({ setlistId, item, kind, files: kind === 'stems' ? ok : [ok[0]], onDone: onTrack, onError: (t) => notify(t, true) });
+    // A video for a multitrack: line it up from its sound, if wanted (also later with “Sincronizza”).
+    const align =
+      kind === 'video' &&
+      canAlignVideo({ ...item, video: { path: 'new' } }) &&
+      confirm(`Sincronizzare il video con il multitraccia di “${item.title}”?\n\nLiveTools confronta l’audio del video con le tracce e imposta da solo l’offset, così il video parte nel punto giusto del brano. Puoi farlo anche dopo con “Sincronizza”.`);
+    startUploads({ setlistId, item, kind, files: kind === 'stems' ? ok : [ok[0]], onDone: onTrack, onError: (t) => notify(t, true), align });
+  };
+
+  const [aligning, setAligning] = useState(false);
+  const syncVideo = async () => {
+    setAligning(true);
+    try {
+      const res = await alignVideo(item);
+      await saveVideo(db, target, { ...video, offset: res.offset });
+      if (res.sure) onTrack(alignText(item.title, res));
+      else notify(alignText(item.title, res), true);
+    } catch (e) {
+      notify(`Video di “${item.title}” non sincronizzato: ${e?.message || e}`, true);
+    } finally {
+      setAligning(false);
+    }
   };
 
   const patchStem = (id, p) => saveStems(db, target, stems.map((s) => (s.id === id ? { ...s, ...p } : s))).catch(fail);
@@ -351,6 +373,16 @@ export default function MediaFields({ setlistId, item, canEdit: canEditSetlist, 
               />
               <span className="small faint">s</span>
             </label>
+            {canEdit && canAlignVideo(item) && (
+              <button
+                className="toggle"
+                onClick={syncVideo}
+                disabled={aligning}
+                title="Confronta l’audio del video con le tracce del brano e imposta l’offset da solo"
+              >
+                <Icon name="wand" size={11} /> {aligning ? 'Sincronizzo…' : 'Sincronizza'}
+              </button>
+            )}
             <CacheState c={cache[video.path]} />
             {canEdit && (
               <button className="toggle" onClick={removeVideo} title="Elimina il video">

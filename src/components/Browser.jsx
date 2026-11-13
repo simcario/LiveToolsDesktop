@@ -6,6 +6,7 @@ import { useDrafts } from '../lib/drafts';
 import { ensureItems, itemCacheState, mediaOf, useMediaCache } from '../lib/mediaCache';
 import { useSettings } from '../lib/settings';
 import Icon from './Icon';
+import { openContextMenu } from './ContextMenu';
 import SectionsPanel from './SectionsPanel';
 import { ZoneLayoutToggle, ZoneTabs } from './Zones';
 
@@ -41,6 +42,46 @@ export default function Browser({ setlists, setlistId, onSetlist, items, numbers
     return a + (c.ready ? f.size || 0 : c.received || 0);
   }, 0);
 
+  // Right click on a song: load, play, open it in the other pages, download.
+  const songMenu = (e, it, st) => {
+    const isLoaded = it.id === loadedId;
+    const go = (patch) => {
+      onSelect(it.id);
+      update(patch);
+    };
+    openContextMenu(
+      e,
+      [
+        !isLoaded && { label: 'Carica nel player', icon: 'download', onSelect: () => onLoad(it) },
+        { label: isLoaded ? 'Play / Stop' : 'Carica e suona', icon: 'play', onSelect: () => player.launch(it) },
+        '-',
+        { label: 'Palco', icon: 'radio', onSelect: () => go({ page: 'live', view: 'stage' }) },
+        { label: 'Arrangement', icon: 'timeline', onSelect: () => go({ page: 'live', view: 'arrangement' }) },
+        { label: 'Gobbo', icon: 'lyrics', onSelect: () => go({ page: 'live', view: 'prompter' }) },
+        scoreForms(it).length > 0 && { label: 'Spartito', icon: 'file-text', onSelect: () => go({ page: 'live', view: 'score' }) },
+        { label: 'Modifica nella Scaletta', icon: 'edit', onSelect: () => go({ page: 'setlist' }) },
+        '-',
+        (st === 'partial' || st === 'error') && {
+          label: st === 'error' ? 'Riprova a scaricare i file' : 'Scarica i file su questo computer',
+          icon: 'download',
+          onSelect: () => ensureItems([it]).catch((err) => notify(`Download non riuscito: ${err?.message || err}`, true)),
+        },
+      ],
+      { title: `${numbers[it.id]} · ${it.title}` },
+    );
+  };
+  const setlistMenu = (e, s) =>
+    openContextMenu(
+      e,
+      [
+        { label: 'Apri', icon: 'list-music', disabled: s.id === setlistId, onSelect: () => onSetlist(s.id) },
+        { label: 'Apri nel Palco', icon: 'radio', onSelect: () => (onSetlist(s.id), update({ page: 'live', view: 'stage' })) },
+        { label: 'Modifica la scaletta', icon: 'edit', onSelect: () => (onSetlist(s.id), update({ page: 'setlist' })) },
+        s.id === setlistId && files.length > ready && { label: 'Scarica tutta la scaletta', icon: 'download', disabled: syncing, onSelect: syncAll },
+      ],
+      { title: s.title || 'Senza titolo' },
+    );
+
   const syncAll = async () => {
     setSyncing(true);
     await ensureItems(items);
@@ -64,7 +105,7 @@ export default function Browser({ setlists, setlistId, onSetlist, items, numbers
           </p>
         )}
         {setlists?.map((s) => (
-          <button key={s.id} className={`b-row ${s.id === setlistId ? 'is-on' : ''}`} onClick={() => onSetlist(s.id)}>
+          <button key={s.id} className={`b-row ${s.id === setlistId ? 'is-on' : ''}`} onClick={() => onSetlist(s.id)} onContextMenu={(e) => setlistMenu(e, s)}>
             <span className="grow">
               <span className="ellipsis" style={{ display: 'block', fontWeight: 600 }}>
                 {s.title || 'Senza titolo'}
@@ -102,7 +143,8 @@ export default function Browser({ setlists, setlistId, onSetlist, items, numbers
               className={`b-song ${it.id === selectedId ? 'is-selected' : ''} ${it.id === loadedId ? 'is-loaded' : ''} ${it.id === liveItemId ? 'is-live' : ''}`}
               onClick={() => onSelect(it.id)}
               onDoubleClick={() => onLoad(it)}
-              title="Doppio clic: carica nel player"
+              onContextMenu={(e) => songMenu(e, it, st)}
+              title="Doppio clic: carica nel player · clic destro: altre azioni"
             >
               <span className="b-num">{String(numbers[it.id]).padStart(2, '0')}</span>
               <span className="ellipsis">{it.title}</span>

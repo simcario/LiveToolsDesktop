@@ -5,6 +5,13 @@ versioni [SemVer](https://semver.org/lang/it/). Procedura di rilascio: [docs/REL
 
 ## [Non rilasciato]
 
+### Menu del clic destro
+- **Clic destro** su tessere e transizioni del Palco, sezioni e forma d'onda, clip, nomi delle tracce, sezioni, cue e
+  cambi di tempo dell'Arrangement, canali del Mixer, brani e scalette del Browser, righe della pagina Scaletta: un menu
+  con le azioni di quel punto (carica, tonalità e tempo, transizione, taglia, muta, elimina, rinomina, automazione,
+  annulla, salva…). Frecce, Invio ed Esc nel menu; Spazio non fa partire la musica mentre è aperto. Elenco nel
+  manuale, capitolo 2. Stesso componente sul tablet con il tocco lungo (`components/ContextMenu.jsx`).
+
 ### Driver ASIO® e licenza GPL
 - **Driver ASIO** in tutti gli installer: in *Audio & uscite* le schede con driver ASIO compaiono nel gruppo
   **ASIO**. Gli aggiornamenti dall'app hanno ASIO anche loro (prima solo un installer personale).
