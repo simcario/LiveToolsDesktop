@@ -894,7 +894,7 @@ Strumenti nella barra dell'Arrangement (tasti **1–6**):
 | 3 | Taglia | taglia dove clicchi |
 | 4 | Muta | muta / riattiva un segmento |
 | 5 | Elimina | elimina un segmento |
-| 6 | Automazione | disegna la curva del volume della traccia e i tratti in cui tace (dalla prossima versione, vedi sotto) |
+| 6 | Automazione | disegna la curva del volume della traccia o del click e i tratti in cui tace (dalla prossima versione, vedi sotto) |
 
 Altre azioni: **Ctrl+E** taglia la traccia selezionata alla testina, **Canc** elimina, **X** muta,
 **Ctrl+Z / Ctrl+Shift+Z** annulla / ripeti.
@@ -909,6 +909,10 @@ la sua linea del volume, gialla, sopra le clip:
   aggancia ai movimenti (Shift inverte);
 - **trascina** un punto per cambiarne tempo e livello: in alto +6 dB, a circa 4/5 dell'altezza il volume del fader
   (0 dB), in basso il silenzio;
+- **trascina la linea** tra due punti per alzarla o abbassarla tutta insieme (prima del primo punto e dopo l'ultimo
+  sposti il livello che resta); un clic sulla linea, senza trascinare, ci aggiunge un punto;
+- **Alt+trascina** disegna la curva a mano, dove passa il mouse: i punti sotto il tratto disegnato vengono sostituiti,
+  il resto della curva non cambia;
 - **doppio clic** o **Alt+clic** su un punto lo toglie; con la traccia selezionata, **Canc** toglie tutta la sua automazione.
 
 Tra due punti il volume cambia gradualmente; prima del primo e dopo l'ultimo resta il loro. La curva si somma al fader
@@ -919,7 +923,7 @@ non segue lo spostamento delle clip, ma *Aggiungi → Battute…* sposta i punti
 **Automazione del mute** (dalla prossima versione). Una traccia può anche tacere in alcuni tratti del brano e
 riprendere da sola: i tratti muti si vedono scuri, con una riga rossa sotto il nome. Con lo strumento **Automazione**,
 **Ctrl+clic** nella corsia muta la traccia da quel punto (o la riattiva, se lì è già muta) fino al cambio successivo;
-**Ctrl+clic** su un bordo del tratto (il triangolino rosso) lo toglie. **Canc** con la traccia selezionata toglie
+**trascina** il triangolino rosso di un bordo per spostarlo; **Ctrl+clic** sul bordo lo toglie. **Canc** con la traccia selezionata toglie
 tutte le sue automazioni, volume e mute. Durante l'esecuzione la **M** si accende da sola nei tratti muti (a righe,
 per distinguerla dal mute fisso della traccia, che resta più forte di tutto).
 
@@ -937,14 +941,21 @@ traccia dell'Arrangement e sotto M e S di ogni striscia del Mixer:
 
 R e W ci sono per chi può modificare il brano; la traccia cue dal vivo e l'audio del video non hanno automazioni.
 
-**Automazione del click** (dalla prossima versione). Anche la traccia **Click · Tempo** ha **R** e **W**, per esempio
-per fermare il click alla fine del brano e lasciare il tempo libero (un finale rallentato, una corona). Il click tace
-nei tratti segnati in rosso e riparte da solo dove finiscono; il count-in suona sempre. Per segnarli:
+**Automazione del click** (dalla prossima versione). Anche la traccia **Click · Tempo** ha la sua automazione, con **R**
+e **W**: la **curva del volume**, per esempio per abbassare il click in una strofa piano e rialzarlo nel ritornello, e i
+**tratti senza click**, per fermarlo alla fine del brano e lasciare il tempo libero (un finale rallentato, una corona).
+Il click tace nei tratti segnati in rosso e riparte da solo dove finiscono; il count-in suona sempre, al suo volume.
 
-- con lo strumento **Automazione**, **Ctrl+clic** nella corsia del click lo ferma da quel punto (o lo fa ripartire, se
-  lì è già fermo); **Ctrl+clic** su un bordo del tratto lo toglie; con *Griglia* attiva il punto si aggancia ai
-  movimenti;
-- oppure con **W** accesa: mentre il brano suona, **On** ferma o fa ripartire il click in quel punto.
+- con lo strumento **Automazione** la corsia del click si modifica come quella di una traccia: clic aggiunge un punto
+  del volume, si trascinano punti e linee, **Alt+trascina** disegna a mano, doppio clic toglie un punto; la curva si
+  somma al volume del click delle Impostazioni;
+- **Ctrl+clic** nella corsia ferma il click da quel punto (o lo fa ripartire, se lì è già fermo); trascina il
+  triangolino rosso per spostare un bordo, **Ctrl+clic** sul bordo lo toglie; con *Griglia* attiva i punti si
+  agganciano ai movimenti;
+- oppure con **W** accesa: mentre il brano suona, **On** ferma o fa ripartire il click in quel punto;
+- clic destro sul nome *Click · Tempo* → *Togli l'automazione del click*.
+
+Con lo strumento Automazione le bandierine dei cambi di tempo si modificano con gli altri strumenti.
 
 **On** resta l'interruttore del click per tutti i brani (Impostazioni › Click); nei tratti fermati dall'automazione
 appare a righe. Il tratto si salva con il brano (**Salva**), vale per tutta la band e anche nella prova sul web, e

@@ -21,7 +21,7 @@ import { clearHistory, recordStep, travel, useHistory } from '../lib/arrangeHist
 import { discardDraft, editDraft, saveDraft, useDrafts } from '../lib/drafts';
 import { AUTO_MAX_DB, AUTO_MIN_DB, automationDb, automationMutedAt, automationOf, automationRead, muteAutomationOf, muteSpans, regionsOf, stemsOf, VIDEO_AUDIO_ID, clickAutoOf, videoOf } from '../shared/media.js';
 import { alignText, alignVideo, canAlignVideo } from '../lib/videoAlign';
-import { CLICK_ID, hasAutomation, setClickMute, toggleClickRead, toggleClickWrite, toggleRead, toggleWrite, useAutoWrite, writeClickMute, writeMute } from '../lib/autoWrite';
+import { CLICK_ID, clickHasAutomation, hasAutomation, setClickAutomation, setClickMute, setClickVolume, thinAutomation, toggleClickRead, toggleClickWrite, toggleRead, toggleWrite, useAutoWrite, writeClickMute, writeMute } from '../lib/autoWrite';
 import { TIME_SIGNATURES } from '../shared/setlists.js';
 import { cleanTempoChanges, MAX_BPM, MAX_RAMP, MIN_BPM, tempoChangesOf } from '../shared/tempoMap.js';
 import { writeMix } from '../lib/songMix';
@@ -49,7 +49,7 @@ const TOOLS = [
   ['cut', 'scissors', 'Taglia dove clicchi', '3', 'crosshair'],
   ['mute', 'x', 'Muta / riattiva un segmento', '4', 'pointer'],
   ['erase', 'eraser', 'Elimina un segmento', '5', 'not-allowed'],
-  ['auto', 'automation', 'Automazione: clic aggiunge un punto del volume, trascina per spostarlo, doppio clic o Alt+clic lo toglie · Ctrl+clic muta o riattiva da lì (Ctrl+clic su un bordo del mute lo toglie)', '6', 'crosshair'],
+  ['auto', 'automation', 'Automazione (tracce e click): clic aggiunge un punto del volume, trascina un punto per spostarlo, trascina la linea per alzarla o abbassarla, Alt+trascina disegna a mano, doppio clic o Alt+clic toglie un punto · Ctrl+clic muta o riattiva da lì, trascina la bandierina rossa per spostare un bordo del mute (Ctrl+clic la toglie)', '6', 'crosshair'],
 ];
 
 // Volume automation drawn in the lane of a track, under the strip with the name: the
@@ -64,6 +64,18 @@ function autoDbAt(py, y) {
 }
 const dbLabel = (db) => (db <= AUTO_MIN_DB ? '−∞ dB' : `${db > 0 ? '+' : ''}${db.toFixed(1).replace('.', ',')} dB`);
 const AUTO_HIT = 7; // px around a point that grab it
+
+// A stroke drawn by hand (Alt+drag) in place of the points under it; the curve
+// outside the stroke keeps its shape (a point of it on each side).
+function mergeStroke(points, stroke) {
+  if (!stroke.length) return points;
+  const a = stroke[0].t;
+  const b = stroke[stroke.length - 1].t;
+  const out = points.filter((pt) => pt.t < a || pt.t > b);
+  if (points.some((pt) => pt.t < a) && a > 0.03) out.push({ t: a - 0.02, db: automationDb(points, a - 0.02) });
+  if (points.some((pt) => pt.t > b)) out.push({ t: b + 0.02, db: automationDb(points, b + 0.02) });
+  return [...out, ...stroke].sort((x, y) => x.t - y.t);
+}
 const TEMPO_HIT = 8; // px around a tempo change that grab it
 
 const fmtTime = (t) => `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, '0')}`;
@@ -180,7 +192,7 @@ function draw(canvas, { width, height, scroll, pps, t0, tempo, rows, peaks, dura
         ctx.fillRect(Math.round(x(b.t)), y + LANE_H - 9 - h, 2, h);
       });
       drawTempoLane(ctx, { y, width, x, beats, ...tempoLane });
-      if (r.muteAuto?.length) drawAutomation(ctx, { y, width, tStart, tEnd, pps, x, points: [], mutes: r.muteAuto, read: r.read !== false, active: autoTool });
+      if (r.auto?.length || r.muteAuto?.length || autoTool) drawAutomation(ctx, { y, width, tStart, tEnd, pps, x, points: r.auto || [], mutes: r.muteAuto || [], read: r.read !== false, active: autoTool });
       return;
     }
     // Audio: one clip per region (moved, or cut by inserted bars); video: one clip at its offset.
@@ -662,7 +674,7 @@ function TrackHeader({ row, index, solos, onTrack, selected, onSelect, saved, au
                 className={`toggle read ${row.read !== false && row.hasAuto ? 'is-on' : ''}`}
                 onClick={() => toggleClickRead(auto.song)}
                 disabled={!auto.canEdit || !row.hasAuto}
-                title={row.hasAuto ? `Lettura automazione del click (R): ${row.read !== false ? 'attiva, il click tace nei tratti segnati' : 'spenta, il click suona sempre'} · si salva con il brano` : 'Lettura automazione del click (R): nessun tratto senza click (W per scriverli, o Ctrl+clic con lo strumento Automazione)'}
+                title={row.hasAuto ? `Lettura automazione del click (R): ${row.read !== false ? 'attiva, il click segue la curva del volume e tace nei tratti segnati' : 'spenta, il click suona sempre al suo volume'} · si salva con il brano` : 'Lettura automazione del click (R): nessuna automazione (lo strumento Automazione disegna volume e tratti senza click, W li scrive suonando)'}
               >
                 R
               </button>
@@ -795,7 +807,8 @@ export default function ArrangementView({ player, item, lanes, settings, update,
   const [clipDrag, setClipDrag] = useState(null); // { stemId, index, delta } moving a segment, { stemId, index, edge, t } trimming it
   const [selection, setSelection] = useState(null); // { stemId, index: segment or null }
   const [prompterDrag, setPrompterDrag] = useState(null); // seconds the gobbo is moved by while dragging
-  const [autoDrag, setAutoDrag] = useState(null); // { stemId, points } of the automation being edited
+  const [autoDrag, setAutoDrag] = useState(null); // { stemId, points } of the automation being edited (stemId CLICK_ID = the click)
+  const [muteDrag, setMuteDrag] = useState(null); // { id, points } of the mute automation whose edge is dragged
   const [tempoEdit, setTempoEdit] = useState(null); // bar of the tempo change open in its editor
   const [tempoDrag, setTempoDrag] = useState(null); // { from, bar } of a tempo change being moved
   const snap = settings.snapGrid !== false;
@@ -895,7 +908,7 @@ export default function ArrangementView({ player, item, lanes, settings, update,
         color: laneColor(lanes, t.stem),
         muted: mixSaved ? !!t.stem.muted : (getMix(t.stem.id).mute ?? !!t.stem.muted),
         auto: t.stem.live ? [] : autoDrag?.stemId === t.stem.id ? autoDrag.points : automationOf(songStems.get(t.stem.id)),
-        muteAuto: t.stem.live ? [] : muteAutomationOf(songStems.get(t.stem.id)),
+        muteAuto: t.stem.live ? [] : muteDrag?.id === t.stem.id ? muteDrag.points : muteAutomationOf(songStems.get(t.stem.id)),
         read: t.stem.live || automationRead(songStems.get(t.stem.id)),
         hasAuto: !t.stem.live && hasAutomation(songStems.get(t.stem.id)),
         write: !!writing[t.stem.id],
@@ -919,10 +932,11 @@ export default function ArrangementView({ player, item, lanes, settings, update,
     rows.push({
       kind: 'click',
       enabled: settings.click.enabled,
-      // Mute automation of the click (R/W, Ctrl+click with the Automazione tool).
-      muteAuto: muteAutomationOf(clickAutoOf(song)),
+      // Volume and mute automation of the click (R/W, the Automazione tool).
+      auto: autoDrag?.stemId === CLICK_ID ? autoDrag.points : automationOf(clickAutoOf(song)),
+      muteAuto: muteDrag?.id === CLICK_ID ? muteDrag.points : muteAutomationOf(clickAutoOf(song)),
       read: automationRead(clickAutoOf(song)),
-      hasAuto: muteAutomationOf(clickAutoOf(song)).length > 0,
+      hasAuto: clickHasAutomation(song),
       write: !!writing[CLICK_ID],
       onToggle: () => update({ click: { ...settings.click, enabled: !settings.click.enabled } }),
       onAddTempo: canEditSong ? () => addTempoAt(Math.max(0, engineStatus().position)) : null,
@@ -1189,6 +1203,206 @@ export default function ArrangementView({ player, item, lanes, settings, update,
     writeMix(song, { stems: stemsOf(song).map((x) => (x.id === stem.id ? { ...x, muteAuto: clean.length ? clean : null } : x)) }, label);
     notify(`${label} · “Salva” per tenerla`);
   };
+  // Volume automation of the click (lane Click · Tempo): the same way, in item.clickAuto.
+  const commitClickAuto = (points, label) => {
+    if (!song || !canEditSong) return;
+    const clean = points.map((pt) => ({ t: Math.round(Math.max(0, pt.t) * 1e4) / 1e4, db: Math.round(pt.db * 10) / 10 })).sort((a, b) => a.t - b.t);
+    setClickVolume(song, clean, label);
+    notify(`${label} · “Salva” per tenerla`);
+  };
+  const commitClickMute = (points, label) => {
+    if (!song || !canEditSong) return;
+    setClickMute(song, points.map((pt) => ({ t: Math.round(Math.max(0, pt.t) * 1e4) / 1e4, on: !!pt.on })), label);
+    notify(`${label} · “Salva” per tenerla`);
+  };
+  // The automation of a row that the Automazione tool edits: a track (not live) or the click.
+  const autoLane = (row) => {
+    if (row?.kind === 'audio' && !row.stem.live) {
+      const { stem } = row;
+      return {
+        id: stem.id,
+        of: `di “${stem.name}”`,
+        vol: (pts, label) => commitAuto(stem, pts, label),
+        mute: (pts, label) => commitMuteAuto(stem, pts, label),
+        muteLabel: (on, at) => `${on ? 'Mute' : 'Fine del mute'} in “${stem.name}” a ${fmtTime(at)}`,
+        edgeGone: `Tolto un bordo del mute di “${stem.name}”`,
+        edgeMoved: (at) => `Bordo del mute di “${stem.name}” spostato a ${fmtTime(at)}`,
+      };
+    }
+    if (row?.kind === 'click') {
+      return {
+        id: CLICK_ID,
+        of: 'del click',
+        vol: commitClickAuto,
+        mute: commitClickMute,
+        muteLabel: (on, at) => `${on ? 'Click fermato' : 'Click ripartito'} a ${fmtTime(at)}`,
+        edgeGone: 'Tolto un bordo del tratto senza click',
+        edgeMoved: (at) => `Bordo del tratto senza click spostato a ${fmtTime(at)}`,
+      };
+    }
+    return null;
+  };
+  // What the Automazione tool would grab at (px, py) of a row: 'point', 'line', 'edge' (flag of a mute edge) or null.
+  const autoGrab = (row, px, py) => {
+    const ri = rows.indexOf(row);
+    if (ri < 0) return null;
+    const y0 = RULER_H + ri * LANE_H;
+    if (py <= y0 + AUTO_TOP + 2 && (row.muteAuto || []).some((m) => Math.abs((m.t - t0) * pps - px) <= AUTO_HIT)) return 'edge';
+    const pts = row.auto || [];
+    if (pts.some((pt) => Math.abs((pt.t - t0) * pps - px) <= AUTO_HIT && Math.abs(autoY(pt.db, y0) - py) <= AUTO_HIT)) return 'point';
+    if (pts.length && Math.abs(autoY(automationDb(pts, (px / pps) + t0), y0) - py) <= AUTO_HIT) return 'line';
+    return null;
+  };
+
+  // Automazione tool on a track or on the click lane (Cubase style):
+  // - click: a new point of the volume (on the beats with Griglia, Shift = the other way), dragged at once;
+  // - a point dragged in time and level, Alt+click (or double click) removes it;
+  // - the line between two points (or the level before the first / after the last) dragged up or down;
+  // - Alt+drag: the curve drawn by hand where the pointer goes;
+  // - Ctrl+click: mute (or stop the click) from there, on an edge of the mute: that edge goes;
+  // - the red flag of an edge of the mute dragged in time.
+  const editAutomation = (e, row, t, rect) => {
+    const lane = autoLane(row);
+    if (!lane) return false;
+    if (row.kind === 'audio') setSelection({ stemId: row.stem.id, index: null });
+    if (!canEditSong) {
+      notify('Solo chi può modificare il brano può disegnare l’automazione', true);
+      return true;
+    }
+    const y0 = RULER_H + rows.indexOf(row) * LANE_H;
+    const px = e.clientX - rect.left;
+    const py = e.clientY - rect.top;
+    const tAt = (ev) => (ev.clientX - rect.left) / pps + t0;
+    const snapT = (tt, ev) => Math.max(0, snap !== ev.shiftKey && tempo ? snapToBeat(tempo, tt) : tt);
+    const el = e.currentTarget;
+    const drag = (onMove, onUp) => {
+      e.preventDefault();
+      el.setPointerCapture(e.pointerId);
+      const x0 = e.clientX;
+      const yy0 = e.clientY;
+      let moved = false;
+      const move = (ev) => {
+        if (!moved && Math.abs(ev.clientX - x0) < 3 && Math.abs(ev.clientY - yy0) < 3) return;
+        moved = true;
+        onMove(ev);
+      };
+      const up = () => {
+        el.removeEventListener('pointermove', move);
+        el.removeEventListener('pointerup', up);
+        el.removeEventListener('pointercancel', up);
+        onUp(moved);
+      };
+      el.addEventListener('pointermove', move);
+      el.addEventListener('pointerup', up);
+      el.addEventListener('pointercancel', up);
+    };
+    const mutes = row.muteAuto || [];
+    const edge = mutes.findIndex((m) => Math.abs((m.t - t0) * pps - px) <= AUTO_HIT);
+    if (e.ctrlKey || e.metaKey) {
+      if (edge >= 0) {
+        lane.mute(mutes.filter((_, i) => i !== edge), lane.edgeGone);
+        return true;
+      }
+      const at = snapT(t, e);
+      const on = !automationMutedAt(mutes, at);
+      lane.mute([...mutes, { t: at, on }], lane.muteLabel(on, at));
+      return true;
+    }
+    if (edge >= 0 && !e.altKey && py <= y0 + AUTO_TOP + 2) {
+      const lo = (mutes[edge - 1]?.t ?? -0.001) + 0.001;
+      const hi = (mutes[edge + 1]?.t ?? Infinity) - 0.001;
+      let list = mutes;
+      drag(
+        (ev) => {
+          const nt = Math.min(hi, Math.max(lo, snapT(tAt(ev), ev)));
+          list = mutes.map((m, i) => (i === edge ? { ...m, t: nt } : m));
+          setMuteDrag({ id: lane.id, points: list });
+        },
+        (moved) => {
+          setMuteDrag(null);
+          if (moved) lane.mute(list, lane.edgeMoved(list[edge].t));
+        },
+      );
+      return true;
+    }
+    const pts = row.auto || [];
+    const hit = pts.findIndex((pt) => Math.abs((pt.t - t0) * pps - px) <= AUTO_HIT && Math.abs(autoY(pt.db, y0) - py) <= AUTO_HIT);
+    if (e.altKey) {
+      // Drawn by hand: one point every 4 px of the stroke (going back redraws them).
+      const cols = new Map();
+      const add = (ev) => {
+        const cx = ev.clientX - rect.left;
+        cols.set(Math.round(cx / 4), { t: Math.max(0, cx / pps + t0), db: autoDbAt(ev.clientY - rect.top, y0) });
+      };
+      const stroke = () => [...cols.values()].sort((a, b) => a.t - b.t);
+      add(e);
+      drag(
+        (ev) => {
+          add(ev);
+          setAutoDrag({ stemId: lane.id, points: mergeStroke(pts, stroke()) });
+        },
+        (moved) => {
+          setAutoDrag(null);
+          if (!moved) {
+            if (hit >= 0) lane.vol(pts.filter((_, i) => i !== hit), `Tolto un punto dell’automazione ${lane.of}`);
+            return;
+          }
+          lane.vol(mergeStroke(pts, thinAutomation(stroke())), `Automazione ${lane.of} disegnata a mano`);
+        },
+      );
+      return true;
+    }
+    if (hit < 0 && pts.length && Math.abs(autoY(automationDb(pts, t), y0) - py) <= AUTO_HIT) {
+      // The line: its two points move up or down together (by the same height on screen).
+      const after = pts.findIndex((pt) => pt.t > t);
+      const idx = after < 0 ? [pts.length - 1] : after === 0 ? [0] : [after - 1, after];
+      let list = pts;
+      drag(
+        (ev) => {
+          const dy = ev.clientY - e.clientY;
+          list = pts.map((pt, i) => (idx.includes(i) ? { ...pt, db: autoDbAt(autoY(pt.db, y0) + dy, y0) } : pt));
+          setAutoDrag({ stemId: lane.id, points: list });
+        },
+        (moved) => {
+          setAutoDrag(null);
+          if (moved) {
+            lane.vol(list, `Linea dell’automazione ${lane.of} spostata: ${idx.map((i) => dbLabel(list[i].db)).join(' → ')}`);
+            return;
+          }
+          // A click on the line: a point on it.
+          const at = snapT(t, e);
+          const pt = { t: at, db: automationDb(pts, at) };
+          lane.vol([...pts, pt], `Nuovo punto nell’automazione ${lane.of}: ${dbLabel(pt.db)}`);
+        },
+      );
+      return true;
+    }
+    const added = hit < 0;
+    let list = pts;
+    let index = hit;
+    if (added) {
+      const pt = { t: snapT(t, e), db: autoDbAt(py, y0) };
+      list = [...pts, pt].sort((a, b) => a.t - b.t);
+      index = list.indexOf(pt);
+    }
+    setAutoDrag({ stemId: lane.id, points: list });
+    drag(
+      (ev) => {
+        const lo = list[index - 1]?.t ?? 0;
+        const hi = list[index + 1]?.t ?? Infinity;
+        const nt = Math.min(hi, Math.max(lo, snapT(tAt(ev), ev)));
+        list = list.map((pt, i) => (i === index ? { t: nt, db: autoDbAt(ev.clientY - rect.top, y0) } : pt));
+        setAutoDrag({ stemId: lane.id, points: list });
+      },
+      (moved) => {
+        setAutoDrag(null);
+        if (!added && !moved) return;
+        lane.vol(list, `${added ? 'Nuovo punto' : 'Punto spostato'} nell’automazione ${lane.of}: ${dbLabel(list[index].db)}`);
+      },
+    );
+    return true;
+  };
+
   const deleteSelected = () => {
     if (tool === 'auto' && canEditSong && selectedStem) {
       if (hasAutomation(selectedStem) && confirm(`Togliere tutta l’automazione (volume e mute) di “${selectedStem.name}”?`)) {
@@ -1332,7 +1546,23 @@ export default function ArrangementView({ player, item, lanes, settings, update,
     const onEdge = trimmable(row) && !!edgeAt(row, pt);
     const toolCursor = TOOLS.find(([k]) => k === tool)[4];
     const cueCursor = tool === 'move' || (tool !== 'erase' && hit && cue.byG.has(hit.cell.g)) ? 'grab' : tool === 'erase' ? 'not-allowed' : 'pointer';
-    const special = row?.kind === 'click' && tempoMarkAt(pt) ? (canEditSong ? 'ew-resize' : 'pointer') : tool === 'auto' && row?.kind === 'audio' && !row.stem.live && canEditSong ? 'crosshair' : null;
+    const grab = tool === 'auto' && canEditSong && autoLane(row) ? autoGrab(row, e.clientX - box.left, e.clientY - box.top) : null;
+    const special =
+      tool === 'auto' && canEditSong && autoLane(row)
+        ? e.altKey
+          ? 'crosshair'
+          : grab === 'edge'
+            ? 'ew-resize'
+            : grab === 'point'
+              ? 'move'
+              : grab === 'line'
+                ? 'ns-resize'
+                : 'crosshair'
+        : row?.kind === 'click' && tempoMarkAt(pt)
+          ? canEditSong
+            ? 'ew-resize'
+            : 'pointer'
+          : null;
     e.currentTarget.style.cursor = special || (hit ? cueCursor : onEdge ? 'ew-resize' : onSegment && (canEditSong || tool === 'select') ? toolCursor : row?.kind === 'prompter' && canEditSong ? 'grab' : '');
     const g = tool === 'move' ? null : (hit?.cell.g ?? null);
     if (g !== cueHover) setCueHover(g);
@@ -1427,28 +1657,9 @@ export default function ArrangementView({ player, item, lanes, settings, update,
     // moves (on the beats with "Griglia", Shift = the other way), scissors
     // cut where clicked, X mutes / unmutes, eraser deletes.
     const row = rows[Math.floor((e.clientY - rect.top - RULER_H) / LANE_H)];
-    // Lane Click · Tempo with the Automazione tool: Ctrl+click stops or restarts the click from
-    // there (on an edge of a silent span: that edge goes).
-    if (row?.kind === 'click' && !warpOn && tool === 'auto' && (e.ctrlKey || e.metaKey)) {
-      if (!canEditSong) {
-        notify('Solo chi può modificare il brano può disegnare l’automazione', true);
-        return;
-      }
-      const px = e.clientX - rect.left;
-      const mutes = row.muteAuto || [];
-      const edge = mutes.findIndex((m) => Math.abs((m.t - t0) * pps - px) <= AUTO_HIT);
-      if (edge >= 0) {
-        setClickMute(song, mutes.filter((_, i) => i !== edge), 'Tolto un bordo del tratto senza click');
-        notify('Tolto un bordo del tratto senza click · “Salva” per tenerlo');
-        return;
-      }
-      const at = Math.max(0, snap !== e.shiftKey && tempo ? snapToBeat(tempo, t) : t);
-      const on = !automationMutedAt(mutes, at);
-      const label = `${on ? 'Click fermato' : 'Click ripartito'} a ${fmtTime(at)}`;
-      setClickMute(song, [...mutes, { t: at, on }], label);
-      notify(`${label} · “Salva” per tenerlo`);
-      return;
-    }
+    // Automazione: the volume and mute of a track or of the click (editAutomation);
+    // the tempo changes of the lane Click · Tempo stay with the other tools.
+    if (tool === 'auto' && !warpOn && editAutomation(e, row, t, rect)) return;
     // Lane Click · Tempo: a change is dragged to another bar, a touch on it opens its editor.
     if (row?.kind === 'click' && !warpOn) {
       const m = tempoMarkAt(t);
@@ -1490,76 +1701,6 @@ export default function ArrangementView({ player, item, lanes, settings, update,
         return;
       }
       setTempoEdit(null);
-    }
-    // Automazione: a click adds a point (snapped to the beats with Griglia, Shift = the other
-    // way) and drags it; a point is dragged in time and level; Alt+click removes it.
-    if (tool === 'auto' && row?.kind === 'audio' && !row.stem.live && !warpOn) {
-      const stem = row.stem;
-      setSelection({ stemId: stem.id, index: null });
-      if (!canEditSong) {
-        notify('Solo chi può modificare il brano può disegnare l’automazione', true);
-        return;
-      }
-      const y0 = RULER_H + rows.indexOf(row) * LANE_H;
-      const px = e.clientX - rect.left;
-      const py = e.clientY - rect.top;
-      const snapT = (tt, ev) => Math.max(0, snap !== ev.shiftKey && tempo ? snapToBeat(tempo, tt) : tt);
-      // Ctrl+click: the mute from here flips (on an edge of the mute: that edge goes).
-      if (e.ctrlKey || e.metaKey) {
-        const mutes = row.muteAuto || [];
-        const edge = mutes.findIndex((m) => Math.abs((m.t - t0) * pps - px) <= AUTO_HIT);
-        if (edge >= 0) {
-          commitMuteAuto(stem, mutes.filter((_, i) => i !== edge), `Tolto un bordo del mute di “${stem.name}”`);
-          return;
-        }
-        const at = snapT(t, e);
-        const on = !automationMutedAt(mutes, at);
-        commitMuteAuto(stem, [...mutes, { t: at, on }], `${on ? 'Mute' : 'Fine del mute'} in “${stem.name}” a ${fmtTime(at)}`);
-        return;
-      }
-      const pts = row.auto;
-      const hit = pts.findIndex((pt) => Math.abs((pt.t - t0) * pps - px) <= AUTO_HIT && Math.abs(autoY(pt.db, y0) - py) <= AUTO_HIT);
-      if (e.altKey) {
-        if (hit >= 0) commitAuto(stem, pts.filter((_, i) => i !== hit), `Tolto un punto dell’automazione di “${stem.name}”`);
-        return;
-      }
-      const added = hit < 0;
-      let list = pts;
-      let index = hit;
-      if (added) {
-        const pt = { t: snapT(t, e), db: autoDbAt(py, y0) };
-        list = [...pts, pt].sort((a, b) => a.t - b.t);
-        index = list.indexOf(pt);
-      }
-      e.preventDefault();
-      const el = e.currentTarget;
-      el.setPointerCapture(e.pointerId);
-      const x0 = e.clientX;
-      const yy0 = e.clientY;
-      let moved = false;
-      setAutoDrag({ stemId: stem.id, points: list });
-      const move = (ev) => {
-        if (!moved && Math.abs(ev.clientX - x0) < 3 && Math.abs(ev.clientY - yy0) < 3) return;
-        moved = true;
-        const lo = list[index - 1]?.t ?? 0;
-        const hi = list[index + 1]?.t ?? Infinity;
-        const nt = Math.min(hi, Math.max(lo, snapT((ev.clientX - rect.left) / pps + t0, ev)));
-        list = list.map((pt, i) => (i === index ? { t: nt, db: autoDbAt(ev.clientY - rect.top, y0) } : pt));
-        setAutoDrag({ stemId: stem.id, points: list });
-      };
-      const up = () => {
-        el.removeEventListener('pointermove', move);
-        el.removeEventListener('pointerup', up);
-        el.removeEventListener('pointercancel', up);
-        setAutoDrag(null);
-        if (!added && !moved) return;
-        const pt = list[index];
-        commitAuto(stem, list, `${added ? 'Nuovo punto' : 'Punto spostato'} nell’automazione di “${stem.name}”: ${dbLabel(pt.db)}`);
-      };
-      el.addEventListener('pointermove', move);
-      el.addEventListener('pointerup', up);
-      el.addEventListener('pointercancel', up);
-      return;
     }
     // Gobbo: a drag moves all its changes together (on the beats with "Griglia", Shift = the other way); a touch locates.
     if (row?.kind === 'prompter' && !warpOn) {
@@ -1749,10 +1890,11 @@ export default function ArrangementView({ player, item, lanes, settings, update,
       const ri = Math.floor((e.clientY - rect.top - RULER_H) / LANE_H);
       const row = rows[ri];
       const t = (e.clientX - rect.left) / pps + t0;
-      if (tool === 'auto' && row?.kind === 'audio' && !row.stem.live && canEditSong && !warpOn) {
+      const lane = tool === 'auto' && canEditSong && !warpOn ? autoLane(row) : null;
+      if (lane) {
         const y0 = RULER_H + ri * LANE_H;
         const hit = row.auto.findIndex((pt) => Math.abs((pt.t - t0) * pps - (e.clientX - rect.left)) <= AUTO_HIT && Math.abs(autoY(pt.db, y0) - (e.clientY - rect.top)) <= AUTO_HIT);
-        if (hit >= 0) commitAuto(row.stem, row.auto.filter((_, i) => i !== hit), `Tolto un punto dell’automazione di “${row.stem.name}”`);
+        if (hit >= 0) lane.vol(row.auto.filter((_, i) => i !== hit), `Tolto un punto dell’automazione ${lane.of}`);
         return;
       }
       if (row?.kind === 'click' && !warpOn) {
@@ -1806,6 +1948,18 @@ export default function ArrangementView({ player, item, lanes, settings, update,
       return [
         { label: 'Click acceso', checked: r.enabled, keys: 'C', onSelect: r.onToggle },
         r.onAddTempo && { label: 'Cambio di tempo alla testina', icon: 'metronome', onSelect: r.onAddTempo },
+        canEditSong && r.hasAuto && { label: 'Leggi l’automazione', checked: r.read !== false, onSelect: () => toggleClickRead(song) },
+        canEditSong &&
+          r.hasAuto && {
+            label: 'Togli l’automazione del click',
+            icon: 'trash',
+            danger: true,
+            onSelect: () => {
+              if (!confirm('Togliere tutta l’automazione del click (volume e tratti senza click)?')) return;
+              setClickAutomation(song, { muteAuto: [], auto: [] }, 'Automazione del click tolta');
+              notify('Automazione del click tolta · “Salva” per tenerla');
+            },
+          },
       ];
     }
     if (r.kind === 'video') {

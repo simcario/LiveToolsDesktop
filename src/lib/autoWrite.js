@@ -36,17 +36,30 @@ function withPatch(stem, patch) {
   return next;
 }
 
-// The system click (lane Click · Tempo): only the mute, as item.clickAuto; its W is under CLICK_ID.
+// The system click (lane Click · Tempo): mute and volume, as item.clickAuto; its W is under CLICK_ID.
 export const CLICK_ID = 'click';
 const writeClick = (song, patch, label) => {
   const next = { ...clickAutoOf(song), ...patch };
   Object.keys(patch).forEach((k) => patch[k] === undefined && delete next[k]);
-  const empty = !muteAutomationOf(next).length && next.autoRead !== false;
-  writeItem(song, { clickAuto: empty ? null : { ...next, muteAuto: muteAutomationOf(next) } }, label);
+  const mute = muteAutomationOf(next);
+  const auto = automationOf(next);
+  const empty = !mute.length && !auto.length && next.autoRead !== false;
+  const clean = { ...next, muteAuto: mute, auto };
+  if (!auto.length) delete clean.auto;
+  writeItem(song, { clickAuto: empty ? null : clean }, label);
 };
 
 /** Mute points of the click into the song (Ctrl+click with the Automazione tool, Canc). */
 export const setClickMute = (song, points, label) => writeClick(song, { muteAuto: points }, label);
+
+/** Volume points of the click into the song (Automazione tool). */
+export const setClickVolume = (song, points, label) => writeClick(song, { auto: points }, label);
+
+/** Mute and volume of the click together (a whole edit, Canc). */
+export const setClickAutomation = (song, { muteAuto, auto }, label) => writeClick(song, { muteAuto, auto }, label);
+
+/** The click has volume or mute automation. */
+export const clickHasAutomation = (song) => hasAutomation(clickAutoOf(song));
 
 /** R of the click. */
 export function toggleClickRead(song) {
@@ -189,6 +202,8 @@ function thin(points) {
   }
   return out;
 }
+/** Points drawn by hand (Alt+drag in the Arrangement) thinned as the written ones. */
+export const thinAutomation = (points) => thin(points);
 const simplify = (points) => (points.length > 500 ? rdp(points, 1) : points);
 
 function rdp(points, tol) {

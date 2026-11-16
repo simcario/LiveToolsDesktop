@@ -5,6 +5,14 @@ versioni [SemVer](https://semver.org/lang/it/). Procedura di rilascio: [docs/REL
 
 ## [Non rilasciato]
 
+### Automazioni modificabili a mano, volume del click
+- **Volume del click automatizzato**: con lo strumento Automazione la corsia *Click · Tempo* ha la sua curva del
+  volume (`item.clickAuto.auto`), seguita dal motore colpo per colpo (`TempoFrames::click_gain`), dal tablet e
+  dalla prova sul web; il count-in resta al suo volume. R spenta = il click suona al suo volume.
+- **Linee modificabili**: si trascina la linea tra due punti per alzarla o abbassarla, **Alt+trascina** disegna la
+  curva a mano, il triangolino rosso di un bordo del mute si trascina nel tempo (tracce e click).
+- Clic destro su *Click · Tempo*: leggi / togli l'automazione del click.
+
 ### Menu del clic destro
 - **Clic destro** su tessere e transizioni del Palco, sezioni e forma d'onda, clip, nomi delle tracce, sezioni, cue e
   cambi di tempo dell'Arrangement, canali del Mixer, brani e scalette del Browser, righe della pagina Scaletta: un menu

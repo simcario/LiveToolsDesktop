@@ -140,7 +140,7 @@ export const engine = {
   setSync: (sync) => invoke('engine_set_sync', { sync }),
   setSections: (sections) => invoke('engine_set_sections', { sections }),
   // Spans [from, to] (seconds of the song) where the click is silent (its mute automation).
-  setClickMute: (spans) => invoke('engine_set_click_mute', { spans }),
+  setClickMute: (spans, auto) => invoke('engine_set_click_mute', { spans, auto }),
   setRegions: (regions) => invoke('engine_set_regions', { regions }),
   replaceTrack: (id, newId, path) => invoke('engine_replace_track', { id, newId, path }),
   // Tracks Fade: the tracks out (or back in) in `seconds`; click and pad go on.

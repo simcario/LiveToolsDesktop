@@ -81,6 +81,9 @@ pub struct SongSpec {
     /// automation in the Arrangement (R on).
     #[serde(default)]
     pub click_mute: Vec<[f64; 2]>,
+    /// Volume automation of the click: [second of the song, dB] points (R on).
+    #[serde(default)]
+    pub click_auto: Vec<[f64; 2]>,
 }
 
 impl SongSpec {
@@ -873,7 +876,7 @@ impl Controller {
     /// The tempo map of a song for the audio thread, with the spans where its click is silent.
     fn tempo_frames(&self, song: &Loaded) -> TempoFrames {
         let fps = self.fps(song.rate);
-        song.tempo.frames_per(fps).with_click_mute(&song.spec.click_mute, fps)
+        song.tempo.frames_per(fps).with_click_mute(&song.spec.click_mute, fps).with_click_auto(&song.spec.click_auto, fps)
     }
 
     fn send_tempo(&mut self) -> Option<TempoMap> {
@@ -892,10 +895,14 @@ impl Controller {
         self.send_tempo()
     }
 
-    /// New spans where the click is silent (its mute automation), heard at once.
-    pub fn set_click_mute(&mut self, spans: Vec<[f64; 2]>) {
+    /// New spans where the click is silent (its mute automation) and its volume
+    /// automation (None = unchanged), heard at once.
+    pub fn set_click_mute(&mut self, spans: Vec<[f64; 2]>, auto: Option<Vec<[f64; 2]>>) {
         if let Some(song) = self.song.as_mut() {
             song.spec.click_mute = spans;
+            if let Some(auto) = auto {
+                song.spec.click_auto = auto;
+            }
             self.send_tempo();
         }
     }

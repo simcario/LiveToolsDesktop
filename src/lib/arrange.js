@@ -15,7 +15,13 @@ const WHOLE = [{ at: 0, from: 0, len: null }];
 // The stems with their automations (volume, mute) after second t moved by delta (null: no automation to move).
 const hasAuto = (s) => automationOf(s).length || muteAutomationOf(s).length;
 // The mute automation of the click after second t moved by delta (null: nothing to move).
-const clickShifted = (item, t, delta) => (muteAutomationOf(clickAutoOf(item)).length ? { ...clickAutoOf(item), muteAuto: shiftAutomation(muteAutomationOf(clickAutoOf(item)), t, delta) } : null);
+const clickShifted = (item, t, delta) => {
+  const c = clickAutoOf(item);
+  if (!hasAuto(c)) return null;
+  const next = { ...c, muteAuto: shiftAutomation(muteAutomationOf(c), t, delta) };
+  if (automationOf(c).length) next.auto = shiftAutomation(automationOf(c), t, delta);
+  return next;
+};
 function stemsShifted(item, t, delta) {
   const stems = stemsOf(item);
   if (!stems.some(hasAuto)) return null;

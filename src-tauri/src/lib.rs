@@ -172,8 +172,8 @@ fn engine_set_sync(engine: State<'_, Engine>, sync: Option<SyncSpec>) -> Option<
 }
 
 #[tauri::command]
-fn engine_set_click_mute(engine: State<'_, Engine>, spans: Vec<[f64; 2]>) {
-    engine.0.lock().set_click_mute(spans)
+fn engine_set_click_mute(engine: State<'_, Engine>, spans: Vec<[f64; 2]>, auto: Option<Vec<[f64; 2]>>) {
+    engine.0.lock().set_click_mute(spans, auto)
 }
 
 #[tauri::command]

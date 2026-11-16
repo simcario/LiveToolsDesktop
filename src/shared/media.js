@@ -487,13 +487,18 @@ export const muteSpans = (points) =>
     return spans;
   }, []);
 
-// Mute automation of the system click (lane Click · Tempo of the desktop Arrangement):
-// item.clickAuto = { muteAuto: [{ t, on }], autoRead } as a stem's, for instance
+// Mute and volume automation of the system click (lane Click · Tempo of the desktop Arrangement):
+// item.clickAuto = { muteAuto: [{ t, on }], auto: [{ t, db }], autoRead } as a stem's, for instance
 // to stop the click at the end of a song and leave the tempo free.
 export const clickAutoOf = (item) => (item?.clickAuto && typeof item.clickAuto === 'object' ? item.clickAuto : {});
 
 /** Spans [{ from, to }] (seconds of the song) where the click is silent; [] with R off. */
 export const clickMuteSpans = (item) => (automationRead(clickAutoOf(item)) ? muteSpans(muteAutomationOf(clickAutoOf(item))) : []);
+
+// Volume automation of the click: item.clickAuto.auto = [{ t, db }] as a stem's auto
+// (dB on top of the click's level, -60 = silent); the count-in keeps its level.
+/** Volume points of the click that are played; [] with R off. */
+export const clickVolumeOf = (item) => (automationRead(clickAutoOf(item)) ? automationOf(clickAutoOf(item)) : []);
 
 /** The click is silenced at second t (spans of clickMuteSpans). */
 export const clickMutedIn = (spans, t) => spans.some((s) => t >= s.from && t < s.to);

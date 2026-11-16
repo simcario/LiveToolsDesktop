@@ -724,6 +724,8 @@ pub struct Renderer {
     tempo: Option<Box<TempoFrames>>,
     click: ClickParams,
     voice: ClickVoice,
+    /// Level of the click being played from its volume automation (set at each trigger).
+    click_auto: f32,
     preview: Option<ClickKind>,
     duration: i64,
     waited: usize,
@@ -766,6 +768,7 @@ impl Renderer {
             tempo: None,
             click: ClickParams::default(),
             voice: ClickVoice::idle(),
+            click_auto: 1.0,
             preview: None,
             duration: 0,
             waited: 0,
@@ -1008,7 +1011,7 @@ impl Renderer {
 
     fn process_transport(&mut self, out: &mut [f32], frames: usize, ch: usize, sr: usize) {
         if !self.shared.playing.load(Ordering::Relaxed) {
-            let preview = self.preview.take().map(|k| [(0, k)]);
+            let preview = self.preview.take().map(|k| [(0, k, 1f32)]);
             self.mix_click(out, frames, ch, sr, preview.as_ref().map_or(&[], |p| &p[..]));
             return;
         }
@@ -1105,14 +1108,15 @@ impl Renderer {
         if let Some(tempo) = self.tempo.as_ref().filter(|_| !over) {
             let click = self.click;
             let count_in = self.count_in;
-            let mut triggers = [(0usize, ClickKind::Beat); 32];
+            let mut triggers = [(0usize, ClickKind::Beat, 1f32); 32];
             let mut count = 0;
             tempo.clicks_in(pos, pos + frames as i64, click.subdivide, |f, kind, in_count_in| {
                 // A requested count-in always sounds, even with the click off.
-                // The mute automation of the click (Arrangement) silences it, not the count-in.
+                // The mute and volume automations of the click (Arrangement) act on it, not on the count-in.
                 let on = click.enabled && (in_count_in || !tempo.click_muted(f));
                 if (on || (count_in && in_count_in)) && count < triggers.len() {
-                    triggers[count] = ((f - pos) as usize, kind);
+                    let gain = if in_count_in { 1.0 } else { tempo.click_gain(f) };
+                    triggers[count] = ((f - pos) as usize, kind, gain);
                     count += 1;
                 }
             });
@@ -1165,7 +1169,7 @@ impl Renderer {
     }
 
     /// Adds the click voice to its output, triggering it at the given frames.
-    fn mix_click(&mut self, out: &mut [f32], frames: usize, ch: usize, sr: usize, triggers: &[(usize, ClickKind)]) {
+    fn mix_click(&mut self, out: &mut [f32], frames: usize, ch: usize, sr: usize, triggers: &[(usize, ClickKind, f32)]) {
         if triggers.is_empty() && self.voice.left == 0 {
             return;
         }
@@ -1179,6 +1183,7 @@ impl Renderer {
         for i in 0..frames {
             while next < triggers.len() && triggers[next].0 == i {
                 self.voice.trigger(triggers[next].1, sr as f32, &click);
+                self.click_auto = triggers[next].2;
                 next += 1;
             }
             if self.voice.left == 0 {
@@ -1187,7 +1192,7 @@ impl Renderer {
                 }
                 continue;
             }
-            let s = self.voice.next() * click.gain;
+            let s = self.voice.next() * click.gain * self.click_auto;
             let o = i * ch + start;
             out[o] += s;
             if stereo {

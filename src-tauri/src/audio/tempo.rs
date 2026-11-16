@@ -446,6 +446,7 @@ impl TempoMap {
     pub fn frames_per(&self, sr: f64) -> TempoFrames {
         TempoFrames {
             mute: Vec::new(),
+            gain: Vec::new(),
             segs: self
                 .segments
                 .iter()
@@ -478,6 +479,9 @@ pub struct TempoFrames {
     /// Spans [from, to) in frames where the click of the song is silent (its mute
     /// automation, Arrangement); the count-in always sounds.
     mute: Vec<(f64, f64)>,
+    /// Volume automation of the click: (frame, dB) points, a straight line in dB
+    /// between them, the first and the last hold before and after; empty = 0 dB.
+    gain: Vec<(f64, f32)>,
 }
 
 impl TempoFrames {
@@ -485,6 +489,38 @@ impl TempoFrames {
     pub fn with_click_mute(mut self, spans: &[[f64; 2]], sr: f64) -> Self {
         self.mute = spans.iter().filter(|s| s[1] > s[0]).map(|s| (s[0] * sr, s[1] * sr)).collect();
         self
+    }
+
+    /// With the volume automation of the click: [second of the song, dB] points (-60 dB = silent).
+    pub fn with_click_auto(mut self, points: &[[f64; 2]], sr: f64) -> Self {
+        let mut pts: Vec<(f64, f32)> = points
+            .iter()
+            .filter(|p| p[0].is_finite() && p[1].is_finite())
+            .map(|p| (p[0].max(0.0) * sr, p[1].clamp(-60.0, 6.0) as f32))
+            .collect();
+        pts.sort_by(|a, b| a.0.total_cmp(&b.0));
+        pts.truncate(512);
+        self.gain = pts;
+        self
+    }
+
+    /// Linear gain of the click at this frame (its volume automation; 1 without).
+    pub fn click_gain(&self, frame: i64) -> f32 {
+        let pts = &self.gain;
+        let Some(first) = pts.first() else { return 1.0 };
+        let f = frame as f64;
+        let db = if f <= first.0 {
+            first.1
+        } else {
+            let i = pts.partition_point(|p| p.0 <= f);
+            if i >= pts.len() {
+                pts[pts.len() - 1].1
+            } else {
+                let (a, b) = (pts[i - 1], pts[i]);
+                if b.0 > a.0 { a.1 + (b.1 - a.1) * ((f - a.0) / (b.0 - a.0)) as f32 } else { b.1 }
+            }
+        };
+        if db <= -60.0 { 0.0 } else { 10f32.powf(db / 20.0) }
     }
 
     /// The click at this frame is silenced by its mute automation.
@@ -549,6 +585,11 @@ mod tests {
         assert!(frames.click_muted(3999));
         assert!(!frames.click_muted(4000));
         assert!(frames.click_muted(50_000));
+        let g = map.frames(1000).with_click_auto(&[[1.0, 0.0], [3.0, -20.0]], 1000.0);
+        assert!((g.click_gain(0) - 1.0).abs() < 1e-6);
+        assert!((g.click_gain(2000) - 10f32.powf(-0.5)).abs() < 1e-4);
+        assert!((g.click_gain(9000) - 0.1).abs() < 1e-5);
+        assert_eq!(map.frames(1000).with_click_auto(&[[0.0, -60.0]], 1000.0).click_gain(5), 0.0);
     }
 
     #[test]
