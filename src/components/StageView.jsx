@@ -100,7 +100,7 @@ function TopBar({ item, player, editable, editing, setEditing, setlists, setlist
       </div>
       <Clock duration={loaded?.duration} />
       <button className="st-round st-back" onClick={() => engine.locate(0)} disabled={!isLoaded || playing} title="Torna all’inizio (a brano fermo)" aria-label="Torna all’inizio" data-midi="stage.back">
-        <Icon name="skip-back" size={20} />
+        <Icon name="to-start" size={20} />
       </button>
       <button className={`st-play ${playing ? (waiting ? 'is-wait' : 'is-on') : ''}`} onClick={() => player.toggle(item)} disabled={!item} title="Play / Stop (Spazio)" aria-label={playing ? 'Stop' : 'Play'} data-midi="transport.play" data-midi-name="Play / Stop">
         <Icon name={playing ? 'stop' : 'play'} size={30} />

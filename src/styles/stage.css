@@ -1206,8 +1206,7 @@ input.fader::-moz-range-thumb {
   }
 }
 @media (max-width: 900px) {
-  .st-tempo,
-  .st-back {
+  .st-tempo {
     display: none;
   }
 }

@@ -15,6 +15,14 @@ const PATHS = {
       <path d="M5 19V5" />
     </>
   ),
+  // Back to the start of the song: a bar and two triangles (rewind to the start).
+  'to-start': (
+    <>
+      <path d="M4 5v14" />
+      <path d="M13 6 7 12l6 6V6Z" />
+      <path d="M20 6l-6 6 6 6V6Z" />
+    </>
+  ),
   'skip-forward': (
     <>
       <path d="m5 4 10 8-10 8V4Z" />

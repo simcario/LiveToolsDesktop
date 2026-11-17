@@ -5,6 +5,14 @@ versioni [SemVer](https://semver.org/lang/it/). Procedura di rilascio: [docs/REL
 
 ## [Non rilasciato]
 
+### Torna all'inizio e barra di scorrimento dell'Arrangement
+- **Arrangement**: pulsante **⏮ Inizio** (gruppo *Inizio*, sempre in barra): testina e vista all'inizio del brano,
+  anche a brano in corso, come **Home**. Imparabile da un controller MIDI (`arrangement.start`).
+- **Arrangement**: la barra di scorrimento orizzontale è fuori dallo scorrimento verticale delle tracce, sempre in
+  fondo alla vista (`.arr-hscroll`, sincronizzata con la timeline): prima con il Dettaglio aperto finiva sotto il bordo.
+- **Trasporto principale**: pulsante *Torna all’inizio* tra brano precedente e Play (`transport.start`).
+- **Palco**: il pulsante ⏮ *Torna all'inizio* resta visibile anche nelle finestre strette (sotto i 900 px era nascosto).
+
 ### Telecomando dal telefono o dal tablet
 - **Ctrl+, › Rete locale › Telecomando**: LiveTools Mobile comanda questo computer sulla stessa rete Wi-Fi (play/stop,
   brani e scaletta, sezioni, loop, fade, finestre Video e Gobbo, click, ottavi, count-in, avanzamento, pad, gruppi nel

@@ -783,6 +783,9 @@ export default function ArrangementView({ player, item, lanes, settings, update,
   const peaks = usePeaks();
   useMix();
   const scroller = useRef(null);
+  // Horizontal scrollbar of the timeline, always at the bottom of the view: the native one is at
+  // the end of the lanes and goes out of sight when the lanes are taller than the room (Dettaglio open).
+  const hbar = useRef(null);
   const canvas = useRef(null);
   const playhead = useRef(null);
   const [view, setView] = useState({ width: 800, scroll: 0 });
@@ -968,7 +971,11 @@ export default function ArrangementView({ player, item, lanes, settings, update,
   useLayoutEffect(() => {
     const el = scroller.current;
     if (!el) return undefined;
-    const sync = () => setView({ width: el.clientWidth, scroll: el.scrollLeft });
+    const sync = () => {
+      setView({ width: el.clientWidth, scroll: el.scrollLeft });
+      const h = hbar.current;
+      if (h && Math.abs(h.scrollLeft - el.scrollLeft) > 1) h.scrollLeft = el.scrollLeft;
+    };
     sync();
     const ro = new ResizeObserver(sync);
     ro.observe(el);
@@ -2174,6 +2181,12 @@ export default function ArrangementView({ player, item, lanes, settings, update,
     zoom(e.deltaY < 0 ? 1.2 : 1 / 1.2, e.clientX - rect.left);
   };
 
+  // Back to the start of the song (Home), with the view at the start too.
+  const toStart = () => {
+    player.locate(0);
+    if (scroller.current) scroller.current.scrollLeft = 0;
+  };
+
   const fit = () => {
     const el = scroller.current;
     if (!el) return;
@@ -2209,6 +2222,11 @@ export default function ArrangementView({ player, item, lanes, settings, update,
             </span>
           </ToolGroup>
         )}
+        <ToolGroup id="start" label="Inizio" pin>
+          <button className="btn btn-sm btn-icon" onClick={toStart} title="Torna all’inizio del brano (Home)" aria-label="Torna all’inizio del brano" data-midi="arrangement.start" data-midi-name="Torna all’inizio">
+            <Icon name="to-start" size={14} />
+          </button>
+        </ToolGroup>
         <ToolGroup id="edit" label="Modifica" pin>
           <span className="arr-add">
             <button
@@ -2497,6 +2515,20 @@ export default function ArrangementView({ player, item, lanes, settings, update,
               />
             ),
           )}
+        </div>
+      </div>
+      <div className="arr-hscroll">
+        <div
+          className="arr-hscroll-bar"
+          ref={hbar}
+          style={{ width: view.width }}
+          onScroll={(e) => {
+            const el = scroller.current;
+            const x = e.currentTarget.scrollLeft;
+            if (el && Math.abs(el.scrollLeft - x) > 1) el.scrollLeft = x;
+          }}
+        >
+          <div style={{ width: contentW, height: 1 }} />
         </div>
       </div>
       {barsOpen && <InsertBarsModal player={player} onClose={() => setBarsOpen(false)} notify={notify} />}

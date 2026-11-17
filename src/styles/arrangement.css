@@ -69,6 +69,41 @@
   overflow-y: hidden;
   position: relative;
   cursor: text;
+  /* Its scrollbar is .arr-hscroll, always at the bottom of the view. */
+  scrollbar-width: none;
+}
+.arr-timeline::-webkit-scrollbar {
+  display: none;
+}
+/* Horizontal scrollbar of the timeline under the lanes, outside the vertical scroll of .arr-body:
+   it stays in sight however many tracks there are and however tall the Dettaglio is. */
+.arr-hscroll {
+  flex: none;
+  border-top: 1px solid var(--border);
+  background: var(--bg-elev);
+}
+.arr-hscroll-bar {
+  height: 14px;
+  overflow-x: scroll;
+  overflow-y: hidden;
+}
+.arr-hscroll-bar::-webkit-scrollbar {
+  height: 14px;
+}
+.arr-hscroll-bar::-webkit-scrollbar-thumb {
+  background: var(--surface-3);
+  border-radius: 10px;
+  border: 3px solid var(--bg-elev);
+}
+.arr-hscroll-bar::-webkit-scrollbar-thumb:hover {
+  background: var(--faint);
+}
+/* A finger: a taller bar, easier to grab. */
+@media (pointer: coarse) {
+  .arr-hscroll-bar,
+  .arr-hscroll-bar::-webkit-scrollbar {
+    height: 20px;
+  }
 }
 .arr-content {
   position: relative;

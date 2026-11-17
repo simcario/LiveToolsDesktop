@@ -155,7 +155,7 @@ chiude, si aggiorna e si riapre. Non aggiornare a ridosso di un concerto.
 
 | # | Area | Cosa contiene |
 |---|---|---|
-| 1 | **Trasporto** | ⏮ brano precedente, ▶ play, ■ stop (due volte = inizio), ⏭ brano successivo |
+| 1 | **Trasporto** | ⏮ brano precedente, ⏪ torna all’inizio del brano (anche mentre suona, come **Home**), ▶ play, ■ stop (due volte = inizio), ⏭ brano successivo |
 | 2 | **Posizione** | battuta.movimento grande, pallini dei movimenti, tempo trascorso e durata |
 | 3 | **Tempo** | BPM, metro e tonalità del brano caricato |
 | 4 | **Esecuzione** | count-in (*1·2*), click (C), click in ottavi (*×2*, Maiusc+C), auto-avanzamento (→) |
@@ -621,7 +621,10 @@ torna la connessione le modifiche arrivano da sole alla band, anche se nel fratt
 il server non le accetta (per esempio perché nel frattempo il brano è stato eliminato) compare un avviso e le modifiche
 tornano *Non salvate*, così non si perde niente.
 
-**Ctrl+rotella** = zoom; pulsanti *Segui la testina* e *Adatta alla finestra*.
+**Ctrl+rotella** = zoom; pulsanti *Segui la testina* e *Adatta alla finestra*. Il primo pulsante della barra, **⏮
+Inizio**, riporta la testina e la vista all'inizio del brano, anche mentre suona (come il tasto **Home**). La barra di
+scorrimento orizzontale sta sempre in fondo alla vista, sotto le tracce: resta visibile anche con il Dettaglio aperto
+o con tante tracce.
 
 **Mixer** (dalla prossima versione). Nel Dettaglio, tab **Mixer**, oppure in una finestra separata come la MixConsole di
 Cubase: **F3** o il pulsante **Mixer** della barra dell'Arrangement (di nuovo F3 per chiuderla). Una striscia per **ogni traccia del

@@ -114,6 +114,9 @@ export default function Transport({ user, item, player, settings, update, canDri
           <button className="t-btn" onClick={() => player.step(-1)} title="Brano precedente (←)" data-midi="transport.prev">
             <Icon name="skip-back" size={16} />
           </button>
+          <button className="t-btn" onClick={() => player.locate(0)} disabled={!player.loaded} title="Torna all’inizio del brano (Home)" aria-label="Torna all’inizio del brano" data-midi="transport.start" data-midi-name="Torna all’inizio">
+            <Icon name="to-start" size={16} />
+          </button>
           <button
             className={`t-btn play ${playing ? (waiting ? 'is-wait' : 'is-on') : ''}`}
             onClick={() => player.toggle(item)}
