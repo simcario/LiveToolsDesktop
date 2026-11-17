@@ -38,6 +38,8 @@ export const SONG_FIELDS = [
   'tempoChanges',
   // Mute automation of the system click (desktop Arrangement), see media.js clickAutoOf.
   'clickAuto',
+  // Volume and mute of the system click for this song (desktop Mixer), see media.js clickMixOf.
+  'clickMix',
 ];
 
 const LIST_FIELDS = ['midi', 'sections', 'tempoChanges'];

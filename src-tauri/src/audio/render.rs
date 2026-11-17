@@ -42,6 +42,8 @@ pub struct Shared {
     pub out_peaks: Vec<AtomicF32>,
     /// [left, right] peak of the pad since the last status (its meter).
     pub pad_peaks: [AtomicF32; 2],
+    /// Peak of the system click (metronome) since the last status (its meter).
+    pub click_peak: AtomicF32,
     /// The track looked at in a channel section (its `tap` flag), for the spectrum.
     pub tap: Tap,
 }
@@ -63,6 +65,7 @@ impl Shared {
             fade_target: AtomicF32::new(1.0),
             out_peaks: (0..MAX_OUTPUTS).map(|_| AtomicF32::new(0.0)).collect(),
             pad_peaks: [AtomicF32::new(0.0), AtomicF32::new(0.0)],
+            click_peak: AtomicF32::new(0.0),
             tap: Tap::new(),
         }
     }
@@ -1180,6 +1183,7 @@ impl Renderer {
             start = 0;
         }
         let mut next = 0;
+        let mut peak = 0f32;
         for i in 0..frames {
             while next < triggers.len() && triggers[next].0 == i {
                 self.voice.trigger(triggers[next].1, sr as f32, &click);
@@ -1193,11 +1197,13 @@ impl Renderer {
                 continue;
             }
             let s = self.voice.next() * click.gain * self.click_auto;
+            peak = peak.max(s.abs());
             let o = i * ch + start;
             out[o] += s;
             if stereo {
                 out[o + 1] += s;
             }
         }
+        self.shared.click_peak.store_max(peak);
     }
 }

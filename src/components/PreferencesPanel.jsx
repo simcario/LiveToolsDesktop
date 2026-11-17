@@ -13,6 +13,7 @@ import { midiOutputs, midiTargeted } from '../lib/midi';
 import { instrumentsOf, ROUTE_OFF } from '../shared/midi-patch.js';
 import { describeKey, midiInputs, setLearning, unassign } from '../lib/midiLearn';
 import { rttText, STAGE_PARTS, useStageNetState } from '../lib/stageNet';
+import { newRemoteCode, useRemoteState } from '../lib/remote';
 import { DEFAULT_PEDAL, keyLabel, PEDAL_LAYOUTS, teachPedal, usePedalTest } from '../shared/score.js';
 import { auth } from '../lib/firebase';
 import { useAccount, useAuthUser } from '../lib/data';
@@ -261,6 +262,18 @@ const SETTINGS = [
       'sta già suonando. Se il principale sparisce dalla rete, la riserva continua e, se lo permetti, guida la band al suo posto.',
     keywords: 'riserva backup ridondanza failover secondo computer emergenza crash commutatore',
     Control: NetBackup,
+  },
+  {
+    id: 'net.remote',
+    section: 'net',
+    category: 'Rete locale',
+    title: 'Telecomando',
+    description:
+      'Comanda questo computer da un telefono o tablet con LiveTools Mobile (menu ⋯ › Telecomando): play e stop, brani della scaletta, ' +
+      'sezioni e loop, finestre Video e Gobbo, click e pad. Funziona solo se sono sulla stessa rete Wi-Fi; la prima volta il telefono ' +
+      'chiede il codice che vedi qui, così nessun altro sulla stessa rete può comandarlo.',
+    keywords: 'telecomando remoto remote telefono smartphone tablet comando a distanza codice',
+    Control: NetRemote,
   },
   {
     id: 'ndi.video',
@@ -874,6 +887,47 @@ function NetBackup({ settings, update, onBusy, items, onSendMidi, onClose, ...it
         Se il principale sparisce dalla rete, guida la band al suo posto
       </label>
       {backup && !settings.followStage && <span className="hint">Premi “Segui palco” per agganciarti a chi guida.</span>}
+    </PrefItem>
+  );
+}
+
+function NetRemote({ settings, update, onBusy, items, onSendMidi, onClose, ...item }) {
+  const remote = useRemoteState();
+  const [address, setAddress] = useState(null);
+  useEffect(() => {
+    invoke('stage_net_address').then(setAddress).catch(() => {});
+  }, [remote.hosting]);
+  const { enabled, code } = settings.remote;
+  const set = (patch) => update((s) => ({ remote: { ...s.remote, ...patch } }));
+  return (
+    <PrefItem {...item} modified={!!enabled} onReset={() => set({ enabled: false })}>
+      <label className="check">
+        <input type="checkbox" checked={!!enabled} onChange={(e) => set({ enabled: e.target.checked })} />
+        Accetta il telecomando
+      </label>
+      {enabled && (
+        <>
+          <div className="pref-row">
+            <span>Codice</span>
+            <span className="pref-tag mono pref-remote-code">{code || '…'}</span>
+            <button className="btn btn-sm" onClick={() => confirm('Cambiare il codice? I telecomandi collegati dovranno scrivere quello nuovo.') && set({ code: newRemoteCode() })}>
+              Cambia codice
+            </button>
+          </div>
+          <span className="hint">
+            {remote.hosting
+              ? `In ascolto${address ? ` su ${address}` : ''}: ${remote.peers.length ? `${remote.peers.length === 1 ? '1 telecomando collegato' : `${remote.peers.length} telecomandi collegati`}` : 'nessun telecomando collegato'}.`
+              : 'Avvio…'}
+          </span>
+          {remote.peers.map((p) => (
+            <div key={p.id || p.addr} className="pref-row pref-midi-route">
+              <span className="pref-midi-name">{p.name}</span>
+              <span className="pref-value">{p.device === 'tablet' ? 'tablet / telefono' : 'computer'}</span>
+              <span className="pref-value mono">{rttText(p.rtt)}</span>
+            </div>
+          ))}
+        </>
+      )}
     </PrefItem>
   );
 }

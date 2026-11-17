@@ -18,7 +18,7 @@ import { CuePicker } from './CuePicker';
 import InsertBarsModal from './InsertBarsModal';
 import { closeLeadingGap, leadToAudio, cutAt, keepGrid, moveSegment, removeSegment, segmentEnd, segmentIndexAt, snapToBeat, stemRegions, toggleSegmentMute, trimSegment } from '../lib/arrange';
 import { clearHistory, recordStep, travel, useHistory } from '../lib/arrangeHistory';
-import { discardDraft, editDraft, saveDraft, useDrafts } from '../lib/drafts';
+import { discardDraft, editDraft, saveDraft, savedMessage, useDrafts, usePendingSaves } from '../lib/drafts';
 import { AUTO_MAX_DB, AUTO_MIN_DB, automationDb, automationMutedAt, automationOf, automationRead, muteAutomationOf, muteSpans, regionsOf, stemsOf, VIDEO_AUDIO_ID, clickAutoOf, videoOf } from '../shared/media.js';
 import { alignText, alignVideo, canAlignVideo } from '../lib/videoAlign';
 import { CLICK_ID, clickHasAutomation, hasAutomation, setClickAutomation, setClickMute, setClickVolume, thinAutomation, toggleClickRead, toggleClickWrite, toggleRead, toggleWrite, useAutoWrite, writeClickMute, writeMute } from '../lib/autoWrite';
@@ -689,7 +689,10 @@ function TrackHeader({ row, index, solos, onTrack, selected, onSelect, saved, au
             </>
           )}
         </span>
-        <div className="t-row small muted">{row.info}</div>
+        <div className="t-row small muted">
+          <span className="ellipsis grow">{row.info}</span>
+          <Meter click horizontal />
+        </div>
       </div>
     );
   }
@@ -822,6 +825,7 @@ export default function ArrangementView({ player, item, lanes, settings, update,
   const saveKey = useRef(); // Ctrl+S
   const canEditSong = cue.canEdit;
   const dirty = !!useDrafts()[song?.id];
+  const waitingNet = !!usePendingSaves()[song?.id]; // saved offline, not yet sent
   const [saving, setSaving] = useState(false);
   const tool = TOOLS.some(([k]) => k === settings.arrTool) ? settings.arrTool : 'select';
   const songStems = new Map(stemsOf(song).map((s) => [s.id, s]));
@@ -1076,8 +1080,7 @@ export default function ArrangementView({ player, item, lanes, settings, update,
     if (!song || !dirty || saving) return;
     setSaving(true);
     try {
-      await saveDraft(setlistId, song);
-      notify(`Salvato “${song.title}”`);
+      notify(savedMessage(song.title, await saveDraft(setlistId, song)));
     } catch (e) {
       notify(`“${song.title}” non salvato: ${e.message || e}`, true);
     } finally {
@@ -2327,6 +2330,15 @@ export default function ArrangementView({ player, item, lanes, settings, update,
               <button className="btn btn-sm btn-primary" onClick={saveSong} disabled={saving} title="Salva le modifiche del brano per tutta la band (Ctrl+S)">
                 <Icon name="check" size={13} /> {saving ? 'Salvataggio…' : 'Salva'}
               </button>
+            </span>
+          </ToolGroup>
+        )}
+        {!dirty && waitingNet && (
+          <ToolGroup id="save" label="Salvataggio" locked pin>
+            <span className="arr-save">
+              <span className="small arr-unsaved" title="Salvato su questo dispositivo: le modifiche arrivano alla band appena torna la connessione">
+                <Icon name="globe" size={12} /> In attesa di rete
+              </span>
             </span>
           </ToolGroup>
         )}

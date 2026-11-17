@@ -8,6 +8,7 @@ mod media;
 mod midi;
 mod ndi;
 mod oauth;
+mod remote;
 mod stagenet;
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -245,6 +246,11 @@ pub fn run() {
             stagenet::stage_net_scan,
             stagenet::stage_net_join,
             stagenet::stage_net_address,
+            remote::remote_host,
+            remote::remote_publish,
+            remote::remote_scan,
+            remote::remote_connect,
+            remote::remote_send,
             audio_devices,
             audio_watch,
             open_audio_device,

@@ -5,6 +5,14 @@ versioni [SemVer](https://semver.org/lang/it/). Procedura di rilascio: [docs/REL
 
 ## [Non rilasciato]
 
+### Telecomando dal telefono o dal tablet
+- **Ctrl+, › Rete locale › Telecomando**: LiveTools Mobile comanda questo computer sulla stessa rete Wi-Fi (play/stop,
+  brani e scaletta, sezioni, loop, fade, finestre Video e Gobbo, click, ottavi, count-in, avanzamento, pad, gruppi nel
+  mix, vista). Codice di 4 cifre chiesto la prima volta; un codice sbagliato chiude la connessione. Avvisi quando un
+  telecomando si collega o si scollega. Indipendente da Guida/Segui palco.
+- `src-tauri/src/remote.rs` (solo std: TCP 47324 + beacon UDP 47323, JSON a righe), `lib/remote.js` (anche nel mobile),
+  `lib/remoteHost.js` (stato pubblicato a parti: setlist, song, controls, transport 4 volte al secondo).
+
 ### Automazioni modificabili a mano, volume del click
 - **Volume del click automatizzato**: con lo strumento Automazione la corsia *Click · Tempo* ha la sua curva del
   volume (`item.clickAuto.auto`), seguita dal motore colpo per colpo (`TempoFrames::click_gain`), dal tablet e

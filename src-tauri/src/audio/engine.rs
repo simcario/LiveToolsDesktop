@@ -183,6 +183,8 @@ pub struct Status {
     pub outputs: Vec<f32>,
     /// [left, right] peak of the pad since the last status.
     pub pad: [f32; 2],
+    /// Peak of the system click since the last status.
+    pub click: f32,
     pub device: Option<DeviceInfo>,
     pub device_error: Option<String>,
 }
@@ -256,6 +258,7 @@ impl Monitor {
             meters: self.controls.read().iter().map(|c| [c.peak_l.swap(0.0), c.peak_r.swap(0.0)]).collect(),
             outputs: s.out_peaks.iter().take(channels).map(|p| p.swap(0.0)).collect(),
             pad: [s.pad_peaks[0].swap(0.0), s.pad_peaks[1].swap(0.0)],
+            click: s.click_peak.swap(0.0),
             device: self.device.read().clone(),
             device_error: self.device_error.lock().clone(),
         }
@@ -293,6 +296,7 @@ impl StatusPacer {
             || s.ended
             || s.fade != s.fade_target
             || s.pad.iter().any(sounding)
+            || s.click > 0.0
             || s.outputs.iter().any(sounding)
             || s.meters.iter().any(|m| m.iter().any(sounding));
         if live {

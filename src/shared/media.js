@@ -500,6 +500,13 @@ export const clickMuteSpans = (item) => (automationRead(clickAutoOf(item)) ? mut
 /** Volume points of the click that are played; [] with R off. */
 export const clickVolumeOf = (item) => (automationRead(clickAutoOf(item)) ? automationOf(clickAutoOf(item)) : []);
 
+// Level of the system click for this song (desktop Mixer, strip "Click di sistema"), saved with it
+// as a track's: item.clickMix = { gain: dB on top of the click volume of each device, muted }.
+export const clickMixOf = (item) => {
+  const m = item?.clickMix && typeof item.clickMix === 'object' ? item.clickMix : {};
+  return { gain: Number(m.gain) || 0, muted: !!m.muted };
+};
+
 /** The click is silenced at second t (spans of clickMuteSpans). */
 export const clickMutedIn = (spans, t) => spans.some((s) => t >= s.from && t < s.to);
 

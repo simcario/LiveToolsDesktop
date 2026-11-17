@@ -359,6 +359,12 @@ pub fn scan(app: AppHandle, on: bool) -> Result<Value, String> {
     Ok(beacons_json(&scan_slot().lock()))
 }
 
+/// Whether the beacons are listened to now (Android keeps the multicast lock while one scan is on).
+#[allow(dead_code)]
+pub fn scanning() -> bool {
+    scan_slot().lock().on
+}
+
 // ---------- Client ----------
 
 struct Join {

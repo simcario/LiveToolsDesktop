@@ -6,7 +6,7 @@ import { useAccess, useAuthUser, useSetlist, useSetlists } from './lib/data';
 import { engine, onDeviceChange, setAudioWatch, useEngineStatus } from './lib/engine';
 import { buildLanes } from './lib/lanes';
 import { clearHistory } from './lib/arrangeHistory';
-import { discardDraft, isDirty, saveDraft, useDraftItems } from './lib/drafts';
+import { discardDraft, isDirty, onSaveFailed, saveDraft, savedMessage, useDraftItems } from './lib/drafts';
 import { checkCache } from './lib/mediaCache';
 import { toggleZone, useSettings } from './lib/settings';
 import { hideSplash } from './lib/splash';
@@ -38,7 +38,8 @@ import HelpPanel from './components/HelpPanel';
 import Transport from './components/Transport';
 import { ZoneResizer, zoneFrame } from './components/Zones';
 import { toggleMixerWindow, useMixer, useMixerBridge } from './lib/useMixer';
-import { togglePrompterOutput, toggleVideoOutput } from './lib/outputs';
+import { toggleOutput, togglePrompterOutput, toggleVideoOutput, useOutputOpen } from './lib/outputs';
+import { useRemoteHost } from './lib/remoteHost';
 
 const VIEWS = ['stage', 'arrangement', 'prompter', 'score'];
 const ZONE_KEYS = { KeyL: 'left', KeyE: 'lower', KeyR: 'right' };
@@ -172,6 +173,8 @@ function Workspace({ user }) {
   const [preflightOpen, setPreflightOpen] = useState(false);
 
   const notify = useCallback((text, error = false) => setMessage(text ? { text, error } : null), []);
+  // A save made offline and refused by the server once back online: its draft is back.
+  useEffect(() => onSaveFailed(({ title, error }) => notify(`“${title}” non salvato dal server: ${error?.message || error}. Le modifiche sono tornate nella bozza`, true)), [notify]);
   // A MIDI controller on the controls of the app (MIDI learn, Ctrl+M).
   useMidiControl({ settings, update, notify });
   const email = (user.email || '').toLowerCase();
@@ -191,6 +194,10 @@ function Workspace({ user }) {
   useBandLeaveNotice(band, settings.followStage || settings.driveStage, notify);
   // Computer di riserva: plays along with who leads, and takes over when it is gone.
   useBackup({ settings, update, net: stageNet, player, items, canDrive, notify });
+  // Telecomando: a phone or tablet on the same Wi-Fi drives this computer (Impostazioni › Rete locale).
+  const videoOpen = useOutputOpen('video');
+  const prompterOpen = useOutputOpen('prompter');
+  useRemoteHost({ settings, update, setlist, setlists, items, player, outputs: { video: videoOpen, prompter: prompterOpen }, toggleOutput, notify, user });
   const songs = player.songs;
   const numbers = useMemo(() => Object.fromEntries(songs.map((s, i) => [s.id, i + 1])), [songs]);
   const lanes = useMemo(() => buildLanes(songs), [songs]);
@@ -579,7 +586,7 @@ function Workspace({ user }) {
           item={askItem}
           onSave={() =>
             saveDraft(setlistId, askItem)
-              .then(() => notify(`Salvato “${askItem.title}”`))
+              .then((res) => notify(savedMessage(askItem.title, res)))
               .catch((e) => notify(`“${askItem.title}” non salvato: ${e.message || e}`, true))
               .finally(() => setAskSave(null))
           }

@@ -23,6 +23,7 @@ const EMPTY = {
   meters: [],
   outputs: [],
   pad: [0, 0], // [left, right] peak of the pad
+  click: 0, // peak of the system click (metronome)
   device: null,
   deviceError: null,
 };

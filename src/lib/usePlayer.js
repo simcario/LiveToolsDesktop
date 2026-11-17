@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { emit, listen } from '@tauri-apps/api/event';
 import { convertFileSrc } from '@tauri-apps/api/core';
-import { audioFades, clickMuteSpans, clickVolumeOf, cueTrackOf, fadeStop, isVideoItem, padHoldOf, padLeadOf, playedAutomation, regionsOf, rehearsalGroup, stemsOf, VIDEO_AUDIO_ID, videoAudioStem, videoFades, videoOf } from '../shared/media.js';
+import { audioFades, clickMixOf, clickMuteSpans, clickVolumeOf, cueTrackOf, fadeStop, isVideoItem, padHoldOf, padLeadOf, playedAutomation, regionsOf, rehearsalGroup, stemsOf, VIDEO_AUDIO_ID, videoAudioStem, videoFades, videoOf } from '../shared/media.js';
 import { tempoSections } from '../shared/tempoMap.js';
 import { writeMix } from './songMix';
 import { isSeparator } from '../shared/setlists.js';
@@ -611,16 +611,18 @@ export function usePlayer({ user, setlist, items, settings, canDrive, canEdit, n
   }, [leftOut, loaded]);
 
   // Click: metronome on its own output (left out with the click group in rehearsal).
+  // Volume of this device plus that of the loaded song (Mixer, saved with it); muted by the song too.
+  const songClick = clickMixOf(songNow);
   useEffect(() => {
     const r = settings.outputs.click;
     engine.setClick({
-      enabled: settings.click.enabled && r.mode !== 'off' && !leftOut.click,
-      gain: dbToGain(settings.click.gainDb),
+      enabled: settings.click.enabled && r.mode !== 'off' && !leftOut.click && !songClick.muted,
+      gain: dbToGain(Math.min(12, settings.click.gainDb + songClick.gain)),
       outStart: r.start,
       mono: r.mode !== 'stereo',
       ...clickVoice(settings.click),
     });
-  }, [settings.click, settings.outputs.click, leftOut.click]);
+  }, [settings.click, settings.outputs.click, leftOut.click, songClick.gain, songClick.muted]);
 
   useEffect(() => {
     engine.setMaster(settings.masterDb);

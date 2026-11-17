@@ -405,7 +405,7 @@ lontano e i comandi sono grandi anche per il touch. La disposizione è quella di
 | 11 | Barra sopra la forma d'onda | battute alla prossima sezione; quando avviene un salto (*Movimento*, *Battuta*, *Fine sezione*); zoom; griglia |
 | 12 | Forma d'onda | tutto il brano diviso in sezioni: tocca un'etichetta per saltarci |
 | 13 | Console | *Loop* (una volta), *Loop ∞* (**L**), *Annulla* (**Esc**) |
-| 14 | Master, Metronomo, Pad | volume generale, del click e del pad; sotto il Pad il menu della sua tonalità |
+| 14 | Master, Metronomo, Pad | volume generale, del click e del pad, ognuno con il suo indicatore di livello; sotto il Pad il menu della sua tonalità |
 | 15 | Gruppi | un fader per gruppo di strumenti: **S** = solo, tocca il nome per toglierlo dal mix |
 
 Dall'alto in basso:
@@ -429,7 +429,8 @@ Dall'alto in basso:
   ogni gruppo di strumenti del brano caricato, gli stessi dei pulsanti *Rehearsal* (batteria, basso, tastiere, click,
   guide…). Il volume del gruppo si somma a quello delle sue tracce e resta salvato su questo computer per tutti i brani.
   Come in Playback, **tocca il nome** per togliere il gruppo dal mix (diventa rosso e barrato) o per spegnere il
-  metronomo; **S** mette in solo tutte le tracce del gruppo. Accanto al metronomo c'è la striscia del **Pad**,
+  metronomo; **S** mette in solo tutte le tracce del gruppo. Il metronomo ha il suo indicatore di livello (dalla prossima
+  versione): vedi subito se il click sta suonando e quanto è forte. Accanto al metronomo c'è la striscia del **Pad**,
   con il suo indicatore di livello: si vede subito quando il pad sta suonando (anche mentre entra o sfuma).
   I fader sono come quelli di un mixer: cappuccio rigato con la linea nel colore della striscia (bianco per il master)
   e scala in dB accanto alla guida, da +6 a ∞ (silenzio). Doppio clic su un fader per tornare al valore di partenza.
@@ -614,12 +615,23 @@ La tab **Sezioni** del Browser, visibile solo in questa vista, mostra l'elenco, 
 numero porta alla sezione, il nome si scrive direttamente nella riga, la × elimina, **Aggiungi** ne crea una alla battuta
 della testina. Le modifiche si salvano con **Salva**.
 
+**Salvare senza connessione** (dalla prossima versione). **Salva** funziona anche quando il computer o il tablet non
+è collegato a internet: il brano resta salvato su questo dispositivo e nella barra compare *In attesa di rete*. Appena
+torna la connessione le modifiche arrivano da sole alla band, anche se nel frattempo hai chiuso e riaperto l'app. Se
+il server non le accetta (per esempio perché nel frattempo il brano è stato eliminato) compare un avviso e le modifiche
+tornano *Non salvate*, così non si perde niente.
+
 **Ctrl+rotella** = zoom; pulsanti *Segui la testina* e *Adatta alla finestra*.
 
 **Mixer** (dalla prossima versione). Nel Dettaglio, tab **Mixer**, oppure in una finestra separata come la MixConsole di
 Cubase: **F3** o il pulsante **Mixer** della barra dell'Arrangement (di nuovo F3 per chiuderla). Una striscia per **ogni traccia del
 multitraccia**, nell'ordine della sequenza, più la traccia cue live e, per un elemento video, l'**Audio del video** (volume, pan, mute, gain ed EQ salvati con il video); le tracce non ancora scaricate compaiono sbiadite e
-senza meter, ma si possono già regolare:
+senza meter, ma si possono già regolare. Dalla prossima versione la prima striscia è il **Click di sistema** (il metronomo
+di LiveTools) con il suo indicatore di livello. Il **fader** e **M** valgono per il brano e si salvano con lui come quelli
+delle tracce (*Non salvato* finché non premi **Salva**, **Ctrl+Z** annulla): per esempio un click più basso in una
+ballata o nessun click in un brano libero, su ogni computer, tablet e nella prova sul web. Il volume del brano si somma
+a quello del click di questo computer (Palco, **Impostazioni**). L'uscita e il **nome** (acceso o spento, come **C**)
+restano invece di questo computer, per tutti i brani:
 
 ![Il mixer nel Dettaglio: una striscia per traccia con ruolo, strumento, pan, fader, M e nome; a sinistra la tab Sezioni del Browser](img/arrangement-mixer.png)
 
@@ -749,6 +761,27 @@ sparisce dalla rete, guida la band al suo posto* (accesa all'inizio) la riserva 
 tablet e altri computer seguono lei. Quando il principale torna, spegni *Guida* sulla riserva e premi di nuovo *Segui
 palco*.
 
+**Telecomando dal telefono o dal tablet (dalla prossima versione).** Con LiveTools Mobile puoi comandare questo
+computer da lontano, per esempio dal centro del palco mentre il computer è vicino al mixer. Funziona solo se
+computer e telefono sono sulla **stessa rete Wi-Fi**; internet non serve.
+
+1. Sul computer: **Ctrl+,** › **Rete locale** › **Telecomando** › *Accetta il telecomando*. Compare un
+   **codice** di 4 cifre e l'indirizzo del computer.
+2. Sul telefono o tablet: menu **⋯** › **Telecomando** (o il pulsante *Telecomando* nell'elenco delle scalette).
+   Il computer compare da solo: toccalo e scrivi il codice. La volta dopo si ricollega da solo. Se il router
+   blocca la ricerca, scrivi a mano l'indirizzo.
+
+Dal telecomando puoi: **Play / Stop**, brano precedente e successivo, tornare all'inizio; vedere la scaletta e
+**caricare** un brano (tocca il brano, poi *Carica* o *Carica e avvia*); cambiare scaletta (a brano fermo);
+saltare alle **sezioni**, **Loop 1×**, **Loop ∞**, *Annulla salto* e **Fade**; aprire e chiudere le finestre
+**Video** e **Gobbo**; accendere e spegnere **click**, ottavi, count-in, avanzamento automatico e **pad**; togliere
+e rimettere nel mix i gruppi di strumenti; scegliere la vista del computer (Palco, Arrangement, Gobbo, Spartito).
+Il telecomando mostra il brano caricato, il tempo che scorre, la battuta e le sezioni colorate.
+
+In **Rete locale** vedi i telecomandi collegati e il loro ritardo; quando uno si collega o si scollega compare un
+avviso in basso. Chi prova con un codice sbagliato non comanda niente (e compare un avviso). **Cambia codice**
+scollega tutti: dovranno scrivere quello nuovo. La musica suona sempre dal computer, il telefono manda solo i comandi.
+
 ### 4.7 MIDI: suoni giusti a ogni brano (dalla prossima versione)
 
 LiveTools può cambiare da solo i suoni di tastiere ed effetti a ogni brano.
@@ -860,7 +893,8 @@ La griglia è salvata sul brano: vale su tutti i computer della band.
 ### 5.4 Cambi di tempo e di metro nel brano (dalla prossima versione)
 
 Per i brani che cambiano tempo (un ritornello più veloce, un rallentando nel finale) la traccia **Click · Tempo**
-dell'Arrangement fa da traccia del tempo, come in Cubase:
+dell'Arrangement fa da traccia del tempo, come in Cubase (dalla prossima versione accanto al tempo c'è anche
+l'indicatore di livello del click):
 
 - **doppio clic** sulla corsia, o il **+** nella sua intestazione (alla battuta della testina), aggiunge un cambio di
   tempo sulla battuta più vicina, al tempo che il brano ha lì;
@@ -1039,7 +1073,7 @@ esempio.*
 3. **Ritocca** — trascina i cambi nella timeline o spostali di ±50 ms nella lista. Per spostarli tutti insieme
    (il brano ora ha un'intro più lunga) usa la traccia *Gobbo* dell'Arrangement (dalla prossima versione).
 
-**Uscita gobbo** apre una seconda finestra per lo schermo dei cantanti (doppio clic = schermo intero), con la
+**Uscita gobbo** apre una seconda finestra per lo schermo dei cantanti, con la
 slide successiva in piccolo e un anticipo regolabile. Lo stesso gobbo può andare in rete come sorgente
 **NDI** (vedi *10. Video*).
 
@@ -1142,7 +1176,8 @@ tutti i brani della scaletta, uno per pagina, nella tonalità in cui si suonano.
 Il video del brano segue l'orologio audio. Si vede nell'anteprima del dettaglio e in una **seconda
 finestra** per proiettore o secondo schermo (pulsante nell'Arrangement; doppio clic = schermo intero).
 Dalla prossima versione la finestra si apre già a schermo intero, sul secondo schermo se è collegato (doppio clic o
-Esc la riportano in finestra), e chiudendo LiveTools si chiudono anche le finestre di video, gobbo e mixer.
+Esc la riportano in finestra); lo stesso vale per la finestra del gobbo, e con tre schermi video e gobbo vanno
+su due schermi diversi. Chiudendo LiveTools si chiudono anche le finestre di video, gobbo e mixer.
 I pulsanti *Video* / *Uscita video* e *Uscita gobbo* sono interruttori: il primo tocco accende l'uscita, il secondo la
 spegne (il pulsante resta evidenziato finché è accesa); lo stesso fanno **F4** (video) e **F6** (gobbo). Così si
 nasconde il proiettore dal computer, senza portare il mouse sul secondo schermo.

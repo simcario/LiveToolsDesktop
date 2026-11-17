@@ -67,6 +67,9 @@ export const DEFAULT_SETTINGS = {
   // backup: this computer is the "computer di riserva" (lib/backup.js): it follows the song and the transport
   // of who leads and plays along; takeover: it leads the band by itself when who leads is gone.
   stageNet: { enabled: true, address: '', part: '', backup: false, takeover: true },
+  // Telecomando (lib/remoteHost.js): a phone or tablet on the same Wi-Fi drives this computer; code asked to them.
+  // On the phone (ui/RemoteView.jsx): the address written by hand and the code of every computer (its id → code).
+  remote: { enabled: false, code: '', address: '', codes: {}, last: null },
 };
 
 function read(key, fallback) {
@@ -101,6 +104,7 @@ function merge(saved) {
     },
     pedal: pedalOf(saved?.pedal),
     stageNet: { ...DEFAULT_SETTINGS.stageNet, ...(saved?.stageNet || {}) },
+    remote: { ...DEFAULT_SETTINGS.remote, ...(saved?.remote || {}) },
     midi: { ...DEFAULT_SETTINGS.midi, ...(saved?.midi || {}), routes: { ...(saved?.midi?.routes || {}) }, map: { ...(saved?.midi?.map || {}) } },
     zones: {
       left: { ...DEFAULT_SETTINGS.zones.left, ...(saved?.zones?.left || {}) },

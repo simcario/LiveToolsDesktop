@@ -208,6 +208,62 @@ function Strip({ strip, state, dispatch, here, onOpen, open = false }) {
   );
 }
 
+// The system click (the engine's metronome): output and on/off (name) of this device for every song;
+// fader and M are the song's (draft, Salva), on top of this device's volume.
+function ClickStrip({ state, dispatch, here }) {
+  const { dragging, begin } = useDrag(dispatch);
+  const click = state.click;
+  if (!click) return null;
+  const locked = !state.canEdit;
+  const off = !click.enabled || click.muted;
+  return (
+    <div className={`st-strip mx-strip mx-click ${off ? 'is-muted' : ''}`} style={{ '--sec': '#06b6d4' }}>
+      <select
+        className="mx-route"
+        value={click.route}
+        onChange={(e) => {
+          dispatch({ type: 'clickRoute', value: e.target.value });
+          e.target.blur();
+        }}
+        title={`Uscita del click di sistema su ${here} (vale per tutti i brani)`}
+        aria-label="Uscita del click di sistema"
+      >
+        {state.outputs.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+      <span className="mx-instr is-blank" />
+      <span className="mx-pan" style={{ height: 14 }} />
+      <span className="m-db">{dbText(click.gain)}</span>
+      <div className={`st-fader-row ${locked ? 'is-locked' : ''}`} onPointerDown={locked ? undefined : begin}>
+        <Fader
+          value={click.gain}
+          onChange={(v) => !locked && dispatch({ type: 'clickGain', value: v, live: dragging.current })}
+          onReset={() => !locked && dispatch({ type: 'clickGain', value: 0 })}
+          title={locked ? 'Solo chi può modificare il brano cambia il volume del click' : `Volume del click in questo brano, sopra quello di ${here} (doppio clic: 0 dB) · si salva con il brano`}
+          scale={false}
+        />
+        <Meter click />
+      </div>
+      <span className="mx-btns">
+        <button
+          className={`st-solo mx-mute ${off ? 'is-on' : ''}`}
+          onClick={() => dispatch({ type: 'clickMute' })}
+          aria-pressed={off}
+          title={locked ? `Click acceso / spento su ${here} (C)` : click.enabled ? 'Muta il click in questo brano (salvato con il brano)' : `Il click è spento su ${here} (C per riaccenderlo)`}
+        >
+          M
+        </button>
+      </span>
+      <button className="st-name mx-name" onClick={() => dispatch({ type: 'clickToggle' })} aria-pressed={!click.enabled} title={`Click di sistema (metronomo): clic per accenderlo o spegnerlo su ${here}, per tutti i brani (C)`}>
+        <span className="ellipsis">Click di sistema</span>
+      </button>
+    </div>
+  );
+}
+
 // here: the device for what stays local; windowButton: false where there is no F3 window.
 // compact (tablet tab): no head bar; Ripristina and Salva in a thin column before the strips.
 export default function MixerPanel({ state, dispatch, inWindow = false, here = 'questo computer', windowButton = true, compact = false }) {
@@ -276,7 +332,12 @@ export default function MixerPanel({ state, dispatch, inWindow = false, here = '
             <Strip strip={state.strips[open]} state={state} dispatch={dispatch} here={here} open onOpen={() => setChannel(null)} />
           </>
         ) : state.strips.length ? (
-          state.strips.map((s) => <Strip key={s.id} strip={s} state={state} dispatch={dispatch} here={here} onOpen={() => setChannel(s.id)} />)
+          <>
+            <ClickStrip state={state} dispatch={dispatch} here={here} />
+            {state.strips.map((s) => (
+              <Strip key={s.id} strip={s} state={state} dispatch={dispatch} here={here} onOpen={() => setChannel(s.id)} />
+            ))}
+          </>
         ) : (
           <p className="muted small mx-empty">{state.song ? 'Il brano non ha tracce: caricale dalla vista Sequenze della scaletta.' : 'Carica un brano nel player: le sue tracce compaiono qui.'}</p>
         )}

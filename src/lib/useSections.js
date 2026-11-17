@@ -4,7 +4,7 @@
 import { useMemo, useState } from 'react';
 import { cueTrackOf } from '../shared/media.js';
 import { clearHistory, recordStep, travel, useHistory } from './arrangeHistory';
-import { discardDraft, draftOf, editDraft, saveDraft, useDrafts } from './drafts';
+import { discardDraft, draftOf, editDraft, saveDraft, savedMessage, useDrafts } from './drafts';
 import { engineStatus } from './engine';
 import { addMarker, jumpToSection, moveMarker, nearestBarIndex, removeMarker, renameMarker, sectionTiming, songBars, songBeats, songSections } from './sections';
 
@@ -81,8 +81,7 @@ export function useSections({ player, setlistId, canEdit, notify, quant }) {
     save: async () => {
       setSaving(true);
       try {
-        await saveDraft(setlistId, song);
-        notify?.(`Salvato “${song.title}”`);
+        notify?.(savedMessage(song.title, await saveDraft(setlistId, song)));
       } catch (e) {
         notify?.(`“${song.title}” non salvato: ${e.message || e}`, true);
       } finally {

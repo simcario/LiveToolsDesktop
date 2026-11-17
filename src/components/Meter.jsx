@@ -9,9 +9,9 @@ function level(v) {
 
 /**
  * Peak meter fed directly by the engine status (no React re-render).
- * source: { track: index } (or a list of them: the loudest), { output: index }, or { pad: true }.
+ * source: { track: index } (or a list of them: the loudest), { output: index }, { pad: true } or { click: true } (system click, one bar).
  */
-export default function Meter({ track, output, pad = false, horizontal = false }) {
+export default function Meter({ track, output, pad = false, click = false, horizontal = false }) {
   const l = useRef(null);
   const r = useRef(null);
   const tracks = Array.isArray(track) ? track : track !== undefined && track >= 0 ? [track] : [];
@@ -27,6 +27,7 @@ export default function Meter({ track, output, pad = false, horizontal = false }
       });
       if (output !== undefined) v = [s.outputs[output] || 0, s.outputs[output] || 0];
       if (pad) v = [s.pad?.[0] || 0, s.pad?.[1] || 0];
+      if (click) v = [s.click || 0, s.click || 0];
       [l, r].forEach((ref, i) => {
         shown[i] = Math.max(level(v[i]), shown[i] * 0.82);
         if (shown[i] < 0.002) shown[i] = 0;
@@ -39,13 +40,13 @@ export default function Meter({ track, output, pad = false, horizontal = false }
       });
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tracksKey, output, pad, horizontal]);
+  }, [tracksKey, output, pad, click, horizontal]);
   return (
     <span className={`meter ${horizontal ? 'h' : ''}`} aria-hidden="true">
       <i>
         <span ref={l} />
       </i>
-      {output === undefined && (
+      {output === undefined && !click && (
         <i>
           <span ref={r} />
         </i>

@@ -11,13 +11,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { emit, listen } from '@tauri-apps/api/event';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
-import { automationOf, automationRead, cueTrackOf, instrumentOf, INSTRUMENTS, muteAutomationOf, rehearsalGroup, STEM_ROLES, stemsOf, VIDEO_AUDIO_ID, videoAudioStem } from '../shared/media.js';
+import { automationOf, automationRead, clickMixOf, cueTrackOf, instrumentOf, INSTRUMENTS, muteAutomationOf, rehearsalGroup, STEM_ROLES, stemsOf, VIDEO_AUDIO_ID, videoAudioStem } from '../shared/media.js';
 import { hasAutomation, isWriting, releaseTouch, toggleRead, toggleWrite, useAutoWrite, writeMute, writeVolume } from './autoWrite';
 import { channelActive, eqOf, flatEq, inputOf } from '../shared/eq.js';
-import { editDraft, isDirty, saveDraft, useDrafts } from './drafts';
+import { editDraft, isDirty, saveDraft, savedMessage, useDrafts } from './drafts';
 import { recordStep } from './arrangeHistory';
 import { laneColor } from './lanes';
-import { getMix, outputOptions, parseRoute, routeValue, setMix, useMix } from './settings';
+import { getMix, outputOptions, parseRoute, routeValue, setMix, useMix, useSettings } from './settings';
 import { useEngineStatus } from './engine';
 
 export const MIXER_WINDOW = 'mixer';
@@ -41,6 +41,7 @@ export function useMixer({ player, lanes, canEdit: canEditSetlist, setlistId, no
   useMix(); // mute and outputs of this computer
   useDrafts();
   useAutoWrite(); // W of the channels
+  const [settings, update] = useSettings(); // the system click: its volume, on/off and output are of this computer
   const playing = useEngineStatus((s) => s.playing);
   const channels = useEngineStatus((s) => s.device?.channels ?? 2);
   const [saving, setSaving] = useState(false);
@@ -88,7 +89,8 @@ export function useMixer({ player, lanes, canEdit: canEditSetlist, setlistId, no
       write: !stem.live && stem.id !== VIDEO_AUDIO_ID && isWriting(stem.id),
     };
   });
-  const changed = strips.some((s) => s.gain !== 0 || s.pan !== 0);
+  const songClick = clickMixOf(song);
+  const changed = strips.some((s) => s.gain !== 0 || s.pan !== 0) || songClick.gain !== 0;
   const state = {
     song: song ? { id: song.id, title: song.title } : null,
     loaded: !!loaded,
@@ -100,26 +102,35 @@ export function useMixer({ player, lanes, canEdit: canEditSetlist, setlistId, no
     changed,
     dirty: !!song && isDirty(song.id),
     saving,
+    // The system click (metronome of the engine), the same for every song.
+    // gain and muted are the song's (saved with it, as a track's), on top of this device's volume and on/off.
+    click: { enabled: settings.click.enabled, deviceDb: settings.click.gainDb, route: routeValue(settings.outputs.click), gain: songClick.gain, muted: songClick.muted },
   };
 
   // A fader drag is one undo step: begun on the first move, recorded on release.
   const pending = useRef(null);
-  const write = (media, label, live) => {
-    const before = Object.fromEntries(Object.keys(media).map((k) => [k, song[k] ?? null]));
-    editDraft(song.id, { media });
+  // kind 'media' (tracks, cue track, video) or 'item' (the click of the song).
+  const write = (fields, label, live, kind = 'media') => {
+    const before = Object.fromEntries(Object.keys(fields).map((k) => [k, song[k] ?? null]));
+    editDraft(song.id, { [kind]: fields });
+    const step = (b, a) => ({ label, before: { media: {}, item: {}, [kind]: b }, after: { media: {}, item: {}, [kind]: a } });
     if (live) {
-      if (pending.current?.id !== song.id) pending.current = { id: song.id, label, before };
-      pending.current.after = media;
+      if (pending.current?.id !== song.id || pending.current.kind !== kind) {
+        end();
+        pending.current = { id: song.id, label, before, kind };
+      }
+      pending.current.after = fields;
       return;
     }
     pending.current = null;
-    recordStep(song.id, { label, before: { media: before, item: {} }, after: { media, item: {} } });
+    recordStep(song.id, step(before, fields));
   };
   const end = () => {
     const p = pending.current;
     pending.current = null;
-    if (p) recordStep(p.id, { label: p.label, before: { media: p.before, item: {} }, after: { media: p.after, item: {} } });
+    if (p) recordStep(p.id, { label: p.label, before: { media: {}, item: {}, [p.kind]: p.before }, after: { media: {}, item: {}, [p.kind]: p.after } });
   };
+  const writeClick = (patch, label, live) => write({ clickMix: { ...clickMixOf(song), ...patch } }, label, live, 'item');
   const setStem = (id, patch, label, live) => {
     if (id === 'cues-live') {
       write({ cueTrack: { ...(song.cueTrack || {}), ...patch } }, label, live);
@@ -195,6 +206,7 @@ export function useMixer({ player, lanes, canEdit: canEditSetlist, setlistId, no
         if (song.cueTrack) media.cueTrack = { ...song.cueTrack, gain: 0, pan: 0 };
         if (song.video && index.has(VIDEO_AUDIO_ID)) media.video = { ...song.video, gain: 0, pan: 0 };
         write(media, 'Volumi ripristinati', false);
+        if (songClick.gain !== 0) writeClick({ gain: 0 }, 'Volume del click ripristinato', false);
         notify(`“${song.title}”: volumi a 0 dB e pan al centro. “Salva” per tenerli, Ctrl+Z nell’Arrangement per annullare`);
         break;
       }
@@ -202,10 +214,26 @@ export function useMixer({ player, lanes, canEdit: canEditSetlist, setlistId, no
         if (!song || !isDirty(song.id) || saving) break;
         setSaving(true);
         saveDraft(setlistId, song)
-          .then(() => notify(`Salvato “${song.title}”`))
+          .then((res) => notify(savedMessage(song.title, res)))
           .catch((e) => notify(`“${song.title}” non salvato: ${e.message || e}`, true))
           .finally(() => setSaving(false));
         break;
+      // Volume and M of the click strip are the song's (draft, Salva); who can't edit it turns the click of this device on and off.
+      case 'clickGain':
+        if (canEdit) writeClick({ gain: Math.round(a.value * 10) / 10 }, 'Volume del click', a.live);
+        break;
+      case 'clickMute':
+        if (canEdit) writeClick({ muted: !songClick.muted }, songClick.muted ? 'Click riattivato nel brano' : 'Click mutato nel brano', false);
+        else update((s) => ({ click: { ...s.click, enabled: !s.click.enabled } }));
+        break;
+      case 'clickToggle':
+        update((s) => ({ click: { ...s.click, enabled: !s.click.enabled } }));
+        break;
+      case 'clickRoute': {
+        const r = parseRoute(a.value);
+        if (r) update((s) => ({ outputs: { ...s.outputs, click: r } }));
+        break;
+      }
       case 'play':
         player.toggle(song);
         break;

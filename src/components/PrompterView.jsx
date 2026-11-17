@@ -525,7 +525,7 @@ export default function PrompterView({ item, setlistId, player, canEdit, setting
           >
             Successiva
           </button>
-          <button className={`btn btn-sm ${prompterOpen ? 'is-on' : ''}`} onClick={onOutput} aria-pressed={prompterOpen} title={prompterOpen ? 'Chiudi il gobbo (F6)' : 'Apri il gobbo su un secondo schermo (F6)'}>
+          <button className={`btn btn-sm ${prompterOpen ? 'is-on' : ''}`} onClick={onOutput} aria-pressed={prompterOpen} title={prompterOpen ? 'Chiudi il gobbo (F6)' : 'Apri il gobbo a schermo intero, sul secondo schermo se c’è (F6)'}>
             <Icon name="monitor" size={14} /> Uscita gobbo
           </button>
         </ToolGroup>

@@ -1281,6 +1281,7 @@ function Mixer({ loaded, lanes, player, settings, update, children }) {
         <span className="m-db">{dbText(click.gainDb)}</span>
         <div className="st-fader-row">
           <Fader value={click.gainDb} onChange={(gainDb) => update({ click: { ...click, gainDb } })} onReset={() => update({ click: { ...click, gainDb: -6 } })} title="Volume click" midi="click.volume" midiName="Volume click" />
+          <Meter click />
         </div>
         <span className="st-solo is-blank" />
         <button className="st-name" onClick={() => update({ click: { ...click, enabled: !click.enabled } })} aria-pressed={!click.enabled} title="Click acceso / spento (C)" data-midi="transport.click" data-midi-name="Click">

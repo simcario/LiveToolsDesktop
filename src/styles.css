@@ -2429,6 +2429,12 @@ textarea.se-fill {
   font-size: 11px;
   color: var(--accent-light);
 }
+.pref-tag.pref-remote-code {
+  margin: 0 8px;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+}
 .pref-desc {
   margin: 0;
   font-size: 12px;
