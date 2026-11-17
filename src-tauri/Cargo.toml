@@ -1,6 +1,6 @@
 [package]
 name = "livetools-desktop"
-version = "0.1.24"
+version = "0.1.25"
 description = "LiveTools Desktop: lettore di sequenze multitraccia e video per il live"
 edition = "2021"
 license = "GPL-3.0-or-later"

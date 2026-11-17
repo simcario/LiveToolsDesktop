@@ -11,7 +11,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { emit, listen } from '@tauri-apps/api/event';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
-import { automationOf, automationRead, clickMixOf, cueTrackOf, instrumentOf, INSTRUMENTS, muteAutomationOf, rehearsalGroup, STEM_ROLES, stemsOf, VIDEO_AUDIO_ID, videoAudioStem } from '../shared/media.js';
+import { automationOf, automationRead, clickMixOf, cueTrackOf, groupLabel, groupOptions, instrumentOf, muteAutomationOf, rehearsalGroup, STEM_ROLES, stemsOf, VIDEO_AUDIO_ID, videoAudioStem } from '../shared/media.js';
 import { hasAutomation, isWriting, releaseTouch, toggleRead, toggleWrite, useAutoWrite, writeMute, writeVolume } from './autoWrite';
 import { channelActive, eqOf, flatEq, inputOf } from '../shared/eq.js';
 import { editDraft, isDirty, saveDraft, savedMessage, useDrafts } from './drafts';
@@ -35,7 +35,6 @@ export async function toggleMixerWindow() {
 
 // As in the Sequenze view of the setlist: the role decides the outputs, the instrument the rehearsal group.
 const ROLE_OPTIONS = Object.entries(STEM_ROLES).map(([value, r]) => ({ value, label: r.label, hint: r.hint }));
-const INSTRUMENT_OPTIONS = Object.entries(INSTRUMENTS).map(([value, label]) => ({ value, label }));
 
 export function useMixer({ player, lanes, canEdit: canEditSetlist, setlistId, notify }) {
   useMix(); // mute and outputs of this computer
@@ -97,7 +96,7 @@ export function useMixer({ player, lanes, canEdit: canEditSetlist, setlistId, no
     strips,
     outputs: outputOptions(channels),
     roles: ROLE_OPTIONS,
-    instruments: INSTRUMENT_OPTIONS,
+    instruments: groupOptions(stemsOf(song)), // Gruppo Rehearsal: built-in groups + those added
     canEdit,
     changed,
     dirty: !!song && isDirty(song.id),
@@ -179,7 +178,7 @@ export function useMixer({ player, lanes, canEdit: canEditSetlist, setlistId, no
         }
         break;
       case 'instrument':
-        if (canEdit && stem && !stem.live && stem.id !== VIDEO_AUDIO_ID) setStem(a.id, { instrument: a.value }, `${stem.name} → ${INSTRUMENTS[a.value] || a.value}`, false);
+        if (canEdit && stem && !stem.live && stem.id !== VIDEO_AUDIO_ID) setStem(a.id, { instrument: a.value }, `${stem.name} → ${groupLabel(a.value)}`, false);
         break;
       case 'route':
         if (stem) local(stem, { route: a.value ? parseRoute(a.value) : null });

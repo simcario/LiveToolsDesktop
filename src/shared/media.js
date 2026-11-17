@@ -119,16 +119,134 @@ export function guessInstrument(name) {
   return INSTRUMENT_PATTERNS.find(([, re]) => re.test(n))?.[0] || 'other';
 }
 
+// Rehearsal groups added by the user beside INSTRUMENTS: saved on the stem as
+// 'x:<name>', so every app reads the name without other data. The list of the
+// groups added is of the account (users/{uid}.rehearsalGroups), so it is the
+// same on every computer, tablet and browser, with a copy on this device that
+// works offline: syncCustomGroups merges the two each time the profile arrives.
+const CUSTOM_PREFIX = 'x:';
+const CUSTOM_STORE = 'lt.rehearsalGroups';
+const cleanName = (name) => String(name || '').trim().replace(/\s+/g, ' ');
+export const isCustomGroup = (g) => typeof g === 'string' && g.startsWith(CUSTOM_PREFIX) && g.length > CUSTOM_PREFIX.length;
+
+let groupsAccount = null; // { db, uid } of the signed-in account
+const storeKey = () => (groupsAccount ? `${CUSTOM_STORE}.${groupsAccount.uid}` : CUSTOM_STORE);
+
+function readGroups(key) {
+  try {
+    const list = JSON.parse(globalThis.localStorage?.getItem(key) || '[]');
+    return Array.isArray(list) ? list.filter(isCustomGroup) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeGroups(list) {
+  try {
+    globalThis.localStorage?.setItem(storeKey(), JSON.stringify(list));
+  } catch {
+    // not kept on this device: the account and the stems have it anyway
+  }
+}
+
+const savedCustomGroups = () => readGroups(storeKey());
+
+// One group per name, whatever the case (two computers adding "Violino" offline).
+function uniqueGroups(list) {
+  const seen = new Set();
+  return list.filter((g) => {
+    const k = g.toLowerCase();
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
+// To the account: Firestore keeps the write while offline and sends it later.
+function pushGroups(keys) {
+  if (!groupsAccount || !keys.length) return;
+  updateDoc(doc(groupsAccount.db, 'users', groupsAccount.uid), { rehearsalGroups: arrayUnion(...keys) }).catch((e) =>
+    console.warn('Gruppi Rehearsal non salvati sull’account (riprovo al prossimo avvio)', e),
+  );
+}
+
+/**
+ * Called with every snapshot of the profile (users/{uid}) of the signed-in
+ * account, null uid when signing out: the copy of this device gets the groups
+ * added elsewhere, the account those added here (also offline, before).
+ */
+export function syncCustomGroups(db, uid, cloud) {
+  if (!uid) {
+    groupsAccount = null;
+    return;
+  }
+  const first = groupsAccount?.uid !== uid;
+  groupsAccount = { db, uid };
+  const remote = (Array.isArray(cloud) ? cloud : []).filter(isCustomGroup);
+  // The groups added before signing in (or by the first version, kept for the device) go to this account.
+  const unsigned = first ? readGroups(CUSTOM_STORE) : [];
+  const local = uniqueGroups([...savedCustomGroups(), ...unsigned]);
+  writeGroups(uniqueGroups([...remote, ...local]));
+  if (unsigned.length) {
+    try {
+      globalThis.localStorage?.removeItem(CUSTOM_STORE);
+    } catch {
+      // stays: merged again next time, without doubles
+    }
+  }
+  const known = new Set(remote.map((g) => g.toLowerCase()));
+  pushGroups(local.filter((g) => !known.has(g.toLowerCase())));
+}
+
+/** Adds a group by its name (Gruppo Rehearsal → "Aggiungi gruppo…"): its key, null for an empty name. The name of an existing group gives that one. */
+export function addCustomGroup(name) {
+  const n = cleanName(name);
+  if (!n) return null;
+  const same = (label) => label.toLowerCase() === n.toLowerCase();
+  const builtIn = Object.entries(INSTRUMENTS).find(([, label]) => same(label));
+  if (builtIn) return builtIn[0];
+  const saved = savedCustomGroups();
+  const known = saved.find((g) => same(g.slice(CUSTOM_PREFIX.length)));
+  if (known) return known;
+  const key = `${CUSTOM_PREFIX}${n}`;
+  writeGroups([...saved, key]);
+  pushGroups([key]);
+  return key;
+}
+
+/** Value of the "Nuovo gruppo…" choice in the Gruppo Rehearsal menus. */
+export const NEW_GROUP = '+new';
+/** The group chosen in a Gruppo Rehearsal menu: "Nuovo gruppo…" asks its name (null when cancelled). */
+export function pickGroup(value) {
+  if (value !== NEW_GROUP) return value;
+  const name = globalThis.prompt?.('Nome del nuovo gruppo Rehearsal (es. Violino, Sax solista, Cori donne):');
+  return addCustomGroup(name);
+}
+
 // Click and guides are never "an instrument": they go in every rehearsal mix.
 export function instrumentOf(stem) {
   if (stem.role === 'click' || stem.role === 'guide') return null;
   if (stem.instrument === VIDEO_GROUP) return VIDEO_GROUP;
-  return INSTRUMENTS[stem.instrument] ? stem.instrument : guessInstrument(stem.name);
+  return INSTRUMENTS[stem.instrument] || isCustomGroup(stem.instrument) ? stem.instrument : guessInstrument(stem.name);
+}
+
+/** Choices of "Gruppo Rehearsal" for the stems of a song: the built-in groups, then those added (in the song and on this device). */
+export function groupOptions(stems = []) {
+  const added = new Set(savedCustomGroups());
+  stems.forEach((s) => isCustomGroup(s?.instrument) && added.add(s.instrument));
+  return [
+    ...Object.entries(INSTRUMENTS).map(([value, label]) => ({ value, label })),
+    ...[...added].sort(compareGroups).map((value) => ({ value, label: groupLabel(value) })),
+  ];
 }
 
 // Part of a musician on stage (device settings, e.g. "Master / Tastiere") → instrument.
+// A group added on this device whose name is in the part comes first.
 export function partInstrument(part) {
   if (!part) return null;
+  const p = part.toLowerCase();
+  const custom = savedCustomGroups().find((g) => p.includes(g.slice(CUSTOM_PREFIX.length).toLowerCase()));
+  if (custom) return custom;
   const found = guessInstrument(part);
   return found === 'other' ? null : found;
 }
@@ -139,7 +257,18 @@ export const rehearsalGroup = (stem) => (stem.role === 'click' || stem.role === 
 
 // 'metro': the system click of the web rehearsal, synthesised on the grid of the song.
 const GROUP_LABELS = { click: 'Click', metro: 'Click di sistema', guide: 'Guide', video: 'Video' };
-export const groupLabel = (group) => GROUP_LABELS[group] || INSTRUMENTS[group] || group;
+export const groupLabel = (group) => GROUP_LABELS[group] || INSTRUMENTS[group] || (isCustomGroup(group) ? group.slice(CUSTOM_PREFIX.length) : group);
+
+// Order of the groups (Rehearsal buttons, Palco mixer, telecomando): the built-in
+// instruments, those added in alphabetical order, Altro, then click and guides.
+const GROUP_ORDER = [...Object.keys(INSTRUMENTS).filter((k) => k !== 'other'), '+', 'other', 'click', 'guide'];
+export function compareGroups(a, b) {
+  const rank = (g) => {
+    const i = GROUP_ORDER.indexOf(isCustomGroup(g) ? '+' : g);
+    return i < 0 ? GROUP_ORDER.length : i;
+  };
+  return rank(a) - rank(b) || (isCustomGroup(a) && isCustomGroup(b) ? groupLabel(a).localeCompare(groupLabel(b), 'it') : 0);
+}
 
 /** Groups of the audible stems of a song: instruments first, then click and guides. */
 export function rehearsalGroups(item) {
@@ -147,7 +276,7 @@ export function rehearsalGroups(item) {
   const present = new Set(stemsOf(item).filter((s) => !s.muted).map(rehearsalGroup));
   // Cues without a "Cues" file: the rehearsal makes them (lib/cue-track.js), in the guides.
   if (present.size && cueTrackOf(item).cues.length) present.add('guide');
-  return [...Object.keys(INSTRUMENTS), 'click', 'guide'].filter((k) => present.has(k));
+  return [...present].filter((g) => g && (INSTRUMENTS[g] || isCustomGroup(g) || g === 'click' || g === 'guide')).sort(compareGroups);
 }
 
 /** Groups of the web rehearsal: those of the stems plus the system click, next to the audio one. */

@@ -6,6 +6,7 @@ import { useEffect, useSyncExternalStore } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { engineStatus, subscribeStatus } from './engine';
 import { outputCueIndex, outputSlides } from './cues';
+import { slideLines, slideTags, tagInk } from '../shared/prompter.js';
 
 export const NDI_KINDS = { video: 'Video', prompter: 'Gobbo' };
 
@@ -92,28 +93,77 @@ const FONT = "Inter, system-ui, 'Segoe UI', sans-serif";
 // Same rules as SlideText and the .pw-current / .pw-next styles of the window.
 function drawText(ctx, text, box, pad, max, color) {
   if (!text) return;
-  const lines = text.split('\n');
-  const longest = Math.max(8, ...lines.map((l) => l.length));
+  // Runs of coloured or highlighted words ([rosa]…[/], [evid rosa]…[/]), as SlideText.
+  const lines = slideLines(text);
+  const longest = Math.max(8, ...lines.map((l) => l.reduce((n, r) => n + r.text.length, 0)));
   const size = Math.max(10, Math.min(max, (box.h * 0.86) / (lines.length * 1.25), (box.w * 0.94) / (longest * 0.52)));
   const line = size * 1.25;
   const cx = box.x + pad.l + (box.w - pad.l - pad.r) / 2;
   const cy = box.y + pad.t + (box.h - pad.t - pad.b) / 2;
   ctx.font = `700 ${size}px ${FONT}`;
-  ctx.fillStyle = color;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  const padMark = size * 0.12;
+  lines.forEach((runs, i) => {
+    const y = cy + (i - (lines.length - 1) / 2) * line;
+    const widths = runs.map((r) => ctx.measureText(r.text).width + (r.mark ? padMark * 2 : 0));
+    let x = cx - widths.reduce((a, b) => a + b, 0) / 2;
+    runs.forEach((r, k) => {
+      if (r.mark) {
+        ctx.fillStyle = r.color;
+        ctx.beginPath();
+        ctx.roundRect(x, y - line / 2, widths[k], line, padMark);
+        ctx.fill();
+        ctx.fillStyle = tagInk(r.color);
+        ctx.fillText(r.text, x + padMark, y);
+      } else {
+        ctx.fillStyle = r.color || color;
+        ctx.fillText(r.text, x, y);
+      }
+      x += widths[k];
+    });
+  });
+}
+
+// The directions of a slide (SlideTags, .pw-tags): centred pills from `y`; returns the height used.
+function drawTags(ctx, slide, y, size, alpha = 1) {
+  const tags = slideTags(slide);
+  if (!tags.length) return 0;
+  ctx.font = `800 ${size}px ${FONT}`;
+  const padX = size * 0.75;
+  const gap = size * 0.5;
+  const h = size * 1.54;
+  const widths = tags.map((t) => ctx.measureText(t.label).width + padX * 2);
+  let x = (W - widths.reduce((a, b) => a + b, 0) - gap * (tags.length - 1)) / 2;
+  ctx.globalAlpha = alpha;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  lines.forEach((l, i) => ctx.fillText(l, cx, cy + (i - (lines.length - 1) / 2) * line));
+  tags.forEach((t, i) => {
+    ctx.fillStyle = t.color;
+    ctx.beginPath();
+    ctx.roundRect(x, y, widths[i], h, h / 2);
+    ctx.fill();
+    ctx.fillStyle = tagInk(t.color);
+    ctx.fillText(t.label, x + widths[i] / 2, y + h / 2);
+    x += widths[i] + gap;
+  });
+  ctx.globalAlpha = 1;
+  return h;
 }
 
 function drawSlides(ctx, current, next) {
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, W, H);
-  const nextH = next ? 18 * VH : 0;
-  drawText(ctx, current?.text, { x: 0, y: 0, w: W, h: H - nextH }, { t: 4 * VH, b: 4 * VH, l: 4 * VW, r: 4 * VW }, 160, '#fff');
+  const nextTags = next && slideTags(next).length ? 1.2 * VH + 2.4 * VH * 1.54 : 0;
+  const nextH = next ? 18 * VH + nextTags : 0;
+  const top = drawTags(ctx, current, 3 * VH, 4.2 * VH);
+  const used = top ? 3 * VH + top : 0;
+  drawText(ctx, current?.text, { x: 0, y: used, w: W, h: H - nextH - used }, { t: 4 * VH, b: 4 * VH, l: 4 * VW, r: 4 * VW }, 160, '#fff');
   if (!next) return;
   ctx.fillStyle = '#1f2937';
   ctx.fillRect(0, H - nextH, W, 1);
-  drawText(ctx, next.text, { x: 0, y: H - nextH, w: W, h: nextH }, { t: 0, b: 3 * VH, l: 6 * VW, r: 6 * VW }, 48, '#6b7280');
+  drawTags(ctx, next, H - nextH + 1.2 * VH, 2.4 * VH, 0.75);
+  drawText(ctx, next.text, { x: 0, y: H - nextH + nextTags, w: W, h: nextH - nextTags }, { t: 0, b: 3 * VH, l: 6 * VW, r: 6 * VW }, 48, '#6b7280');
 }
 
 /** Sends the Gobbo picture of `source` (see usePrompterOutput) while the NDI output is on. */
@@ -129,7 +179,7 @@ export function useNdiPrompter(source, enabled) {
     const update = () => {
       if (!alive || sending) return;
       const { current, next } = outputSlides(source, outputCueIndex(source, engineStatus()));
-      const key = JSON.stringify([current?.text || '', next?.text ?? null]);
+      const key = JSON.stringify([current?.text || '', slideTags(current), next?.text ?? null, next ? slideTags(next) : null]);
       if (key === shown) return;
       shown = key;
       drawSlides(ctx, current, next);

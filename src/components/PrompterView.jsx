@@ -21,6 +21,8 @@ import Icon from './Icon';
 import { useOutputOpen } from '../lib/outputs';
 import Toolbar, { ToolGroup } from './Toolbar';
 import SlideText from './SlideText';
+import SlideTags from './SlideTags';
+import { colorSlideText, plainSlideText, slideTags, TAG_COLORS, TAG_PRESETS, tagInk, TEXT_COLORS } from '../shared/prompter.js';
 
 const LEADS = [0, 0.1, 0.2, 0.3, 0.5, 0.75, 1];
 const SPLITS = [
@@ -125,8 +127,123 @@ function SourceText({ text, ownLyrics, canEdit, onCreate, onSave }) {
   );
 }
 
+// ---------- Directions of a slide (tags shown on every gobbo) ----------
+const sameTag = (a, b) => a.label.toLowerCase() === b.label.toLowerCase();
+
+function TagRow({ slide, known, canEdit, onChange }) {
+  const tags = slideTags(slide);
+  const [open, setOpen] = useState(false);
+  const [label, setLabel] = useState('');
+  const [color, setColor] = useState(TAG_COLORS[0]);
+  if (!tags.length && !canEdit) return null;
+  const add = (t) => {
+    if (!t.label.trim() || tags.some((x) => sameTag(x, t)) || tags.length >= 4) return;
+    onChange({ tags: [...tags, { label: t.label.trim(), color: t.color }] });
+  };
+  const remove = (i) => onChange({ tags: tags.filter((_, k) => k !== i) });
+  const choices = [...TAG_PRESETS, ...known.filter((k) => !TAG_PRESETS.some((p) => sameTag(p, k)))].filter((c) => !tags.some((t) => sameTag(t, c)));
+  return (
+    <div className="pr-tags">
+      {tags.map((t, i) => (
+        <span key={i} className="pr-tag" style={{ background: t.color, color: tagInk(t.color) }}>
+          {t.label}
+          {canEdit && (
+            <button onClick={() => remove(i)} title="Togli l’indicazione" aria-label={`Togli ${t.label}`}>
+              <Icon name="x" size={10} />
+            </button>
+          )}
+        </span>
+      ))}
+      {canEdit && tags.length < 4 && (
+        <button className="pr-tag-add" onClick={() => setOpen((o) => !o)} aria-expanded={open} title="Indicazione colorata mostrata sul gobbo con questa slide (voce femminile, finale…)">
+          <Icon name="plus" size={10} /> Indicazione
+        </button>
+      )}
+      {open && canEdit && (
+        <div className="pr-tag-pick">
+          <div className="pr-tag-choices">
+            {choices.map((c) => (
+              <button key={c.label} className="pr-tag" style={{ background: c.color, color: tagInk(c.color) }} onClick={() => add(c)}>
+                {c.label}
+              </button>
+            ))}
+          </div>
+          <form
+            className="pr-tag-new"
+            onSubmit={(e) => {
+              e.preventDefault();
+              add({ label, color });
+              setLabel('');
+            }}
+          >
+            <input value={label} maxLength={32} placeholder="Nuova indicazione…" onChange={(e) => setLabel(e.target.value)} />
+            {TAG_COLORS.map((c) => (
+              <button
+                key={c}
+                type="button"
+                className={`pr-swatch ${c === color ? 'is-on' : ''}`}
+                style={{ background: c }}
+                onClick={() => setColor(c)}
+                aria-label={`Colore ${c}`}
+                aria-pressed={c === color}
+              />
+            ))}
+            <button type="submit" className="btn btn-sm" disabled={!label.trim()}>
+              Aggiungi
+            </button>
+          </form>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------- Coloured or highlighted words (who sings what) ----------
+// Select words in the slide and press a colour: they become [rosa]…[/] (or [evid rosa]…[/]
+// with Evidenzia on), drawn so on every gobbo.
+function ColorRow({ area, text, onChange }) {
+  const [mark, setMark] = useState(false);
+  const [hint, setHint] = useState(false);
+  const paint = (name) => {
+    const el = area.current;
+    const from = el?.selectionStart ?? 0;
+    const to = el?.selectionEnd ?? 0;
+    if (from === to) {
+      setHint(true);
+      return;
+    }
+    setHint(false);
+    onChange({ text: colorSlideText(text, from, to, name, mark) });
+  };
+  const colored = plainSlideText(text) !== text;
+  return (
+    <div className="pr-colors">
+      <span className="small faint">{hint ? 'Seleziona prima le parole' : 'Colora la selezione'}</span>
+      {TEXT_COLORS.map(([name, c]) => (
+        <button
+          key={name}
+          className="pr-swatch"
+          style={mark ? { background: c } : { background: 'transparent', boxShadow: `inset 0 0 0 3px ${c}` }}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => paint(name)}
+          title={`${mark ? 'Evidenzia' : 'Colora'} in ${name} le parole selezionate`}
+          aria-label={`${mark ? 'Evidenzia' : 'Colora'} in ${name}`}
+        />
+      ))}
+      <button className={`toggle ${mark ? 'is-on' : ''}`} onMouseDown={(e) => e.preventDefault()} onClick={() => setMark((m) => !m)} aria-pressed={mark} title="Sfondo colorato invece del testo colorato">
+        Evidenzia
+      </button>
+      {colored && (
+        <button className="toggle" onClick={() => onChange({ text: plainSlideText(text) })} title="Togli tutti i colori di questa slide">
+          Togli colori
+        </button>
+      )}
+    </div>
+  );
+}
+
 // ---------- One slide in the editor ----------
-function SlideCard({ slide, index, count, uses, canEdit, onChange, onSplit, onMerge, onMove, onDelete }) {
+function SlideCard({ slide, index, count, uses, known, canEdit, onChange, onSplit, onMerge, onMove, onDelete }) {
   const area = useRef(null);
   return (
     <div className="pr-slide" style={{ '--slide-color': SLIDE_COLORS[index % SLIDE_COLORS.length] }}>
@@ -175,6 +292,8 @@ function SlideCard({ slide, index, count, uses, canEdit, onChange, onSplit, onMe
         onChange={(e) => onChange({ text: e.target.value })}
         spellCheck={false}
       />
+      {canEdit && <ColorRow area={area} text={slide.text} onChange={onChange} />}
+      <TagRow slide={slide} known={known} canEdit={canEdit} onChange={onChange} />
     </div>
   );
 }
@@ -453,6 +572,8 @@ export default function PrompterView({ item, setlistId, player, canEdit, setting
   const nextCue = cues.slice(current + 1).find((c) => c.slide);
   const nextSlide = nextCue && slides.find((s) => s.id === nextCue.slide);
   const uses = Object.fromEntries(slides.map((s) => [s.id, data.cues.filter((c) => c.slide === s.id).length]));
+  // Directions already used in this song (beyond the ready-made ones), offered on every slide.
+  const knownTags = slides.flatMap((s) => slideTags(s)).filter((t, i, all) => all.findIndex((x) => x.label.toLowerCase() === t.label.toLowerCase()) === i);
   const recording = !!takeCues;
 
   return (
@@ -561,6 +682,7 @@ export default function PrompterView({ item, setlistId, player, canEdit, setting
                 index={i}
                 count={slides.length}
                 uses={uses[s.id]}
+                known={knownTags}
                 canEdit={canEdit}
                 onChange={(patch) => setSlide(s.id, patch)}
                 onSplit={(at) => splitSlide(i, at)}
@@ -574,6 +696,7 @@ export default function PrompterView({ item, setlistId, player, canEdit, setting
 
         <div className="pr-col pr-live">
           <div className="pr-preview">
+            <SlideTags slide={currentSlide} className="pr-preview-tags" />
             <SlideText text={currentSlide?.text} className="pr-current" max={64} />
             {nextSlide && nextSlide !== currentSlide && (
               <div className="pr-next">

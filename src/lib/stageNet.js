@@ -8,6 +8,7 @@ import { useEffect, useRef, useSyncExternalStore } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { engineStatus, subscribeStatus } from './engine';
+import { prompterShare } from './cues';
 
 export const STAGE_PARTS = ['Master / Tastiere', 'Batteria', 'Voce', 'Chitarra', 'Basso', 'Fonico', 'Luci', 'Ospite'];
 
@@ -50,6 +51,31 @@ export function useStageNetState() {
   );
 }
 
+// The Leggio (mobile ui/PrompterViewer.jsx) open: joins who leads to show its Gobbo, also
+// without Segui palco (then the songs of this device do not follow) and on another setlist.
+let viewing = 0;
+const viewSubs = new Set();
+/** While mounted with `on`, this device joins who leads to read its Gobbo. */
+export function useStageNetViewing(on) {
+  useEffect(() => {
+    if (!on) return undefined;
+    viewing += 1;
+    viewSubs.forEach((f) => f());
+    return () => {
+      viewing -= 1;
+      viewSubs.forEach((f) => f());
+    };
+  }, [on]);
+}
+const useViewing = () =>
+  useSyncExternalStore(
+    (f) => {
+      viewSubs.add(f);
+      return () => viewSubs.delete(f);
+    },
+    () => viewing > 0,
+  );
+
 /** The song on stage from the local network for this setlist: { itemId, at, byName } or null. */
 export const lanLiveOf = (state, setlistId) => (state.connected && state.state?.setlist === setlistId && state.state.live?.itemId ? state.state.live : null);
 
@@ -57,14 +83,16 @@ const deviceKind = () => (/android|iphone|ipad/i.test(navigator.userAgent) ? 'ta
 
 /**
  * Hosts or follows on the local network as the settings say, mounted once in the main window.
- * `loadedItem`: the song in the player (published while leading). Returns the network state.
+ * `loadedItem`: the song in the player and `prompter` its Gobbo (usePrompterOutput), published
+ * while leading. Returns the network state.
  */
-export function useStageNet({ setlist, user, settings, canDrive, loadedItem, notify }) {
+export function useStageNet({ setlist, user, settings, canDrive, loadedItem, prompter = null, notify }) {
   const state = useStageNetState();
   const opts = settings.stageNet;
   const setlistId = setlist?.id || null;
   const host = opts.enabled && settings.driveStage && canDrive && !!setlistId;
-  const follow = opts.enabled && settings.followStage && !host && !!setlistId;
+  const view = useViewing() && !host;
+  const follow = ((opts.enabled && settings.followStage && !!setlistId) || view) && !host;
   const name = user?.displayName || user?.email || 'LiveTools';
   const info = { setlist: setlistId, title: setlist?.title || '', name, part: opts.part || '', device: deviceKind() };
   const infoKey = JSON.stringify(info);
@@ -91,16 +119,19 @@ export function useStageNet({ setlist, user, settings, canDrive, loadedItem, not
   // The song on stage, to everybody connected (the time only when it changes), and the
   // transport (play, stop, where) for a computer di riserva (lib/backup.js): on every
   // change, on a jump, and once a second while playing.
+  // The Gobbo goes with it, for the Leggio of the band (placed there on the transport).
   const itemId = host ? loadedItem?.id || null : null;
+  const share = host ? JSON.stringify(prompterShare(prompter)) : 'null';
   const since = useRef({ itemId: null, at: 0 });
   useEffect(() => {
     if (!host) return undefined;
     if (since.current.itemId !== itemId) since.current = { itemId, at: Date.now() };
     const live = { itemId, at: since.current.at, byName: name };
+    const gobbo = JSON.parse(share);
     let last = null;
     const publish = (s) => {
       const transport = { itemId, playing: !!s.playing, waiting: !!s.waiting, position: s.position || 0, rate: s.rate || 1 };
-      invoke('stage_net_publish', { state: { setlist: setlistId, live, transport } }).catch(() => {});
+      invoke('stage_net_publish', { state: { setlist: setlistId, live, transport, prompter: gobbo } }).catch(() => {});
       last = { ...transport, t: performance.now() };
     };
     publish(engineStatus());
@@ -111,7 +142,7 @@ export function useStageNet({ setlist, user, settings, canDrive, loadedItem, not
       const jumped = Math.abs((s.position || 0) - expected) > 0.25;
       if (changed || jumped || (s.playing && now - last.t > 1000)) publish(s);
     });
-  }, [host, itemId, setlistId, name]);
+  }, [host, itemId, setlistId, name, share]);
 
   // Following: listen to the beacons, join the host of this setlist (or the address written by hand).
   useEffect(() => {
@@ -126,7 +157,8 @@ export function useStageNet({ setlist, user, settings, canDrive, loadedItem, not
   }, [follow]);
 
   const manual = (opts.address || '').trim();
-  const found = state.beacons.find((b) => b.setlist === setlistId);
+  // The Leggio alone reads also who leads another setlist, when it is the only one around.
+  const found = state.beacons.find((b) => b.setlist === setlistId) || (view && !settings.followStage && state.beacons.length === 1 ? state.beacons[0] : null);
   const target = follow ? manual || found?.addr || null : null;
   useEffect(() => {
     invoke('stage_net_join', { addr: target, info: JSON.parse(infoKey) }).catch(() => {});

@@ -28,6 +28,7 @@ import { writeMix } from '../lib/songMix';
 import Toolbar, { ToolGroup } from './Toolbar';
 import { longPressed, openContextMenu } from './ContextMenu';
 import { normalizePrompter, slideColor, slideName } from '../lib/prompter';
+import { plainSlideText } from '../shared/prompter.js';
 
 // The gobbo moved by `delta` seconds, all its changes together.
 const shiftPrompter = (p, delta) => ({ ...p, cues: (p.cues || []).map((c) => ({ ...c, t: Math.round((c.t + delta) * 1000) / 1000 })) });
@@ -390,7 +391,7 @@ function drawPrompterLane(ctx, { y, width, x, duration, data, delta, dragging })
     ctx.clip();
     ctx.fillStyle = '#f8fafc';
     ctx.fillText(slideName(data.slides, c.slide), Math.max(cx, 0) + 7, y + 16);
-    const text = (data.slides.find((sl) => sl.id === c.slide)?.text || '').split('\n')[0];
+    const text = plainSlideText(data.slides.find((sl) => sl.id === c.slide)?.text).split('\n')[0];
     ctx.font = '500 10px Inter, sans-serif';
     ctx.fillStyle = 'rgba(248,250,252,0.6)';
     ctx.fillText(text, Math.max(cx, 0) + 7, y + 31);

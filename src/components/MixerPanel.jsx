@@ -4,7 +4,7 @@ import Fader from './Fader';
 import Icon from './Icon';
 import Meter from './Meter';
 import { openContextMenu } from './ContextMenu';
-import { automationDb, automationMutedAt } from '../shared/media.js';
+import { automationDb, automationMutedAt, NEW_GROUP, pickGroup } from '../shared/media.js';
 import { useEngineStatus } from '../lib/engine';
 
 // The mixer of the song in the player, drawn the same in the Dettaglio tab and
@@ -56,17 +56,19 @@ function InstrumentSelect({ strip, state, dispatch }) {
       value={strip.instrument}
       disabled={!state.canEdit}
       onChange={(e) => {
-        dispatch({ type: 'instrument', id: strip.id, value: e.target.value });
+        const g = pickGroup(e.target.value);
         e.target.blur();
+        if (g && g !== strip.instrument) dispatch({ type: 'instrument', id: strip.id, value: g });
       }}
-      title="Strumento: il Rehearsal di chi lo suona lo toglie dal mix"
-      aria-label={`Strumento di ${strip.name}`}
+      title="Gruppo Rehearsal: il Rehearsal di chi lo suona lo toglie dal mix"
+      aria-label={`Gruppo Rehearsal di ${strip.name}`}
     >
       {state.instruments.map((i) => (
         <option key={i.value} value={i.value}>
           {i.label}
         </option>
       ))}
+      <option value={NEW_GROUP}>+ Nuovo gruppo…</option>
     </select>
   );
 }

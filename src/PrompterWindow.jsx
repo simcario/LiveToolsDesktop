@@ -4,6 +4,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useEngineStatus } from './lib/engine';
 import { outputCueIndex, outputSlides } from './lib/cues';
 import SlideText from './components/SlideText';
+import SlideTags from './components/SlideTags';
 
 // Second window for the singers' screen: the slide of the song in the player
 // at the position of the audio engine. Double click: full screen.
@@ -42,7 +43,9 @@ export default function PrompterWindow() {
         <span className="video-empty">LiveTools · gobbo — doppio clic per lo schermo intero</span>
       ) : (
         <>
+          <SlideTags slide={current} className="pw-tags" />
           <SlideText text={current?.text} className="pw-current" />
+          {next && <SlideTags slide={next} className="pw-tags is-next" />}
           {next && <SlideText text={next.text} className="pw-next" max={48} />}
         </>
       )}

@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { formatDuration, formatEventDate, isSeparator, PLAYBACK_TYPES } from '../shared/setlists.js';
-import { audioApart, groupLabel, INSTRUMENTS, isVideoItem, PAD_FADE_MAX, PAD_HOLD_MAX, PAD_LEAD_MAX, padHoldOf, padLeadOf, regionsOf, rehearsalGroup, VIDEO_FADE_MAX, videoFades } from '../shared/media.js';
+import { audioApart, compareGroups, groupLabel, isVideoItem, PAD_FADE_MAX, PAD_HOLD_MAX, PAD_LEAD_MAX, padHoldOf, padLeadOf, regionsOf, rehearsalGroup, VIDEO_FADE_MAX, videoFades } from '../shared/media.js';
 import { groupMixKey } from '../lib/usePlayer';
 import { keyLabel } from '../shared/music.js';
 import { animateWhilePlaying, engine, engineStatus, livePosition, useEngineStatus } from '../lib/engine';
@@ -1178,8 +1178,6 @@ function GroupStrip({ group, color, indexes, names, solo, out, player }) {
   );
 }
 
-const GROUP_ORDER = [...Object.keys(INSTRUMENTS), 'click', 'guide'];
-
 // The tracks of the song by rehearsal group, in the order of the Rehearsal buttons.
 function trackGroups(tracks) {
   const by = new Map();
@@ -1188,8 +1186,7 @@ function trackGroups(tracks) {
     if (!by.has(g)) by.set(g, []);
     by.get(g).push({ stem, index });
   });
-  const rank = (g) => (GROUP_ORDER.includes(g) ? GROUP_ORDER.indexOf(g) : GROUP_ORDER.length);
-  return [...by].sort((a, b) => rank(a[0]) - rank(b[0]));
+  return [...by].sort((a, b) => compareGroups(a[0], b[0]));
 }
 
 // The console on the left of the mixer: Loop plays the section in progress once

@@ -13,6 +13,19 @@ versioni [SemVer](https://semver.org/lang/it/). Procedura di rilascio: [docs/REL
 - **Trasporto principale**: pulsante *Torna all’inizio* tra brano precedente e Play (`transport.start`).
 - **Palco**: il pulsante ⏮ *Torna all'inizio* resta visibile anche nelle finestre strette (sotto i 900 px era nascosto).
 
+### Gobbo: indicazioni colorate e parole a colori
+- Vista **Gobbo**, sotto ogni slide: **+ Indicazione** aggiunge etichette colorate (Voce femminile, Finale… o
+  personalizzate) mostrate sopra il testo, piccole anche sulla slide successiva (`slide.tags`, `SlideTags.jsx`).
+- **Colora la selezione**: le parole selezionate diventano colorate o evidenziate (`[rosa]…[/]`,
+  `[evid rosa]…[/]`, `slideLines` in `shared/prompter.js`). Finestra di uscita, NDI, anteprima, traccia
+  Gobbo dell'Arrangement (senza segni), web e Leggio del mobile.
+
+### Leggio del gobbo sui telefoni e tablet della band
+- Con **Guida** e **Rete locale** accesi, lo stato della rete di palco porta anche il **gobbo** del brano caricato
+  (slide e cambi, `prompterShare` in `lib/cues.js`): LiveTools Mobile lo mostra a tutto schermo nel *Leggio*, a tempo
+  sul trasporto di chi guida. Lo stesso dal Telecomando (parte `prompter`). Il Leggio si collega a chi guida anche
+  senza *Segui palco* (`useStageNetViewing`), senza caricare i brani.
+
 ### Telecomando dal telefono o dal tablet
 - **Ctrl+, › Rete locale › Telecomando**: LiveTools Mobile comanda questo computer sulla stessa rete Wi-Fi (play/stop,
   brani e scaletta, sezioni, loop, fade, finestre Video e Gobbo, click, ottavi, count-in, avanzamento, pad, gruppi nel

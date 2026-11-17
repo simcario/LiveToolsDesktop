@@ -5,9 +5,11 @@ import {
   deleteMediaFile,
   deletionNote,
   formatBytes,
+  groupOptions,
   instrumentOf,
-  INSTRUMENTS,
   isAudioFile,
+  NEW_GROUP,
+  pickGroup,
   isVideoFile,
   mediaTarget,
   saveScore,
@@ -29,7 +31,7 @@ import Icon from './Icon';
 // "Sequenze, Video & PDF" of a song in the setlist page: same data as the web app,
 // saved as soon as it changes (uploads and deletions cannot wait for “Salva”).
 
-function StemRow({ stem, canEdit, cache, className, onPatch, onGrip, onRemove }) {
+function StemRow({ stem, groups, canEdit, cache, className, onPatch, onGrip, onRemove }) {
   const [name, setName] = useState(stem.name);
   const instrument = instrumentOf(stem);
   const commit = () => {
@@ -77,14 +79,19 @@ function StemRow({ stem, canEdit, cache, className, onPatch, onGrip, onRemove })
           className="select-xs md-role"
           value={instrument}
           disabled={!canEdit}
-          onChange={(e) => onPatch({ instrument: e.target.value })}
-          title="Strumento: il Rehearsal di chi lo suona lo toglie dal mix"
+          onChange={(e) => {
+            const g = pickGroup(e.target.value);
+            if (g && g !== instrument) onPatch({ instrument: g });
+          }}
+          title="Gruppo Rehearsal: il Rehearsal di chi lo suona lo toglie dal mix"
+          aria-label="Gruppo Rehearsal"
         >
-          {Object.entries(INSTRUMENTS).map(([k, label]) => (
-            <option key={k} value={k}>
-              {label}
+          {groups.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
             </option>
           ))}
+          <option value={NEW_GROUP}>+ Nuovo gruppo…</option>
         </select>
       )}
       <CacheState c={cache} />
@@ -323,6 +330,7 @@ export default function MediaFields({ setlistId, item, canEdit: canEditSetlist, 
             <StemRow
               key={s.id}
               stem={s}
+              groups={groupOptions(stems)}
               canEdit={canEdit}
               cache={cache[s.path]}
               className={dragClass(i)}

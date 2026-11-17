@@ -20,7 +20,7 @@ dell'app web: una scaletta creata sul web si apre qui, e viceversa. Guide, novit
 |---|---|---|---|
 | 1 | Installa l'app e accedi con Google | installer dal sito, poi *Accedi con Google* | 1 |
 | 2 | Apri la scaletta e aggiungi i brani | pagina **Scaletta** (Ctrl+2), o dall'app web | 3.1 |
-| 3 | Carica le tracce (stem) di ogni brano e scegli ruolo e strumento | ispettore › *Sequenze, Video & PDF* | 3.3 |
+| 3 | Carica le tracce (stem) di ogni brano e scegli ruolo e gruppo Rehearsal | ispettore › *Sequenze, Video & PDF* | 3.3 |
 | 4 | Scegli la scheda audio e su quali uscite vanno Main, Click, Guide, Pad | pulsante della scheda audio nella barra in alto | 4.4 |
 | 5 | Scarica tutta la scaletta, così suoni senza rete | Browser › **Scarica tutta la scaletta** | 3.4 |
 | 6 | Controlla che il click sia a tempo e crea le sezioni (Intro, Strofa…) | Arrangement › *Griglia*; Palco › **Modifica** | 5, 4.2 |
@@ -275,14 +275,17 @@ Scheda **Sequenze & Video** del brano (o dal web, *Sequenze & Video*): trascina 
 pulsante. Per ogni stem scegli:
 
 - **Ruolo** — decide l'uscita della scheda audio: *Main*, *Click*, *Guide/Cue*, *Solo monitor*;
-- **Strumento** — Batteria, Basso, Chitarre, Tastiere, Voce, Cori… (serve al Rehearsal);
+- **Gruppo Rehearsal** — Batteria, Basso, Chitarre, Tastiere, Voce, Cori… (serve al Rehearsal e ai gruppi del mixer
+  del Palco). Se non c'è quello che ti serve scegli **+ Nuovo gruppo…** in fondo al menu e scrivi il nome (es.
+  *Violino*, *Sax solista*): da quel momento il gruppo compare nel menu di ogni brano su tutti i tuoi computer, tablet e browser (si salva con il tuo account e resta anche qui, per lavorare senza rete), e chi apre il
+  brano altrove lo vede comunque con il suo nome;
 - nome e mute di default; l'ordine si cambia trascinando la maniglia.
 
 Se le righe sono strette, allarga l'ispettore trascinandone il bordo.
 
-![La scheda Sequenze, Video & PDF: elenco delle tracce con maniglia, ruolo, strumento, mute ed elimina](img/tracce.png)
+![La scheda Sequenze, Video & PDF: elenco delle tracce con maniglia, ruolo, gruppo Rehearsal, mute ed elimina](img/tracce.png)
 
-*Per ogni traccia: maniglia per l'ordine, nome e file, **ruolo** (Main, Click, Guide/Cue…), **strumento**, segno di
+*Per ogni traccia: maniglia per l'ordine, nome e file, **ruolo** (Main, Click, Guide/Cue…), **gruppo Rehearsal**, segno di
 spunta quando il file è su questo computer, **M** (mute di default) e cestino. **Aggiungi tracce** carica altri file,
 **Elimina sequenza** le toglie tutte.*
 
@@ -644,8 +647,8 @@ ogni sezione. In alto a destra **Ripristina volumi** e **Finestra** (F3).*
 - in alto il **menu della destinazione**, come in Cubase: il **ruolo** (*Main (PA)*, *Click*, *Guide / Cue*, *Solo
   monitor*, gli stessi della vista Sequenze della scaletta, che escono dove dice la matrice uscite) oppure un'**uscita
   diretta** di questo computer;
-- sotto, per Main e Solo monitor, lo **strumento** (Batteria, Basso, Tastiere…): come nelle Sequenze, il Rehearsal di chi
-  lo suona toglie la traccia dal mix;
+- sotto, per Main e Solo monitor, il **gruppo Rehearsal** (Batteria, Basso, Tastiere…, o uno tuo con **+ Nuovo
+  gruppo…**): come nelle Sequenze, il Rehearsal di chi lo suona toglie la traccia dal mix;
 - **pan**, **fader del volume** con meter (doppio clic: 0 dB / centro), **M** e **S**;
 - il **nome** in fondo apre la **sezione canale** della traccia (accanto resta la sua striscia; di nuovo clic sul nome,
   **✕** o **Esc** per tornare al mixer, **‹ ›** per passare alla traccia vicina). Come su un banco digitale:
@@ -663,7 +666,7 @@ ogni sezione. In alto a destra **Ripristina volumi** e **Finestra** (F3).*
 *La sezione canale: **Gain** a sinistra, il grafico dell'EQ con un punto per banda, sotto la banda scelta con tipo,
 **Freq**, **Gain** e **Q**; a destra resta la striscia della traccia.*
 
-Volume, pan, ruolo, strumento, gain ed EQ si salvano **con il brano** (pulsante **Salva**, anche nel mixer): al prossimo caricamento, su ogni
+Volume, pan, ruolo, gruppo Rehearsal, gain ed EQ si salvano **con il brano** (pulsante **Salva**, anche nel mixer): al prossimo caricamento, su ogni
 computer della band e nella prova sul web, il brano suona così. Si annullano con Ctrl+Z nell'Arrangement (un trascinamento
 del fader = un passo). **Ripristina volumi** riporta tutte le tracce a 0 dB e pan al centro (gain ed EQ restano: si azzerano con **Piatto**), poi Salva. Solo e
 l'uscita diretta restano solo su questo computer. Chi non può modificare il brano vede i volumi ma non li cambia.
@@ -736,6 +739,10 @@ palco**, senza internet. Non c'è niente da configurare: si trovano da soli quan
   ricerca, scrivi a mano l'**indirizzo** che compare su chi guida.
 - Con internet il brano passa anche dal cloud come sempre. I telefoni con l'app web ricevono il brano e il
   gobbo solo dal cloud.
+- **Leggio (dalla prossima versione).** Chi guida manda in rete locale anche il **gobbo** del brano caricato:
+  su LiveTools Mobile, menu ⋯ › *Leggio del gobbo*, cantanti e musicisti lo leggono a tutto schermo come su un
+  leggio, slide per slide a tempo con la musica, anche senza *Segui palco* e senza internet. Lo stesso dal
+  **Telecomando** (pulsante *Leggio*).
 
 **Chi è collegato (dalla prossima versione).** Il pulsante con le persone accanto a *Guida* mostra quanti altri
 della band hanno aperta la stessa scaletta. Un clic apre l'elenco: nome, ruolo sul palco, dispositivo e come è
@@ -1075,6 +1082,21 @@ esempio.*
    vecchi nel tratto suonato; Ctrl+Z annulla.
 3. **Ritocca** — trascina i cambi nella timeline o spostali di ±50 ms nella lista. Per spostarli tutti insieme
    (il brano ora ha un'intro più lunga) usa la traccia *Gobbo* dell'Arrangement (dalla prossima versione).
+
+**Indicazioni e colori (dalla prossima versione).** Sotto il testo di ogni slide:
+
+- **+ Indicazione** aggiunge un'etichetta colorata che compare sul gobbo sopra il testo della slide (fino a 4):
+  *Voce femminile*, *Voce maschile*, *Tutti*, *Solo*, *Coro*, *Finale*, *Rallenta*, *Ripeti*, *Strumentale*,
+  *Stop*, oppure una tua con il colore che scegli. Le tue tornano tra le proposte delle altre slide del brano.
+  La × sull'etichetta la toglie. Si vede anche sulla slide successiva, in piccolo.
+- **Colora la selezione** — seleziona delle parole nella slide e premi un colore: sul gobbo quelle parole
+  appaiono in quel colore, per dividere le parti (chi canta cosa). Con **Evidenzia** acceso le parole hanno
+  invece lo sfondo colorato. Nel testo della slide vedi i segni `[rosa]…[/]` e `[evid rosa]…[/]`: puoi
+  anche scriverli a mano (colori: rosa, blu, viola, ambra, azzurro, rosso, arancio, verde, giallo).
+  **Togli colori** li toglie tutti dalla slide.
+
+Indicazioni e colori si vedono ovunque arrivi il gobbo: finestra di uscita, NDI, app web, Leggio di telefoni e
+tablet.
 
 **Uscita gobbo** apre una seconda finestra per lo schermo dei cantanti, con la
 slide successiva in piccolo e un anticipo regolabile. Lo stesso gobbo può andare in rete come sorgente

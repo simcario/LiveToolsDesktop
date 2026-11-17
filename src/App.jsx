@@ -185,7 +185,9 @@ function Workspace({ user }) {
   // Rete locale di palco: the song of the band's leader arrives here also without internet.
   const lanLive = lanLiveOf(useStageNetState(), setlist?.id);
   const player = usePlayer({ user, setlist, items, settings, canDrive, canEdit, notify, lanLive });
-  const stageNet = useStageNet({ setlist, user, settings, canDrive, loadedItem: player.loadedItem, notify });
+  // The Gobbo of the song in the player: output window, NDI, and the Leggio of the band's phones and tablets.
+  const prompterSource = usePrompterOutput(player.loadedItem, settings);
+  const stageNet = useStageNet({ setlist, user, settings, canDrive, loadedItem: player.loadedItem, prompter: prompterSource, notify });
   // Palco Sync: this computer among the band connected to the setlist, and who is there.
   usePresence(setlistId, user, settings.stageNet.part);
   usePingResponder(setlistId, user.uid, setlist?.live?.ping);
@@ -197,7 +199,7 @@ function Workspace({ user }) {
   // Telecomando: a phone or tablet on the same Wi-Fi drives this computer (Impostazioni › Rete locale).
   const videoOpen = useOutputOpen('video');
   const prompterOpen = useOutputOpen('prompter');
-  useRemoteHost({ settings, update, setlist, setlists, items, player, outputs: { video: videoOpen, prompter: prompterOpen }, toggleOutput, notify, user });
+  useRemoteHost({ settings, update, setlist, setlists, items, player, prompter: prompterSource, outputs: { video: videoOpen, prompter: prompterOpen }, toggleOutput, notify, user });
   const songs = player.songs;
   const numbers = useMemo(() => Object.fromEntries(songs.map((s, i) => [s.id, i + 1])), [songs]);
   const lanes = useMemo(() => buildLanes(songs), [songs]);
@@ -227,7 +229,6 @@ function Workspace({ user }) {
   const mixer = useMixer({ player, lanes, canEdit, setlistId, notify });
   useMixerBridge(mixer);
 
-  const prompterSource = usePrompterOutput(player.loadedItem, settings);
   useNdiOutputs(settings);
   useNdiPrompter(prompterSource, settings.ndi.prompter.enabled);
   usePrompterBroadcast({ setlist, loadedItem: player.loadedItem, settings, enabled: settings.driveStage && canDrive, user, notify });

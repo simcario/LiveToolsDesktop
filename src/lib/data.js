@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { collection, doc, onSnapshot, orderBy, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore';
+import { syncCustomGroups } from '../shared/media.js';
 import { canEditSong, useLinkedSongs, withSongMedia } from '../shared/songs.js';
 import { auth, db } from './firebase';
 
@@ -137,9 +138,20 @@ export function useAccount(user) {
   const [profile, setProfile] = useState(null);
   const [config, setConfig] = useState({});
   useEffect(() => {
-    if (!user) return undefined;
+    if (!user) {
+      syncCustomGroups(null, null);
+      return undefined;
+    }
     const subs = [
-      onSnapshot(doc(db, 'users', user.uid), (s) => setProfile(s.data() || {}), () => setProfile({})),
+      onSnapshot(
+        doc(db, 'users', user.uid),
+        (s) => {
+          setProfile(s.data() || {});
+          // Gruppi Rehearsal added by this account, the same on every computer and tablet (shared/media.js).
+          if (s.exists()) syncCustomGroups(db, user.uid, s.data().rehearsalGroups);
+        },
+        () => setProfile({}),
+      ),
       onSnapshot(doc(db, 'config', 'app'), (s) => setConfig(s.data() || {}), () => setConfig({})),
     ];
     return () => subs.forEach((u) => u());

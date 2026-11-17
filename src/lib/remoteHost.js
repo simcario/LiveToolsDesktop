@@ -5,13 +5,13 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { isSeparator } from '../shared/setlists.js';
-import { groupLabel, INSTRUMENTS, rehearsalGroup } from '../shared/media.js';
+import { compareGroups, groupLabel, rehearsalGroup } from '../shared/media.js';
 import { engine, engineStatus, subscribeStatus } from './engine';
+import { prompterShare } from './cues';
 import { jumpToSection, sectionIndexAt, songBeats, songSections } from './sections';
 import { newRemoteCode, onRemoteMessage, useRemoteState } from './remote';
 
 const same = (a, b) => a != null && b != null && Math.abs(a - b) < 1e-3;
-const GROUP_ORDER = [...Object.keys(INSTRUMENTS), 'click', 'guide'];
 
 function groupsOf(tracks) {
   const by = new Map();
@@ -20,17 +20,17 @@ function groupsOf(tracks) {
     if (!by.has(g)) by.set(g, []);
     by.get(g).push(stem.id);
   });
-  const rank = (g) => (GROUP_ORDER.includes(g) ? GROUP_ORDER.indexOf(g) : GROUP_ORDER.length);
-  return [...by].sort((a, b) => rank(a[0]) - rank(b[0]));
+  return [...by].sort((a, b) => compareGroups(a[0], b[0]));
 }
 
 const publish = (key, value) => invoke('remote_publish', { key, value }).catch(() => {});
 
 /**
- * Mounted once in the main window of the desktop. `outputs`: { video, prompter } open now;
+ * Mounted once in the main window of the desktop. `prompter`: the Gobbo of the song in the
+ * player (usePrompterOutput), for the Leggio of the remote. `outputs`: { video, prompter } open now;
  * `toggleOutput(kind)` opens or closes the window.
  */
-export function useRemoteHost({ settings, update, setlist, setlists, items, player, outputs, toggleOutput, notify, user }) {
+export function useRemoteHost({ settings, update, setlist, setlists, items, player, prompter, outputs, toggleOutput, notify, user }) {
   const remote = useRemoteState();
   const opts = settings.remote;
   const on = !!opts.enabled;
@@ -128,6 +128,12 @@ export function useRemoteHost({ settings, update, setlist, setlists, items, play
       driveStage: !!settings.driveStage,
     });
   }, [hosting, settings.view, settings.page, outputs.video, outputs.prompter, settings.click.enabled, settings.click.eighths, settings.countIn, settings.autoAdvance, player.padOn, settings.followStage, settings.driveStage]);
+
+  // The Gobbo, for the Leggio of the remote: sent when the song or its slides change (the remote places it on the transport).
+  const share = JSON.stringify(prompterShare(prompter));
+  useEffect(() => {
+    if (hosting) publish('prompter', JSON.parse(share));
+  }, [hosting, share]);
 
   // The transport: on every change, on a jump and 4 times a second while playing (the remote moves the clock in between).
   useEffect(() => {
