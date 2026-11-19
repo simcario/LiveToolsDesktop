@@ -18,7 +18,8 @@ import { editDraft, isDirty, saveDraft, savedMessage, useDrafts } from './drafts
 import { recordStep } from './arrangeHistory';
 import { laneColor } from './lanes';
 import { getMix, outputOptions, parseRoute, routeValue, setMix, useMix, useSettings } from './settings';
-import { useEngineStatus } from './engine';
+import { engine, useEngineStatus } from './engine';
+import { clearStageMute, trackMuted } from './songMix';
 
 export const MIXER_WINDOW = 'mixer';
 
@@ -76,7 +77,7 @@ export function useMixer({ player, lanes, canEdit: canEditSetlist, setlistId, no
       // The channel section changes the sound (badge on the strip).
       channel: channelActive(stem),
       // The cue track has only the mute of the song (on after the mixdown).
-      mute: stem.live || canEdit ? !!stem.muted : (m.mute ?? !!stem.muted),
+      mute: trackMuted(stem, !canEdit),
       solo: !!player.solos[stem.id],
       route: m.route ? routeValue(m.route) : null,
       // Automations (R/W, as Cubase): the strip moves its fader and M with them while it plays.
@@ -190,10 +191,16 @@ export function useMixer({ player, lanes, canEdit: canEditSetlist, setlistId, no
         break;
       case 'mute':
         if (canEdit && stem && !stem.live && stem.id !== VIDEO_AUDIO_ID && writeMute(song, stem)) break;
-        if (stem?.live) {
-          if (canEdit) setStem(a.id, { muted: !stem.muted }, stem.muted ? 'Traccia cue riattivata' : 'Traccia cue mutata', false);
-        } else if (stem && canEdit) setStem(a.id, { muted: !stem.muted }, `${stem.muted ? 'Riattivata' : 'Mutata'} “${stem.name}”`, false);
-        else if (stem) local(stem, { mute: !(getMix(stem.id).mute ?? !!stem.muted) });
+        if (stem) {
+          // M here: the mute of the Palco on the track goes; only the song's (or this computer's) stays.
+          const on = !trackMuted(stem, !canEdit);
+          clearStageMute(stem);
+          if (stem.live && !canEdit) break;
+          if (canEdit && !!stem.muted === on) engine.setTrack(stem.id, { mute: on });
+          else if (stem.live) setStem(a.id, { muted: on }, on ? 'Traccia cue mutata' : 'Traccia cue riattivata', false);
+          else if (canEdit) setStem(a.id, { muted: on }, `${on ? 'Mutata' : 'Riattivata'} “${stem.name}”`, false);
+          else local(stem, { mute: on });
+        }
         break;
       case 'solo':
         if (stem && index.has(stem.id)) player.setTrack(stem, { solo: !player.solos[stem.id] });

@@ -5,6 +5,14 @@ versioni [SemVer](https://semver.org/lang/it/). Procedura di rilascio: [docs/REL
 
 ## [Non rilasciato]
 
+### Mute del Palco senza "Salva"
+- Il mute dei gruppi dal Palco, dalla barra *Rehearsal* e dal telecomando resta su questo computer (`stageMute` nel mix
+  locale, `lib/songMix.js` `trackMuted`/`setStageMute`/`clearStageMute`): non entra nella bozza del brano e non chiede
+  di salvare. Arrangement, Mixer e Palco mostrano lo stesso stato; **M** di una traccia nell'Arrangement o nel Mixer
+  toglie il mute del Palco da quella traccia e torna a quello del brano.
+
+## [0.1.27] — 2026-11-19
+
 ### Mute coerente tra Arrangement e Palco
 - Il nome di un gruppo nel mixer del Palco (e la barra *Rehearsal*) ora muta **tutte le tracce del gruppo**: è lo stesso
   mute di **M** nell'Arrangement e nel Mixer, salvato con il brano per chi può modificarlo, un solo passo di annulla

@@ -4,9 +4,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { emit, listen } from '@tauri-apps/api/event';
 import { convertFileSrc } from '@tauri-apps/api/core';
-import { audioFades, clickMixOf, clickMuteSpans, clickVolumeOf, cueTrackOf, fadeStop, groupLabel, isVideoItem, padHoldOf, padLeadOf, playedAutomation, regionsOf, rehearsalGroup, stemsOf, VIDEO_AUDIO_ID, videoAudioStem, videoFades, videoOf } from '../shared/media.js';
+import { audioFades, clickMixOf, clickMuteSpans, clickVolumeOf, cueTrackOf, fadeStop, isVideoItem, padHoldOf, padLeadOf, playedAutomation, regionsOf, rehearsalGroup, stemsOf, VIDEO_AUDIO_ID, videoAudioStem, videoFades, videoOf } from '../shared/media.js';
 import { tempoSections } from '../shared/tempoMap.js';
-import { writeMix } from './songMix';
+import { clearStageMute, setStageMute, trackMuted, writeMix } from './songMix';
 import { isSeparator } from '../shared/setlists.js';
 import { eqOf, inputOf } from '../shared/eq.js';
 import { dbToGain, engine, engineStatus, onSongEnded, onStretchProgress, subscribeStatus } from './engine';
@@ -34,9 +34,8 @@ const editableSong = (item, canEdit) => !!item && !!canEdit && item.songEditable
 // Mix context of a song: { local } (local = the track mutes of this computer).
 const mixOf = (song, canEdit) => ({ local: !editableSong(song, canEdit) });
 
-// The mute of a track: one state for the Arrangement, the Mixer and the Palco (where a group
-// mutes all its tracks). Saved with the song by who can edit it, else on this computer.
-const isMuted = (stem, local) => (stem.live || !local ? !!stem.muted : (getMix(stem.id).mute ?? !!stem.muted));
+// The mute of a track: one state for the Arrangement, the Mixer and the Palco (see songMix.js trackMuted).
+const isMuted = trackMuted;
 
 // Volume of a rehearsal group (Palco mixer), on this computer: added to that of each of its tracks.
 export const groupMixKey = (group) => `group:${group}`;
@@ -565,12 +564,17 @@ export function usePlayer({ user, setlist, items, settings, canDrive, canEdit, n
     const { solo, mute, ...persist } = patch;
     const { loaded: l, items: its, canEdit: ce } = ctx.current;
     const song = its.find((i) => i.id === l?.itemId);
-    if (mute !== undefined && !stem.live && editableSong(song, ce) && stemsOf(song).some((s) => s.id === stem.id)) {
-      // Into the draft: the mix effect above sends it to the engine.
-      writeMix(song, { stems: stemsOf(song).map((s) => (s.id === stem.id ? { ...s, muted: !!mute } : s)) }, `${mute ? 'Mutata' : 'Riattivata'} “${stem.name}”`);
+    // M of the track (Arrangement): the mute of the Palco on it goes, the song's (or this computer's) is set.
+    if (mute !== undefined) clearStageMute(stem);
+    const songStem = stemsOf(song).find((s) => s.id === stem.id);
+    if (mute !== undefined && !stem.live && editableSong(song, ce) && songStem) {
+      // Into the draft (the mix effect above sends it to the engine); already so in the song: only the engine.
+      if (!!songStem.muted !== !!mute) writeMix(song, { stems: stemsOf(song).map((s) => (s.id === stem.id ? { ...s, muted: !!mute } : s)) }, `${mute ? 'Mutata' : 'Riattivata'} “${stem.name}”`);
+      else engine.setTrack(stem.id, { mute: !!mute });
     } else if (mute !== undefined && stem.id === VIDEO_AUDIO_ID && editableSong(song, ce) && song.video) {
       // The sound of a video item: its mute is saved on the video.
-      writeMix(song, { video: { ...song.video, muted: !!mute } }, `${mute ? 'Mutato' : 'Riattivato'} l’audio del video`);
+      if (!!song.video.muted !== !!mute) writeMix(song, { video: { ...song.video, muted: !!mute } }, `${mute ? 'Mutato' : 'Riattivato'} l’audio del video`);
+      else engine.setTrack(stem.id, { mute: !!mute });
     } else if (mute !== undefined) persist.mute = mute;
     if (Object.keys(persist).length) setMix(stem.id, persist);
     if (solo !== undefined) setSolos((s) => ({ ...s, [stem.id]: solo }));
@@ -616,26 +620,13 @@ export function usePlayer({ user, setlist, items, settings, canDrive, canEdit, n
     return { muted: muted.length, total: stems.length, names: muted.map((s) => s.name) };
   };
 
-  // Mute of a group (Palco mixer, Rehearsal bar, telecomando) = the mute of all its tracks, in one undo step.
+  // Mute of a group (Palco mixer, Rehearsal bar, telecomando) = all its tracks, on this computer only:
+  // never into the song (no "Salva"), shown as well by the Arrangement and the Mixer.
   const setGroupMute = useCallback((group, mute) => {
-    const { loaded: l, items: its, canEdit: ce } = ctx.current;
-    const song = its.find((i) => i.id === l?.itemId);
     const stems = groupStems(group);
-    if (!stems.length) return;
-    const on = !!mute;
-    if (editableSong(song, ce)) {
-      const ids = new Set(stems.map((s) => s.id));
-      const media = {};
-      if (stemsOf(song).some((s) => ids.has(s.id))) media.stems = stemsOf(song).map((s) => (ids.has(s.id) ? { ...s, muted: on } : s));
-      if (ids.has(VIDEO_AUDIO_ID) && song.video) media.video = { ...song.video, muted: on };
-      if (stems.some((s) => s.live)) media.cueTrack = { ...(song.cueTrack || {}), muted: on };
-      // Into the draft: the mix effect above sends it to the engine.
-      writeMix(song, media, `${on ? 'Mutato' : 'Riattivato'} il gruppo “${groupLabel(group)}”`);
-      return;
-    }
     stems.forEach((stem) => {
-      setMix(stem.id, { mute: on });
-      engine.setTrack(stem.id, { mute: on });
+      setStageMute(stem, mute);
+      engine.setTrack(stem.id, { mute: !!mute });
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

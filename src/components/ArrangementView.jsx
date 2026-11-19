@@ -7,7 +7,8 @@ import { useOnsets } from '../lib/onsets';
 import { nearestBarIndex, sectionIndexAt } from '../lib/sections';
 import { useSections } from '../lib/useSections';
 import { gridOf } from '../lib/sync';
-import { getMix, useMix } from '../lib/settings';
+import { useMix } from '../lib/settings';
+import { trackMuted } from '../lib/songMix';
 import { toggleMixerWindow } from '../lib/useMixer';
 import Icon from './Icon';
 import { useOutputOpen } from '../lib/outputs';
@@ -720,7 +721,7 @@ function TrackHeader({ row, index, solos, onTrack, selected, onSelect, saved, au
     );
   }
   const { stem } = row;
-  const own = saved ? !!stem.muted : (getMix(stem.id).mute ?? !!stem.muted);
+  const own = trackMuted(stem, !saved);
   const mute = own || autoMuted;
   const rw = auto && !stem.live && stem.id !== VIDEO_AUDIO_ID;
   const can = rw && auto.canEdit;
@@ -962,7 +963,7 @@ export default function ArrangementView({ player, item, lanes, settings, update,
         local: t.local,
         duration: t.info?.duration,
         color: laneColor(lanes, t.stem),
-        muted: mixSaved ? !!t.stem.muted : (getMix(t.stem.id).mute ?? !!t.stem.muted),
+        muted: trackMuted(t.stem, !mixSaved),
         auto: t.stem.live ? [] : autoDrag?.stemId === t.stem.id ? autoDrag.points : automationOf(songStems.get(t.stem.id)),
         muteAuto: t.stem.live ? [] : muteDrag?.id === t.stem.id ? muteDrag.points : muteAutomationOf(songStems.get(t.stem.id)),
         read: t.stem.live || automationRead(songStems.get(t.stem.id)),

@@ -2,7 +2,8 @@ import { formatDuration, PLAYBACK_TYPES } from '../shared/setlists.js';
 import { compareGroups, formatBytes, groupLabel, rehearsalGroup, STEM_ROLES, stemsOf, videoOf } from '../shared/media.js';
 import { keyLabel } from '../shared/music.js';
 import { ensureItems, useMediaCache } from '../lib/mediaCache';
-import { getMix, useMix, useSettings } from '../lib/settings';
+import { useMix, useSettings } from '../lib/settings';
+import { trackMuted } from '../lib/songMix';
 import { laneColor, ROLE_COLORS } from '../lib/lanes';
 import Icon from './Icon';
 import SyncControl from './SyncControl';
@@ -58,7 +59,7 @@ export default function DetailView({ item, number, lanes, player, mixer, onVideo
   const sections = (item.sections || []).filter((s) => !s.gap && (s.label || s.bars));
   // Rehearsal: the groups of the loaded song; a touch mutes all their tracks (the same mute as the Arrangement and the Palco).
   const groups = isLoaded ? [...new Set(stems.map(rehearsalGroup))].filter(Boolean).sort(compareGroups) : [];
-  const stemMuted = (s) => (player.mixSaved || !isLoaded ? !!s.muted : (getMix(s.id).mute ?? !!s.muted));
+  const stemMuted = (s) => (isLoaded ? trackMuted(s, !player.mixSaved) : !!s.muted);
   const missing = [...stems, ...(video ? [video] : [])].some((m) => !cache[m.path]?.ready);
 
   return (
