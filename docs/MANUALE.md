@@ -156,7 +156,7 @@ chiude, si aggiorna e si riapre. Non aggiornare a ridosso di un concerto.
 | # | Area | Cosa contiene |
 |---|---|---|
 | 1 | **Trasporto** | ⏮ brano precedente, ⏪ torna all’inizio del brano (anche mentre suona, come **Home**), ▶ play, ■ stop (due volte = inizio), ⏭ brano successivo |
-| 2 | **Posizione** | battuta.movimento grande, pallini dei movimenti, tempo trascorso e durata |
+| 2 | **Posizione** | battuta.movimento grande, pallini dei movimenti (si accendono insieme al click che si sente, tenendo conto del ritardo della scheda audio), tempo trascorso e durata |
 | 3 | **Tempo** | BPM, metro e tonalità del brano caricato |
 | 4 | **Esecuzione** | count-in (*1·2*), click (C), click in ottavi (*×2*, Maiusc+C), auto-avanzamento (→) |
 | 5 | **Band** | *Segui palco*, *Guida* e il pulsante con le persone: chi della band è collegato (vedi 4.6) |
@@ -877,6 +877,11 @@ Il menu **Griglia** nell'Arrangement mostra traccia usata, BPM rilevato, posizio
 permette di scegliere un'altra traccia, usare i *Dati del brano*, spostare il "1" di un movimento (◀ 1 / 1 ▶)
 e correggere di ±5 ms.
 
+Dalla prossima versione, quando l'affidabilità è sotto il 50% (succede quasi solo senza traccia click: un mix
+senza batteria, un tempo che accelera o rallenta) al caricamento compare l'avviso *Griglia incerta* e il menu
+**Griglia** mostra *incerta: controllala*. Ascolta il click: se non cade a tempo, scegli un'altra traccia di
+riferimento o fissa la griglia a mano (**W**). Con gli ancoraggi a mano l'avviso non compare più.
+
 Dalla prossima versione, se l'audio comincia una battuta o più prima del "1" trovato (succede quando la traccia
 di riferimento entra dopo un intro, o con *Analisi da / a*), all'apertura nell'Arrangement la battuta 1 torna
 all'inizio dell'audio: la griglia resta a tempo con la musica e conta le battute dall'intro, invece di lasciarlo
@@ -942,6 +947,13 @@ Strumenti nella barra dell'Arrangement (tasti **1–6**):
 
 Altre azioni: **Ctrl+E** taglia la traccia selezionata alla testina, **Canc** elimina, **X** muta,
 **Ctrl+Z / Ctrl+Shift+Z** annulla / ripeti.
+
+**Più tracce insieme** (dalla prossima versione). Con *Selezione* o *Sposta*, **Ctrl+clic** su un nome di traccia o
+su un segmento lo aggiunge alla selezione (un altro Ctrl+clic lo toglie); **Maiusc+clic** seleziona tutte le tracce
+dall'ultima cliccata fino a quella (sulla stessa traccia, i segmenti in mezzo). Poi, con **Sposta** (tasto **2**),
+trascina uno dei segmenti selezionati: si muovono tutti della stessa quantità (una traccia selezionata per intero
+si sposta con tutti i suoi segmenti). È un solo passo di **Ctrl+Z**. Un clic senza tasti torna a una sola selezione.
+Taglia, Canc e X agiscono ancora sull'ultima cliccata.
 
 **Aggiungi → Battute…** inserisce battute vuote alla battuta della testina: sposta in avanti stem, cue,
 ancoraggi della griglia, cambi del gobbo e sezioni.

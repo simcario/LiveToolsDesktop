@@ -1,4 +1,4 @@
-import { autoSource, gridOf } from '../lib/sync';
+import { autoSource, gridOf, gridUnsure } from '../lib/sync';
 
 // Which stem the click/grid follows, what was found, and fine corrections.
 export default function SyncControl({ player, compact = false }) {
@@ -38,6 +38,11 @@ export default function SyncControl({ player, compact = false }) {
         </span>
       )}
       {sync.error && <span className="small sync-info err">{sync.error}</span>}
+      {gridUnsure(player.loadedItem, sync) && (
+        <span className="small sync-info err" title="Senza una traccia click la griglia viene dalla batteria o dal mix: con un tempo che si muove o un ritmo poco marcato può cadere fuori tempo. Controlla il click e, se serve, fissa la griglia a mano (W nell’Arrangement)">
+          incerta: controllala
+        </span>
+      )}
       {a && !manual && (
         <>
           <button className="toggle" onClick={() => set({ shiftBeats: (choice.shiftBeats || 0) - 1 })} title="Sposta il 1 di un movimento indietro">

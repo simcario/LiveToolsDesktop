@@ -166,6 +166,11 @@ pub struct Status {
     pub bar: i64,
     pub beat: u32,
     pub beats: u32,
+    /// The beat after this one: when (seconds), bar, beat, beats per bar.
+    pub next_beat: Option<(f64, i64, u32, u32)>,
+    /// Seconds the audio thread renders ahead of what is heard (position is the one heard):
+    /// what is scheduled (jumps) must fall after position + ahead.
+    pub ahead: f64,
     pub ended: bool,
     pub underruns: u32,
     /// The jump or loop waiting to happen.
@@ -207,7 +212,7 @@ impl Monitor {
     pub fn position(&self) -> f64 {
         let s = &self.shared;
         let sr = s.sample_rate.load(Ordering::Relaxed).max(1) as f64;
-        s.position.load(Ordering::Relaxed) as f64 / sr * *self.rate.read()
+        s.heard() as f64 / sr * *self.rate.read()
     }
 
     /// Spectrum of loaded track `track` (post EQ, before the fader) for the graph of
@@ -235,8 +240,12 @@ impl Monitor {
         let s = &self.shared;
         let sr = s.sample_rate.load(Ordering::Relaxed).max(1) as f64;
         let rate = *self.rate.read();
-        let position = s.position.load(Ordering::Relaxed) as f64 / sr * rate;
-        let (bar, beat, beats) = self.tempo.read().as_ref().map_or((1, 1, 4), |t| t.position(position));
+        let position = s.heard() as f64 / sr * rate;
+        let ahead = (s.position.load(Ordering::Relaxed) as f64 / sr * rate - position).max(0.0);
+        let tempo = self.tempo.read();
+        let (bar, beat, beats) = tempo.as_ref().map_or((1, 1, 4), |t| t.position(position));
+        let next_beat = tempo.as_ref().map(|t| t.next_beat(position));
+        drop(tempo);
         let channels = s.channels.load(Ordering::Relaxed) as usize;
         let song = self.song.read().clone();
         Status {
@@ -248,6 +257,8 @@ impl Monitor {
             bar,
             beat,
             beats,
+            next_beat,
+            ahead,
             ended: s.ended.swap(false, Ordering::Relaxed),
             underruns: s.underruns.load(Ordering::Relaxed),
             jump: *self.jump.read(),

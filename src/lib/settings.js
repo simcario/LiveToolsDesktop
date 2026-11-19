@@ -10,6 +10,7 @@ const MIX_KEY = 'livetools-desktop:mix';
 export const DEFAULT_SETTINGS = {
   audioDevice: null,
   bufferSize: null,
+  lowLatency: true, // Android (mobile): low latency mode of the output (vendor/cpal), Impostazioni › Audio
   audioWatch: true, // interfaces plugged in and out: notice and automatic switch (audio/watch.rs)
   outputs: {
     main: { start: 0, mode: 'stereo' },

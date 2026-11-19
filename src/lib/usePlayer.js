@@ -17,7 +17,7 @@ import { liveCueLocal, liveCuePlan, makeLiveCues } from './cueTrack';
 import { ensureFile, missingFiles, requestPeaks } from './mediaCache';
 import { clickVoice, getMix, setMix } from './settings';
 import { GRID_KEY } from './arrange';
-import { analyze, getSyncChoice, rangeKey, resolveSource, setSyncChoice, syncSpec } from './sync';
+import { analyze, getSyncChoice, gridUnsure, rangeKey, resolveSource, setSyncChoice, syncSpec } from './sync';
 import { beatMapOf, publishBeatMap } from './beatMap';
 import { midiTargeted, sendSongMidi } from './midi';
 import { isLinked, keepsPitch, keyPitch, playedKey, songChange, transitionOf, transitionPlan } from './songChange';
@@ -149,6 +149,10 @@ const refRegions = (item, sync) => {
   const kept = all[GRID_KEY];
   return kept?.stemId === sync.source.id ? kept.regions : all[sync.source.id] || null;
 };
+
+// The automatic grid is doubtful: where it comes from and what to do.
+const unsureText = (item, sync) =>
+  `Griglia di “${item.title}” incerta (${Math.round(sync.analysis.confidence * 100)}%, da “${sync.source?.name}”): il click potrebbe non cadere a tempo. Controllala nell’Arrangement e fissala a mano se serve`;
 
 // lanLive: the song on stage from the local network (lib/stageNet.js), ahead of setlist.live while connected.
 export function usePlayer({ user, setlist, items, settings, canDrive, canEdit, notify, lanLive = null }) {
@@ -284,6 +288,7 @@ export function usePlayer({ user, setlist, items, settings, canDrive, canEdit, n
       if (state.sync.error) notify(`Griglia non allineata: ${state.sync.error}`, true);
       requestPeaks(state.tracks.map((a) => a.local));
       if (missing) notify(`${missing} tracce di “${item.title}” non disponibili (offline o non scaricate)`, true);
+      else if (!state.sync.error && gridUnsure(item, state.sync)) notify(unsureText(item, state.sync), true);
       else if (!state.sync.error) notify(null);
       // Patch changes of the song for the keyboards (Impostazioni › MIDI), once per song: the same
       // song loaded again (key, tempo or cues changed) does not reset the sounds while it plays.
@@ -332,6 +337,7 @@ export function usePlayer({ user, setlist, items, settings, canDrive, canEdit, n
         sync = await analyzeSource(item, l.tracks, choice, setBusy);
         setBusy(null);
         if (sync.error) notify(`Griglia non allineata: ${sync.error}`, true);
+        else if (gridUnsure(item, sync)) notify(unsureText(item, sync), true);
       }
       const tempo = await engine.setSync(syncSpec(item, sync.analysis, choice, refRegions(item, sync)));
       setLoaded((cur) => (cur?.itemId === item.id ? { ...cur, tempo: tempo || cur.tempo, sync } : cur));

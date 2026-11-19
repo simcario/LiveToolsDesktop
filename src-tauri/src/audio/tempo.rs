@@ -435,6 +435,20 @@ impl TempoMap {
         (s.first_bar + k / beats, (k % beats) as u32 + 1, s.beats)
     }
 
+    /// Time of the first beat after t, with its bar, beat and beats per bar: the leds of
+    /// the metronome change on it at display rate, between two status updates.
+    pub fn next_beat(&self, t: f64) -> (f64, i64, u32, u32) {
+        let s = self.segment_at(t);
+        let k = ((t - s.start) / s.beat + 1e-9).floor().max(-1.0);
+        let mut at = s.start + (k + 1.0) * s.beat;
+        // The next segment starts before that beat: its first beat comes first.
+        if let Some(n) = self.segments.iter().find(|n| n.start > t + 1e-9 && n.start < at - 1e-9) {
+            at = n.start;
+        }
+        let (bar, beat, beats) = self.position(at);
+        (at, bar, beat, beats)
+    }
+
     /// Sample-accurate view of the map for the audio thread.
     #[cfg(test)]
     pub fn frames(&self, sample_rate: u32) -> TempoFrames {

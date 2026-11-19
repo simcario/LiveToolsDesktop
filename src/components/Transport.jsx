@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { changeTempo } from '../lib/arrange';
-import { formatTime, useEngineStatus } from '../lib/engine';
+import { formatTime, useBeatDisplay, useEngineStatus } from '../lib/engine';
 import { downloadProgress, useMediaCache } from '../lib/mediaCache';
 import { keyLabel } from '../shared/music.js';
 import { TIME_SIGNATURES } from '../shared/setlists.js';
@@ -15,20 +15,16 @@ import BandPanel from './BandPanel';
 const peersText = (peers) => peers.map((p) => `${p.name}${p.part ? ` (${p.part})` : ''} · ${rttText(p.rtt)}`).join('\n');
 
 function Lcd() {
-  const bar = useEngineStatus((s) => s.bar);
-  const beat = useEngineStatus((s) => s.beat);
-  const beats = useEngineStatus((s) => s.beats);
+  // bar.beat and the leds are written by useBeatDisplay in the frame of the beat.
+  const { beats, leds, text } = useBeatDisplay();
   const pos = useEngineStatus((s) => Math.round(s.position * 10) / 10);
   const dur = useEngineStatus((s) => s.duration);
-  const playing = useEngineStatus((s) => s.playing);
   return (
     <div className="lcd" title="Posizione (battuta.movimento) e tempo">
-      <span className={`lcd-bars ${bar < 0 ? 'is-count' : ''}`}>
-        {bar}.{beat}
-      </span>
-      <span className="beat-leds" aria-hidden="true">
+      <span className="lcd-bars" ref={text} />
+      <span className="beat-leds" aria-hidden="true" ref={leds}>
         {Array.from({ length: Math.min(beats, 12) }, (_, i) => (
-          <i key={i} className={`${playing && i + 1 === beat ? 'on' : ''} ${i === 0 ? 'first' : ''}`} />
+          <i key={i} className={i === 0 ? 'first' : undefined} />
         ))}
       </span>
       <span className="lcd-time">

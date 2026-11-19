@@ -3,7 +3,7 @@ import { formatDuration, formatEventDate, isSeparator, PLAYBACK_TYPES } from '..
 import { audioApart, compareGroups, groupLabel, isVideoItem, PAD_FADE_MAX, PAD_HOLD_MAX, PAD_LEAD_MAX, padHoldOf, padLeadOf, regionsOf, rehearsalGroup, VIDEO_FADE_MAX, videoFades } from '../shared/media.js';
 import { groupMixKey } from '../lib/usePlayer';
 import { keyLabel } from '../shared/music.js';
-import { animateWhilePlaying, engine, engineStatus, livePosition, useEngineStatus } from '../lib/engine';
+import { animateWhilePlaying, engine, engineStatus, livePosition, useBeatDisplay, useEngineStatus } from '../lib/engine';
 import { laneColor } from '../lib/lanes';
 import { downloadProgress, ensureItems, itemCacheState, mediaOf, useMediaCache, usePeaks } from '../lib/mediaCache';
 import { GRID_RESOLUTIONS, gridLines, jumpTime, jumpToSection, JUMP_QUANTS, nearestBarIndex, nearestLine, SECTION_NAMES, sectionIndexAt } from '../lib/sections';
@@ -42,30 +42,26 @@ function useJump() {
 
 // The leds of the beats: under bar.beat on the desktop; on the tablet in the box of the
 // time signature (stage.css shows one of the two), to leave room on the top bar.
+// Written by useBeatDisplay in the frame of the beat (a React render lit them a frame late).
 function Leds() {
-  const beat = useEngineStatus((s) => s.beat);
-  const beats = useEngineStatus((s) => s.beats);
-  const playing = useEngineStatus((s) => s.playing);
+  const { beats, leds } = useBeatDisplay();
   return (
-    <span className="st-leds" aria-hidden="true">
+    <span className="st-leds" aria-hidden="true" ref={leds}>
       {Array.from({ length: Math.min(beats, 12) }, (_, i) => (
-        <i key={i} className={`${playing && i + 1 === beat ? 'on' : ''} ${i === 0 ? 'first' : ''}`} />
+        <i key={i} className={i === 0 ? 'first' : undefined} />
       ))}
     </span>
   );
 }
 
 function Clock({ duration }) {
-  const bar = useEngineStatus((s) => s.bar);
-  const beat = useEngineStatus((s) => s.beat);
+  const { text } = useBeatDisplay();
   const total = useEngineStatus((s) => s.duration) || duration || 0;
   const pos = useEngineStatus((s) => Math.floor(Math.max(0, s.position)));
   return (
     <div className="st-lcd st-clock">
       <div className="st-lcd-cell">
-        <span className={`st-bars ${bar < 0 ? 'is-count' : ''}`}>
-          {bar}.{beat}
-        </span>
+        <span className="st-bars" ref={text} />
         <Leds />
       </div>
       <div className="st-lcd-cell st-time" title="Tempo trascorso e rimanente">
@@ -1509,7 +1505,7 @@ export default function StageView({
     if (st.playing && st.position >= 0) {
       const to = nearestLine(gridLines(beats, res === 'beat' ? '1' : res), t);
       engine.scheduleJump({
-        at: jumpTime(settings.jumpQuant === 'beat' ? 'beat' : 'bar', st.position, beats, sections),
+        at: jumpTime(settings.jumpQuant === 'beat' ? 'beat' : 'bar', st.position + (st.ahead || 0), beats, sections),
         to,
         repeat: false,
       });

@@ -316,6 +316,10 @@ export function segmentIndexAt(regions, t, fileSeconds) {
 export const moveSegment = (regions, index, delta) =>
   regions.map((g, i) => (i === index ? { ...g, at: Math.round((g.at + delta) * 1e4) / 1e4 } : g));
 
+/** Several segments of one track moved together (a multiple selection). */
+export const moveSegments = (regions, indices, delta) =>
+  regions.map((g, i) => (indices.includes(i) ? { ...g, at: Math.round((g.at + delta) * 1e4) / 1e4 } : g));
+
 /** A track whose segments were all deleted plays nothing (not the whole file). */
 export const removeSegment = (regions, index) => {
   const next = regions.filter((_, i) => i !== index);

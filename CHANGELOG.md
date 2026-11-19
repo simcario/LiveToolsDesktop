@@ -5,6 +5,36 @@ versioni [SemVer](https://semver.org/lang/it/). Procedura di rilascio: [docs/REL
 
 ## [Non rilasciato]
 
+### Più tracce selezionate e spostate insieme
+- **Arrangement**: Ctrl+clic (nome della traccia o segmento) aggiunge o toglie dalla selezione, Maiusc+clic seleziona
+  le tracce dall'ultima cliccata (o i segmenti in mezzo sulla stessa traccia). Con *Sposta* trascinando un segmento
+  selezionato si muove tutta la selezione, un solo passo di annulla (`selectedToo`, `commitManyRegions`,
+  `moveSegments` in `lib/arrange.js`).
+
+### Avviso di griglia incerta
+- Se l'analisi della griglia ha un'affidabilità sotto il 50% (brani senza traccia click: mix senza batteria, tempo
+  che si muove) al caricamento compare *Griglia incerta* e il menu Griglia mostra *incerta: controllala*
+  (`gridUnsure` in `lib/sync.js`). Le tracce click non sono toccate: lì i colpi sono trovati uno per uno.
+
+### Pallini del metronomo nel fotogramma del battito
+- Pallini e battuta.movimento (Trasporto e Palco) sono scritti direttamente nel fotogramma in cui cade il
+  battito (`useBeatDisplay` in `lib/engine.js`): con un render React si accendevano un fotogramma dopo
+  (misurato sul tablet: 28 ms dopo il click, ora in media 1,5 ms).
+- Android: l'uscita si apre a 48 kHz, la frequenza nativa dei dispositivi: a 44,1 kHz Android rifiutava il
+  percorso veloce e il suono usciva con circa 200 ms di ritardo (`best_config` in `audio/device.rs`).
+
+### Cursori del mixer al tocco
+- Su schermo touch il cursore (`Fader.jsx`) si muove solo trascinando il cappuccio (`.fader-grip`), in modo
+  relativo; uno swipe sulla fessura scorre il mixer invece di spostare il cursore. Con il mouse nulla cambia.
+
+### Pallini del metronomo, testina e griglia a tempo con il click
+- I **pallini dei movimenti**, battuta.movimento, la **testina** e il passaggio sulle **linee della griglia** (Palco e
+  Arrangement) seguono il suono che esce dalle casse: prima andavano avanti della latenza della scheda audio e
+  scattavano a ogni aggiornamento (30 al secondo, in ritardo variabile). Il motore manda la posizione udita
+  (`Shared::heard`, latenza da `OutputCallbackInfo`, su Android due buffer), il prossimo battito (`nextBeat`) e
+  quanto è avanti il rendering (`ahead`, usato per programmare i salti); in JS `livePosition` è un orologio
+  liscio agganciato agli aggiornamenti arrivati prima, `useLiveBeat` cambia i pallini nel fotogramma giusto.
+
 ### Torna all'inizio e barra di scorrimento dell'Arrangement
 - **Arrangement**: pulsante **⏮ Inizio** (gruppo *Inizio*, sempre in barra): testina e vista all'inizio del brano,
   anche a brano in corso, come **Home**. Imparabile da un controller MIDI (`arrangement.start`).

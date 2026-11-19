@@ -16,7 +16,7 @@ import SyncControl from './SyncControl';
 import { CueHeader, cueCellAt, drawCueLane, useCueTrack, useNowCue } from './CueLane';
 import { CuePicker } from './CuePicker';
 import InsertBarsModal from './InsertBarsModal';
-import { closeLeadingGap, leadToAudio, cutAt, keepGrid, moveSegment, removeSegment, segmentEnd, segmentIndexAt, snapToBeat, stemRegions, toggleSegmentMute, trimSegment } from '../lib/arrange';
+import { closeLeadingGap, leadToAudio, cutAt, keepGrid, moveSegment, moveSegments, removeSegment, segmentEnd, segmentIndexAt, snapToBeat, stemRegions, toggleSegmentMute, trimSegment } from '../lib/arrange';
 import { clearHistory, recordStep, travel, useHistory } from '../lib/arrangeHistory';
 import { discardDraft, editDraft, saveDraft, savedMessage, useDrafts, usePendingSaves } from '../lib/drafts';
 import { AUTO_MAX_DB, AUTO_MIN_DB, automationDb, automationMutedAt, automationOf, automationRead, muteAutomationOf, muteSpans, regionsOf, stemsOf, VIDEO_AUDIO_ID, clickAutoOf, videoOf } from '../shared/media.js';
@@ -212,10 +212,11 @@ function draw(canvas, { width, height, scroll, pps, t0, tempo, rows, peaks, dura
       ctx.fillStyle = color;
       ctx.fillRect(cx, y + 3, cw, 14);
       // Segment being dragged (amber) or selected (white); a selected track without a segment is outlined faintly.
-      const outline = r.dragIndex === pi ? '#fbbf24' : r.selected === pi ? '#f8fafc' : r.selected === -1 ? 'rgba(248,250,252,0.35)' : null;
+      const picked = !!r.picked?.includes(pi);
+      const outline = r.dragIndex === pi || r.dragging?.includes(pi) ? '#fbbf24' : picked ? '#f8fafc' : r.whole ? 'rgba(248,250,252,0.35)' : null;
       if (outline) {
         ctx.strokeStyle = outline;
-        ctx.lineWidth = r.selected === pi ? 2 : 1;
+        ctx.lineWidth = picked ? 2 : 1;
         ctx.strokeRect(cx + 1, y + 4, cw - 2, LANE_H - 8);
         ctx.lineWidth = 1;
       }
@@ -724,7 +725,7 @@ function TrackHeader({ row, index, solos, onTrack, selected, onSelect, saved, au
   const rw = auto && !stem.live && stem.id !== VIDEO_AUDIO_ID;
   const can = rw && auto.canEdit;
   return (
-    <div className={`t-header ${selected ? 'is-selected' : ''}`} style={{ '--lane-color': row.color }} onMouseDown={onSelect} onContextMenu={onMenu} title="Clic: seleziona la traccia (Ctrl+E taglia nel punto del cursore)">
+    <div className={`t-header ${selected ? 'is-selected' : ''}`} style={{ '--lane-color': row.color }} onMouseDown={onSelect} onContextMenu={onMenu} title="Clic: seleziona la traccia · Ctrl+clic aggiunge o toglie, Maiusc+clic seleziona fino a qui (Ctrl+E taglia nel punto del cursore)">
       <span className="t-color" />
       <span className="t-name" title={stem.file}>
         {stem.name}
@@ -811,8 +812,15 @@ export default function ArrangementView({ player, item, lanes, settings, update,
   const [cueMove, setCueMove] = useState(null); // { from, to }: one cue dragged to another square
   const [addOpen, setAddOpen] = useState(false);
   const [barsOpen, setBarsOpen] = useState(false); // "Aggiungi → Battute" dialog
-  const [clipDrag, setClipDrag] = useState(null); // { stemId, index, delta } moving a segment, { stemId, index, edge, t } trimming it
-  const [selection, setSelection] = useState(null); // { stemId, index: segment or null }
+  const [clipDrag, setClipDrag] = useState(null); // { stemId, index, delta } moving a segment, { stemId, index, edge, t } trimming it, { moves, delta } moving the selection
+  // Selection: the last one clicked ({ stemId, index: segment or null = the whole track}) and the others
+  // taken with Ctrl / Shift (same shape). A plain setSelection drops the others.
+  const [selection, setSelectionOnly] = useState(null);
+  const [selectedToo, setSelectedToo] = useState([]);
+  const setSelection = (s) => {
+    setSelectionOnly(s);
+    setSelectedToo([]);
+  };
   const [prompterDrag, setPrompterDrag] = useState(null); // seconds the gobbo is moved by while dragging
   const [autoDrag, setAutoDrag] = useState(null); // { stemId, points } of the automation being edited (stemId CLICK_ID = the click)
   const [muteDrag, setMuteDrag] = useState(null); // { id, points } of the mute automation whose edge is dragged
@@ -889,6 +897,46 @@ export default function ArrangementView({ player, item, lanes, settings, update,
     }
   };
 
+  // Everything selected, the last one clicked first.
+  const allSelected = selection ? [selection, ...selectedToo] : selectedToo;
+  const sameItem = (a, b) => a.stemId === b.stemId && (a.index ?? null) === (b.index ?? null);
+  // The segment is in the selection (by itself or with its whole track).
+  const isSelected = (stemId, index) => allSelected.some((p) => p.stemId === stemId && (p.index == null || p.index === index));
+  // Ctrl+click: adds it to the selection or takes it out. Shift+click: everything from the
+  // last one clicked to here, the segments in between on the same track, else the tracks.
+  const pickMore = (e, item) => {
+    if (e.shiftKey && selection) {
+      if (selection.stemId === item.stemId && selection.index != null && item.index != null) {
+        const [a, b] = [selection.index, item.index].sort((x, y) => x - y);
+        setSelectedToo(Array.from({ length: b - a + 1 }, (_, k) => ({ stemId: item.stemId, index: a + k })).filter((p) => p.index !== selection.index));
+        return;
+      }
+      const ids = rows.filter((r) => r.kind === 'audio' && !r.stem.live).map((r) => r.stem.id);
+      const [a, b] = [ids.indexOf(selection.stemId), ids.indexOf(item.stemId)].sort((x, y) => x - y);
+      if (a < 0) return;
+      setSelectionOnly({ stemId: selection.stemId, index: null });
+      setSelectedToo(ids.slice(a, b + 1).filter((id) => id !== selection.stemId).map((stemId) => ({ stemId, index: null })));
+      return;
+    }
+    if (allSelected.some((p) => sameItem(p, item))) {
+      const rest = allSelected.filter((p) => !sameItem(p, item));
+      setSelectionOnly(rest[0] || null);
+      setSelectedToo(rest.slice(1));
+      return;
+    }
+    setSelectionOnly(item);
+    setSelectedToo(allSelected);
+  };
+  // Segments each selected track moves by: all of them for a whole track.
+  const selectionMoves = () => {
+    const moves = {};
+    allSelected.forEach((p) => {
+      const all = stemRegions(song, p.stemId).map((_, i) => i);
+      moves[p.stemId] = [...new Set([...(moves[p.stemId] || []), ...(p.index == null ? all : [p.index])])];
+    });
+    return moves;
+  };
+
   const rows = [];
   if (loaded?.video)
     rows.push({
@@ -922,13 +970,18 @@ export default function ArrangementView({ player, item, lanes, settings, update,
         write: !!writing[t.stem.id],
         regions: t.stem.live
           ? stemRegions(null, '')
-          : clipDrag?.stemId === t.stem.id
+          : clipDrag?.moves?.[t.stem.id]
+            ? moveSegments(stemRegions(song, t.stem.id), clipDrag.moves[t.stem.id], clipDrag.delta)
+            : clipDrag?.stemId === t.stem.id
             ? clipDrag.edge
               ? trimSegment(stemRegions(song, t.stem.id), clipDrag.index, clipDrag.edge, clipDrag.t, t.info?.duration || duration)
               : moveSegment(stemRegions(song, t.stem.id), clipDrag.index, clipDrag.delta)
             : stemRegions(song, t.stem.id),
         dragIndex: clipDrag?.stemId === t.stem.id ? clipDrag.index : -1,
-        selected: selection?.stemId === t.stem.id ? (selection.index ?? -1) : null,
+        dragging: clipDrag?.moves?.[t.stem.id] || null,
+        // Selected as a whole track, and its segments selected one by one.
+        whole: !t.stem.live && allSelected.some((p) => p.stemId === t.stem.id && p.index == null),
+        picked: t.stem.live ? [] : allSelected.filter((p) => p.stemId === t.stem.id && p.index != null).map((p) => p.index),
       }),
   );
   if (loaded && cue.exists) rows.push({ kind: 'cue' });
@@ -1134,9 +1187,12 @@ export default function ArrangementView({ player, item, lanes, settings, update,
 
   // New regions of one track: into the song's draft, undoable, heard at once.
   // The grid stays where it is even when the edited track is its reference.
-  const commitRegions = (stem, regions, label) => {
-    let all = { ...regionsOf(song), [stem.id]: regions };
-    if (stem.id === loaded?.sync?.source?.id) all = keepGrid(all, stemRegions(song, stem.id), stem.id);
+  const commitRegions = (stem, regions, label) => commitManyRegions({ [stem.id]: regions }, label);
+  // Several tracks at once (a multiple selection moved): one step of undo.
+  const commitManyRegions = (changes, label) => {
+    let all = { ...regionsOf(song), ...changes };
+    const ref = loaded?.sync?.source?.id;
+    if (ref && changes[ref]) all = keepGrid(all, stemRegions(song, ref), ref);
     const closed = closeLeadingGap(song, all, tempo?.origin);
     if (closed) {
       writeClosedGap(closed, label);
@@ -1145,7 +1201,7 @@ export default function ArrangementView({ player, item, lanes, settings, update,
     }
     editDraft(song.id, { media: { regions: all } });
     recordStep(song.id, { label, before: { media: { regions: song.regions ?? null }, item: {} }, after: { media: { regions: all }, item: {} } });
-    player.applyRegions({ ...song, regions: all }, { [stem.id]: regions });
+    player.applyRegions({ ...song, regions: all }, changes);
     notify(label);
   };
 
@@ -1747,6 +1803,12 @@ export default function ArrangementView({ player, item, lanes, settings, update,
       el.addEventListener('pointercancel', up);
       return;
     }
+    // Ctrl / Shift + click (arrow or hand): more tracks or segments in the selection.
+    if (!warpOn && (e.ctrlKey || e.metaKey || e.shiftKey) && row?.kind === 'audio' && !row.stem.live && (tool === 'select' || tool === 'move')) {
+      const i = segmentAt(row, t);
+      pickMore(e, { stemId: row.stem.id, index: i >= 0 ? i : null });
+      return;
+    }
     // Start or end of a segment (arrow): drag to trim it, the audio stays where it is.
     const trim = !warpOn && trimmable(row) ? edgeAt(row, t) : null;
     if (trim) {
@@ -1781,7 +1843,9 @@ export default function ArrangementView({ player, item, lanes, settings, update,
     const index = row?.kind === 'audio' && !row.stem.live ? segmentAt(row, t) : -1;
     if (index >= 0 && !warpOn) {
       const stem = row.stem;
-      setSelection({ stemId: stem.id, index });
+      // Grabbed inside a multiple selection: the hand moves all of it.
+      const group = tool === 'move' && allSelected.length > 1 && isSelected(stem.id, index);
+      if (!group) setSelection({ stemId: stem.id, index });
       if (tool === 'select') return;
       if (!canEditSong) {
         notify('Solo chi può modificare il brano può spostare, tagliare o mutare le tracce', true);
@@ -1812,12 +1876,13 @@ export default function ArrangementView({ player, item, lanes, settings, update,
       el.setPointerCapture(e.pointerId);
       const x0 = e.clientX;
       const piece = row.regions[index];
+      const moves = group ? selectionMoves() : null;
       let delta = null;
       const move = (ev) => {
         if (delta == null && Math.abs(ev.clientX - x0) < 3) return;
         const raw = (ev.clientX - x0) / pps;
         delta = snap !== ev.shiftKey && tempo ? snapToBeat(tempo, piece.at + raw) - piece.at : raw;
-        setClipDrag({ stemId: stem.id, index, delta });
+        setClipDrag(moves ? { moves, delta } : { stemId: stem.id, index, delta });
       };
       const up = () => {
         el.removeEventListener('pointermove', move);
@@ -1825,6 +1890,14 @@ export default function ArrangementView({ player, item, lanes, settings, update,
         setClipDrag(null);
         if (delta == null || Math.abs(delta) < 1e-4) return;
         const ms = Math.round(delta * 1000);
+        if (moves) {
+          const ids = Object.keys(moves);
+          commitManyRegions(
+            Object.fromEntries(ids.map((id) => [id, moveSegments(stemRegions(song, id), moves[id], delta)])),
+            `Spostate ${ids.length === 1 ? 'più parti di una traccia' : `${ids.length} tracce`} (${ms > 0 ? '+' : ''}${ms} ms)`,
+          );
+          return;
+        }
         commitRegions(stem, moveSegment(stemRegions(song, stem.id), index, delta), `Spostato un segmento di “${stem.name}” (${ms > 0 ? '+' : ''}${ms} ms)`);
       };
       el.addEventListener('pointermove', move);
@@ -2511,8 +2584,15 @@ export default function ArrangementView({ player, item, lanes, settings, update,
                 saved={mixSaved}
                 onMenu={(e) => headerMenu(e, r)}
                 auto={song ? { song, canEdit: canEditSong } : null}
-                selected={r.kind === 'audio' && selection?.stemId === r.stem.id}
-                onSelect={r.kind === 'audio' && !r.stem.live ? () => setSelection((s) => (s?.stemId === r.stem.id ? s : { stemId: r.stem.id, index: null })) : undefined}
+                selected={r.kind === 'audio' && allSelected.some((p) => p.stemId === r.stem.id)}
+                onSelect={
+                  r.kind === 'audio' && !r.stem.live
+                    ? (e) => {
+                        if (e.ctrlKey || e.metaKey || e.shiftKey) pickMore(e, { stemId: r.stem.id, index: null });
+                        else if (!(allSelected.length > 1 && isSelected(r.stem.id, null))) setSelection((s) => (s?.stemId === r.stem.id ? s : { stemId: r.stem.id, index: null }));
+                      }
+                    : undefined
+                }
               />
             ),
           )}

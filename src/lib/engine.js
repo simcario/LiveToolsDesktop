@@ -1,6 +1,6 @@
 // Bridge to the Rust audio engine: commands, and the status it emits ~30
 // times per second (shared by every window, also the video output).
-import { useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
@@ -90,10 +90,98 @@ export function onSongEnded(f) {
 
 export const engineStatus = () => status;
 
-// Smooth playhead between two status updates (for requestAnimationFrame).
+// Playhead heard, at display rate (for requestAnimationFrame). The engine sends the position
+// coming out of the speakers ~30 times per second; each status reaches the page a little late,
+// by a different amount each time (the main thread is busy, above all on a tablet). Starting
+// again from each status made the playhead and the leds shake around the click: here a clock
+// runs at the speed of the song, kept on the status that arrive the soonest (a status late can
+// only be behind), and it slowly follows the clock of the interface.
+let clock = null; // { off: position - now × rate, rate, songId }
+let shownAt = -Infinity;
+
+const tick = () => {
+  const s = status;
+  if (!s.playing || s.waiting) {
+    clock = null;
+    return;
+  }
+  const rate = s.rate || 1;
+  const off = s.position - (receivedAt / 1000) * rate;
+  if (!clock || clock.rate !== rate || clock.songId !== s.songId || Math.abs(off - clock.off) > 0.08) {
+    clock = { off, rate, songId: s.songId };
+    shownAt = -Infinity;
+  } else if (off > clock.off) clock.off += (off - clock.off) * 0.5;
+  else clock.off += (off - clock.off) * 0.03;
+};
+listeners.add(tick);
+
+// Development only: what the engine sends and the playhead drawn, read over the devtools.
+if (import.meta.env.DEV) window.__engine = { status: () => status, receivedAt: () => receivedAt, live: () => livePosition(), beat: () => liveBeat() };
+
 export function livePosition() {
-  if (!status.playing || status.waiting) return status.position;
-  return status.position + Math.min(0.1, (performance.now() - receivedAt) / 1000) * (status.rate || 1);
+  if (!status.playing || status.waiting || !clock) return status.position;
+  // Never backwards while it plays (a correction of the clock is spread over the frames).
+  const t = Math.max(shownAt, (performance.now() / 1000) * clock.rate + clock.off);
+  shownAt = t;
+  return t;
+}
+
+// Bar, beat and beats per bar heard now (leds of the metronome), at display rate: the beat
+// after the one in the status comes with it (nextBeat), without waiting for the next status.
+// aheadMs: looks that much ahead (the frame being drawn shows a little later).
+export function liveBeat(aheadMs = 0) {
+  const s = status;
+  const n = s.nextBeat;
+  if (s.playing && !s.waiting && n && livePosition() + (aheadMs / 1000) * (s.rate || 1) >= n[0]) return { bar: n[1], beat: n[2], beats: n[3] };
+  return { bar: s.bar, beat: s.beat, beats: s.beats };
+}
+
+// The leds of the metronome and bar.beat, written straight into the DOM in the frame where the
+// beat falls: through a React render they lit a frame later (~28 ms behind the click on a tablet).
+// Returns refs for the box of the leds (its <i>, one per beat) and for the text bar.beat; React
+// only renders when the beats per bar change. The text gets is-count during the count-in.
+export function useBeatDisplay() {
+  const leds = useRef(null);
+  const text = useRef(null);
+  const [beats, setBeats] = useState(() => liveBeat().beats);
+  useEffect(() => {
+    let key = '';
+    const anim = animateWhilePlaying(() => {
+      // Half a frame ahead: the frame being drawn reaches the screen about then.
+      const v = liveBeat(8);
+      const on = status.playing ? v.beat : 0;
+      const k = `${v.bar}.${v.beat}/${v.beats}/${on}`;
+      if (k === key) return;
+      key = k;
+      if (v.beats !== beats) setBeats(v.beats);
+      if (text.current) {
+        text.current.textContent = `${v.bar}.${v.beat}`;
+        text.current.classList.toggle('is-count', v.bar < 0);
+      }
+      const items = leds.current?.children || [];
+      for (let i = 0; i < items.length; i += 1) items[i].classList.toggle('on', i + 1 === on);
+    });
+    return anim.stop;
+  }, [beats]);
+  return { beats, leds, text };
+}
+
+// The leds of the metronome and bar.beat: a render only when the beat changes.
+export function useLiveBeat() {
+  const [b, setB] = useState(() => liveBeat());
+  useEffect(() => {
+    let key = '';
+    const anim = animateWhilePlaying(() => {
+      const v = liveBeat();
+      const k = `${v.bar}.${v.beat}/${v.beats}`;
+      if (k !== key) {
+        key = k;
+        setB(v);
+      }
+    });
+    return anim.stop;
+  }, []);
+  return b;
 }
 
 const progressListeners = new Set();

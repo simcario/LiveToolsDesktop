@@ -86,6 +86,28 @@ input.fader.is-light {
 input.fader:active {
   cursor: grabbing;
 }
+/* Touch screens: the fader moves only from its cap (the grip over it, Fader.jsx useTouchCap);
+   a swipe on the slot scrolls the mixer instead of moving the fader there. */
+.fader-grip {
+  display: none;
+}
+@media (pointer: coarse) {
+  .fader-wrap {
+    touch-action: pan-x pan-y;
+  }
+  input.fader {
+    pointer-events: none;
+  }
+  .fader-grip {
+    display: block;
+    position: absolute;
+    right: -6px;
+    width: calc(var(--cap-w) + 12px);
+    height: calc(var(--cap-h) + 16px);
+    top: calc((1 - var(--p)) * (100% - var(--cap-h)) - 8px);
+    touch-action: none;
+  }
+}
 input.fader:focus-visible {
   outline: none;
 }

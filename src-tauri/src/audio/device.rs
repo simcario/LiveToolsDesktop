@@ -247,7 +247,17 @@ fn list(asio: &asio::Drivers) -> Vec<DeviceEntry> {
 /// sample rate: multichannel interfaces expose every output (click, cues…).
 fn best_config(device: &cpal::Device) -> Result<SupportedStreamConfig, String> {
     let default = device.default_output_config().map_err(|e| e.to_string())?;
-    let sr = default.sample_rate();
+    let mut sr = default.sample_rate();
+    // Android: the default of cpal can be 44.1 kHz while the mixer of the device runs at 48 kHz
+    // (nearly all of them): a stream at another rate is resampled and never gets the fast
+    // path, so the low latency mode was refused and the sound came out ~200 ms late.
+    if cfg!(target_os = "android")
+        && device
+            .supported_output_configs()
+            .is_ok_and(|mut r| r.any(|c| c.min_sample_rate().0 <= 48_000 && c.max_sample_rate().0 >= 48_000))
+    {
+        sr = cpal::SampleRate(48_000);
+    }
     let mut best: Option<SupportedStreamConfig> = None;
     if let Ok(ranges) = device.supported_output_configs() {
         for range in ranges {
@@ -308,10 +318,10 @@ fn open(
     shared.channels.store(channels, Ordering::Relaxed);
 
     let stream = match cfg.sample_format() {
-        SampleFormat::F32 => build::<f32>(&device, &config, renderer, error),
-        SampleFormat::I16 => build::<i16>(&device, &config, renderer, error),
-        SampleFormat::I32 => build::<i32>(&device, &config, renderer, error),
-        SampleFormat::U16 => build::<u16>(&device, &config, renderer, error),
+        SampleFormat::F32 => build::<f32>(&device, &config, renderer, shared, error),
+        SampleFormat::I16 => build::<i16>(&device, &config, renderer, shared, error),
+        SampleFormat::I32 => build::<i32>(&device, &config, renderer, shared, error),
+        SampleFormat::U16 => build::<u16>(&device, &config, renderer, shared, error),
         f => Err(format!("Formato campioni non supportato: {f}")),
     }?;
     stream.play().map_err(|e| e.to_string())?;
@@ -331,18 +341,27 @@ fn build<T: SizedSample + FromSample<f32>>(
     device: &cpal::Device,
     config: &StreamConfig,
     mut renderer: Renderer,
+    shared: &Arc<Shared>,
     error: &Arc<Mutex<Option<String>>>,
 ) -> Result<cpal::Stream, String> {
     let ch = config.channels as usize;
+    let sr = config.sample_rate.0 as f64;
     let mut mix = vec![0f32; 8192 * ch];
     let error = error.clone();
+    let shared = shared.clone();
+    // How far ahead of the speakers the callback renders, smoothed (Shared::heard).
+    let mut lead = -1f64;
     device
         .build_output_stream(
             config,
-            move |data: &mut [T], _: &cpal::OutputCallbackInfo| {
+            move |data: &mut [T], info: &cpal::OutputCallbackInfo| {
                 if mix.len() < data.len() {
                     mix.resize(data.len(), 0.0);
                 }
+                let frames = (data.len() / ch.max(1)) as f64;
+                let now = output_lead(info, frames, sr);
+                lead = if lead < 0.0 { now } else { lead + (now - lead) * 0.05 };
+                shared.lead.store(lead.round() as u32, Ordering::Relaxed);
                 let mix = &mut mix[..data.len()];
                 renderer.process(mix, ch);
                 for (d, s) in data.iter_mut().zip(mix.iter()) {
@@ -356,4 +375,16 @@ fn build<T: SizedSample + FromSample<f32>>(
             None,
         )
         .map_err(|e| e.to_string())
+}
+
+/// Frames between the start of the buffer being rendered and the speakers. WASAPI and
+/// ASIO tell it (the buffer queued); on Android the cpal of the mobile app (its
+/// vendor/cpal) gives the latency measured by oboe, else two buffers (AAudio double buffers).
+fn output_lead(info: &cpal::OutputCallbackInfo, frames: f64, sr: f64) -> f64 {
+    let ts = info.timestamp();
+    match ts.playback.duration_since(&ts.callback) {
+        Some(d) if d.as_secs_f64() > 0.0 && d.as_secs_f64() < 2.0 => d.as_secs_f64() * sr,
+        _ if cfg!(target_os = "android") => frames * 2.0,
+        _ => frames,
+    }
 }

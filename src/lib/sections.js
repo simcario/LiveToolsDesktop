@@ -208,5 +208,5 @@ export function renameMarker(item, index, label) {
 export function jumpToSection(s, quant, beats, sections) {
   const st = engineStatus();
   if (!st.playing || st.position < 0) engine.locate(s.start);
-  else engine.scheduleJump({ at: jumpTime(quant, st.position, beats, sections), to: s.start, repeat: false });
+  else engine.scheduleJump({ at: jumpTime(quant, st.position + (st.ahead || 0), beats, sections), to: s.start, repeat: false });
 }

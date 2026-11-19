@@ -196,3 +196,10 @@ function placeBeats(beats, regions) {
   }
   return out;
 }
+
+// Below this the automatic grid often lands off the beat (no click stem: drums or the
+// whole mix, a tempo that moves): the user is told to check it.
+export const UNSURE_BELOW = 0.5;
+
+/** The automatic grid of the loaded song is doubtful (anchors set by hand are trusted). */
+export const gridUnsure = (item, sync) => !!sync?.analysis && sync.analysis.confidence < UNSURE_BELOW && !gridOf(item).anchors.length;

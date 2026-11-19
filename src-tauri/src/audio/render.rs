@@ -46,6 +46,22 @@ pub struct Shared {
     pub click_peak: AtomicF32,
     /// The track looked at in a channel section (its `tap` flag), for the spectrum.
     pub tap: Tap,
+    /// Clock of the playhead heard (see `heard`): position at the start of the last
+    /// callback and when it came (`clock_ns`). A seqlock: odd `clock_seq` = being written.
+    clock_seq: AtomicU64,
+    clock_pos: AtomicI64,
+    clock_at: AtomicU64,
+    /// How far ahead of the speakers the callback renders (frames).
+    pub lead: AtomicU32,
+    /// Where the playhead last started or jumped: the heard position, latency behind,
+    /// does not show the frames before it.
+    heard_floor: AtomicI64,
+}
+
+/// Nanoseconds of a monotonic clock shared by the audio callback and the status ticker.
+pub fn clock_ns() -> u64 {
+    static EPOCH: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+    EPOCH.get_or_init(std::time::Instant::now).elapsed().as_nanos() as u64
 }
 
 impl Shared {
@@ -67,7 +83,54 @@ impl Shared {
             pad_peaks: [AtomicF32::new(0.0), AtomicF32::new(0.0)],
             click_peak: AtomicF32::new(0.0),
             tap: Tap::new(),
+            clock_seq: AtomicU64::new(0),
+            clock_pos: AtomicI64::new(0),
+            clock_at: AtomicU64::new(0),
+            lead: AtomicU32::new(0),
+            heard_floor: AtomicI64::new(i64::MIN),
         }
+    }
+
+    /// The callback is about to render from `pos`, now.
+    fn stamp(&self, pos: i64) {
+        let seq = self.clock_seq.load(Ordering::Relaxed);
+        self.clock_seq.store(seq.wrapping_add(1), Ordering::Relaxed);
+        std::sync::atomic::fence(Ordering::Release);
+        self.clock_pos.store(pos, Ordering::Relaxed);
+        self.clock_at.store(clock_ns(), Ordering::Relaxed);
+        self.clock_seq.store(seq.wrapping_add(2), Ordering::Release);
+    }
+
+    /// Frame of the song coming out of the speakers now. The audio thread renders
+    /// ahead of them by the buffer of the interface (tens of ms, a lot more on phones
+    /// and Bluetooth) and moves its playhead a whole buffer at a time: the leds of the
+    /// metronome, the playhead and the grid follow this one, to go with the click heard.
+    pub fn heard(&self) -> i64 {
+        let raw = self.position.load(Ordering::Relaxed);
+        if !self.playing.load(Ordering::Relaxed) || self.waiting.load(Ordering::Relaxed) {
+            return raw;
+        }
+        let mut tries = 0;
+        let (pos, at) = loop {
+            let a = self.clock_seq.load(Ordering::Acquire);
+            let pos = self.clock_pos.load(Ordering::Relaxed);
+            let at = self.clock_at.load(Ordering::Relaxed);
+            std::sync::atomic::fence(Ordering::Acquire);
+            if a % 2 == 0 && self.clock_seq.load(Ordering::Relaxed) == a {
+                break (pos, at);
+            }
+            tries += 1;
+            if tries > 1000 {
+                return raw;
+            }
+            std::hint::spin_loop();
+        };
+        let sr = self.sample_rate.load(Ordering::Relaxed).max(1) as f64;
+        // A callback late or missing (interface stuck): no further than a fifth of a second.
+        let since = (clock_ns().saturating_sub(at) as f64 / 1e9).min(0.2);
+        let heard = pos + (since * sr) as i64 - self.lead.load(Ordering::Relaxed) as i64;
+        let floor = self.heard_floor.load(Ordering::Relaxed);
+        if pos >= floor { heard.max(floor) } else { heard }
     }
 }
 
@@ -928,6 +991,7 @@ impl Renderer {
 
     fn locate(&mut self, position: i64) {
         self.shared.position.store(position, Ordering::Relaxed);
+        self.shared.heard_floor.store(position, Ordering::Relaxed);
         self.shared.waiting.store(true, Ordering::Relaxed);
         self.waited = 0;
         self.voice.left = 0;
@@ -941,6 +1005,7 @@ impl Renderer {
         }
         self.trash(Garbage::Streams(jump.streams));
         self.shared.position.store(jump.to, Ordering::Relaxed);
+        self.shared.heard_floor.store(jump.to, Ordering::Relaxed);
         self.shared.jump_fired.store(jump.id, Ordering::Relaxed);
         self.fade_in = jump_ramp(sr) as usize;
     }
@@ -978,6 +1043,7 @@ impl Renderer {
         self.fade_in = 0;
         self.reset_fade();
         self.shared.position.store(next.start.max(0), Ordering::Relaxed);
+        self.shared.heard_floor.store(next.start.max(0), Ordering::Relaxed);
         self.shared.next_fired.store(next.id, Ordering::Relaxed);
         self.trash(Garbage::Next(next));
     }
@@ -995,6 +1061,7 @@ impl Renderer {
     pub fn process(&mut self, out: &mut [f32], ch: usize) {
         out.fill(0.0);
         self.apply_commands();
+        self.shared.stamp(self.shared.position.load(Ordering::Relaxed));
         if ch == 0 {
             return;
         }
