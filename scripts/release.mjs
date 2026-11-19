@@ -236,7 +236,7 @@ async function publish(version, files) {
     fail(`Su GitHub c’è già la ${latest.tag_name}, più recente della ${version}: aumenta la versione`);
 
   step(`Pubblicazione della v${version} su ${RELEASES_REPO}`);
-  // Draft until every file is up: the apps must never see a latest.json without its installer.
+  // Draft until every file is up (a draft found again may carry an "untagged-…" tag: the tag is set again on publishing): the apps must never see a latest.json without its installer.
   let release = (await gh('GET', `/repos/${RELEASES_REPO}/releases?per_page=30`)).find((r) => r.tag_name === `v${version}`);
   if (release) release = await gh('PATCH', `/repos/${RELEASES_REPO}/releases/${release.id}`, { draft: true, body: releaseBody(version, manifest.notes) });
   else
@@ -254,7 +254,7 @@ async function publish(version, files) {
     console.log('  Le app installate non la vedono finché non la pubblichi (GitHub › Publish release, o npm run release:publish).');
     return;
   }
-  await gh('PATCH', `/repos/${RELEASES_REPO}/releases/${release.id}`, { draft: false, make_latest: 'true' });
+  await gh('PATCH', `/repos/${RELEASES_REPO}/releases/${release.id}`, { tag_name: `v${version}`, name: `${PRODUCT} ${version}`, draft: false, make_latest: 'true' });
   console.log(`\n✔ Aggiornamento ${version} pubblicato: https://github.com/${RELEASES_REPO}/releases/tag/v${version}`);
   console.log('  Le app installate lo vedranno al prossimo avvio (o da Impostazioni › Aggiornamenti).');
 }
