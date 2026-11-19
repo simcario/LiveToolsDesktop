@@ -7,10 +7,14 @@ import { invoke } from '@tauri-apps/api/core';
 import { isSeparator } from '../shared/setlists.js';
 import { compareGroups, groupLabel, rehearsalGroup } from '../shared/media.js';
 import { engine, engineStatus, subscribeStatus } from './engine';
+import { getMix, useMix } from './settings';
+import { buildLanes, laneColor } from './lanes';
+import { groupMixKey } from './usePlayer';
 import { prompterShare } from './cues';
 import { jumpToSection, sectionIndexAt, songBeats, songSections } from './sections';
 import { newRemoteCode, onRemoteMessage, useRemoteState } from './remote';
 
+const clampDb = (db) => Math.min(6, Math.max(-60, Math.round(db * 2) / 2));
 const same = (a, b) => a != null && b != null && Math.abs(a - b) < 1e-3;
 
 function groupsOf(tracks) {
@@ -32,6 +36,7 @@ const publish = (key, value) => invoke('remote_publish', { key, value }).catch((
  */
 export function useRemoteHost({ settings, update, setlist, setlists, items, player, prompter, outputs, toggleOutput, notify, user }) {
   const remote = useRemoteState();
+  useMix(); // volumes of the groups and track mutes of this computer
   const opts = settings.remote;
   const on = !!opts.enabled;
   const name = user?.displayName || user?.email || 'LiveTools';
@@ -77,9 +82,11 @@ export function useRemoteHost({ settings, update, setlist, setlists, items, play
   const beats = useMemo(() => songBeats(loaded?.tempo, loaded?.duration || 0), [loaded?.tempo, loaded?.duration]);
   const sections = useMemo(() => songSections(song, beats, loaded?.duration || 0), [song, beats, loaded?.duration]);
   const groups = useMemo(() => groupsOf(loaded?.tracks || []), [loaded?.tracks]);
+  const firstStem = useMemo(() => new Map((loaded?.tracks || []).map(({ stem }) => [rehearsalGroup(stem), stem]).reverse()), [loaded?.tracks]);
   const hosting = remote.hosting;
 
   const songs = useMemo(() => items.filter((i) => !isSeparator(i)), [items]);
+  const lanes = useMemo(() => buildLanes(songs), [songs]);
   const list = useMemo(() => {
     let n = 0;
     return items.map((i) =>
@@ -97,6 +104,13 @@ export function useRemoteHost({ settings, update, setlist, setlists, items, play
     });
   }, [hosting, setlist?.id, setlist?.title, setlists, list]);
 
+  // The groups of the Palco mixer: volume (this computer), mute of their tracks (as the Arrangement), solo.
+  const groupList = JSON.stringify(
+    groups.map(([g, ids]) => {
+      const m = player.groupMute(g);
+      return { id: g, label: groupLabel(g), color: firstStem.get(g) ? laneColor(lanes, firstStem.get(g)) : null, gain: getMix(groupMixKey(g)).gainDb || 0, muted: m.muted, total: m.total, out: m.total > 0 && m.muted === m.total, solo: ids.every((id) => player.solos[id]) };
+    }),
+  );
   useEffect(() => {
     if (!hosting) return;
     publish('song', {
@@ -108,9 +122,15 @@ export function useRemoteHost({ settings, update, setlist, setlists, items, play
       timeSig: loaded?.tempo?.timeSig || song?.timeSig || null,
       busy: player.busy || null,
       sections: sections.map((s) => ({ label: s.label, color: s.color, start: s.start, end: s.end })),
-      groups: groups.map(([g, ids]) => ({ id: g, label: groupLabel(g), out: !!player.leftOut[g], solo: ids.every((id) => player.solos[id]) })),
+      groups: JSON.parse(groupList),
     });
-  }, [hosting, loaded?.itemId, loaded?.tempo, song, player.busy, sections, groups, player.leftOut, player.solos]);
+  }, [hosting, loaded?.itemId, loaded?.tempo, song, player.busy, sections, groupList]);
+
+  // The fixed strips of the Palco mixer: master, metronome, pad (this computer).
+  useEffect(() => {
+    if (!hosting) return;
+    publish('mix', { master: settings.masterDb || 0, click: settings.click.gainDb || 0, pad: settings.pad?.gainDb ?? -10 });
+  }, [hosting, settings.masterDb, settings.click.gainDb, settings.pad?.gainDb]);
 
   useEffect(() => {
     if (!hosting) return;
@@ -256,8 +276,23 @@ export function useRemoteHost({ settings, update, setlist, setlists, items, play
           case 'setlist':
             if (a.id && !st.playing) c.update({ setlistId: a.id });
             break;
-          case 'groupOut':
+          case 'groupOut': // remotes before the mute of the tracks
             if (a.group) p.toggleGroup(a.group);
+            break;
+          case 'groupMute':
+            if (a.group) p.setGroupMute(a.group, !!a.on);
+            break;
+          case 'groupGain':
+            if (a.group && Number.isFinite(a.db)) p.setGroup(a.group, { gainDb: clampDb(a.db) });
+            break;
+          case 'master':
+            if (Number.isFinite(a.db)) c.update({ masterDb: clampDb(a.db) });
+            break;
+          case 'clickGain':
+            if (Number.isFinite(a.db)) c.update({ click: { ...s.click, gainDb: clampDb(a.db) } });
+            break;
+          case 'padGain':
+            if (Number.isFinite(a.db)) c.update({ pad: { ...s.pad, gainDb: clampDb(a.db) } });
             break;
           case 'groupSolo':
             if (a.group) p.setGroup(a.group, { solo: !!a.on });

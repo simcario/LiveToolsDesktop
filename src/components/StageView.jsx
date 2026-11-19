@@ -1152,12 +1152,16 @@ function WaveBar({ sections, index, settings, update, tools }) {
 }
 
 // A rehearsal group (instrument, click, guides): its volume on top of that of its
-// tracks. As in Playback a touch on the name takes it out of the mix, S solos all its tracks.
-function GroupStrip({ group, color, indexes, names, solo, out, player }) {
+// tracks. As in Playback a touch on the name mutes it (all its tracks, the same mute as the
+// Arrangement and the Mixer), S solos all its tracks. Some tracks muted: the name says how many.
+function GroupStrip({ group, color, indexes, names, solo, mute, player }) {
   const label = groupLabel(group);
   const gain = getMix(groupMixKey(group)).gainDb || 0;
+  const out = mute.total > 0 && mute.muted === mute.total;
+  const partial = mute.muted > 0 && !out;
+  const tip = out ? 'Riattiva tutte le tracce' : partial ? `Muta tutte le tracce · mutate: ${mute.names.join(', ')}` : 'Muta tutte le tracce';
   return (
-    <div className={`st-strip ${out ? 'is-muted' : ''}`} style={{ '--sec': color }}>
+    <div className={`st-strip ${out ? 'is-muted' : ''} ${partial ? 'is-partial' : ''}`} style={{ '--sec': color }}>
       <span className="m-db">{dbText(gain)}</span>
       <div className="st-fader-row">
         <Fader value={gain} onChange={(gainDb) => player.setGroup(group, { gainDb })} onReset={() => player.setGroup(group, { gainDb: 0 })} title={`Volume ${label} (doppio clic: 0 dB)`} midi={`group.${group}.volume`} midiName={`Volume ${label}`} />
@@ -1166,9 +1170,9 @@ function GroupStrip({ group, color, indexes, names, solo, out, player }) {
       <button className={`st-solo ${solo ? 'is-on' : ''}`} onClick={() => player.setGroup(group, { solo: !solo })} aria-pressed={solo} title="Solo" data-midi={`group.${group}.solo`} data-midi-name={`Solo ${label}`}>
         S
       </button>
-      <button className="st-name" onClick={() => player.toggleGroup(group)} aria-pressed={out} data-midi={`group.${group}.out`} data-midi-name={`${label} dentro / fuori dal mix`} title={`${out ? 'Rimetti nel mix' : 'Togli dal mix'} · ${names.join(', ')}`}>
+      <button className="st-name" onClick={() => player.toggleGroup(group)} aria-pressed={out ? true : partial ? 'mixed' : false} data-midi={`group.${group}.out`} data-midi-name={`Mute ${label}`} title={`${tip} · ${names.join(', ')}`}>
         <span className="ellipsis">{label}</span>
-        {indexes.length > 1 && <span className="st-strip-count">{indexes.length}</span>}
+        {partial ? <span className="st-strip-count is-partial">{mute.muted}/{mute.total}</span> : indexes.length > 1 && <span className="st-strip-count">{indexes.length}</span>}
       </button>
     </div>
   );
@@ -1292,7 +1296,7 @@ function Mixer({ loaded, lanes, player, settings, update, children }) {
               indexes={list.map((t) => t.index)}
               names={list.map((t) => t.stem.name)}
               solo={list.every((t) => player.solos[t.stem.id])}
-              out={!!player.leftOut[group]}
+              mute={player.groupMute(group)}
               player={player}
             />
           ))

@@ -5,6 +5,8 @@
 //                                        bump the version, build, publish the update
 //   npm run release:publish [-- --notes "..."]
 //                                        publish the installer already built for the current version
+//   --draft (with release or publish)    leave it a draft on GitHub: the apps don't see it until it is
+//                                        published by hand (or by running release:publish without --draft)
 //
 // Every installer has ASIO: the Steinberg SDK is used under GPLv3, like the app (LICENSE, README.md).
 // Building it needs libclang (scripts/asio.mjs).
@@ -69,7 +71,8 @@ const opt = (name) => {
   const i = rest.indexOf(`--${name}`);
   return i >= 0 ? rest[i + 1] : undefined;
 };
-const bumpArg = rest.find((a, i) => !a.startsWith('--') && !rest[i - 1]?.startsWith('--'));
+const DRAFT = rest.includes('--draft');
+const bumpArg = rest.find((a, i) => !a.startsWith('--') && !(rest[i - 1]?.startsWith('--') && rest[i - 1] !== '--draft'));
 
 // ---------- Version ----------
 
@@ -245,6 +248,12 @@ async function publish(version, files) {
     });
 
   await uploadAssets(RELEASES_REPO, release, [files.setup, files.sig, files.manifest]);
+  if (DRAFT) {
+    console.log(`
+✔ v${version} caricata in bozza: ${release.html_url}`);
+    console.log('  Le app installate non la vedono finché non la pubblichi (GitHub › Publish release, o npm run release:publish).');
+    return;
+  }
   await gh('PATCH', `/repos/${RELEASES_REPO}/releases/${release.id}`, { draft: false, make_latest: 'true' });
   console.log(`\n✔ Aggiornamento ${version} pubblicato: https://github.com/${RELEASES_REPO}/releases/tag/v${version}`);
   console.log('  Le app installate lo vedranno al prossimo avvio (o da Impostazioni › Aggiornamenti).');

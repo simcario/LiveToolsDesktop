@@ -40,7 +40,7 @@ Con più computer o la band in rete: chi guida preme **Guida**, gli altri **Segu
 | cambiare tonalità o tempo a un brano | Palco: pulsante con i cursori sulla tessera |
 | decidere cosa succede a fine brano | Palco: cerchio tra due tessere; **Modifica › Transizioni** per regolarlo a occhio |
 | regolare i volumi delle tracce | Dettaglio › **Mixer**, o **F3** in una finestra |
-| togliere uno strumento per provare (il mio) | barra *Rehearsal* del Dettaglio, o nome del gruppo nel mixer del Palco |
+| mutare uno strumento (tutte le sue tracce) | nome del gruppo nel mixer del Palco, barra *Rehearsal* del Dettaglio, o **M** delle tracce nell'Arrangement |
 | raddoppiare il click (ottavi) | **Maiusc+C** o pulsante **×2** |
 | proiettare il video / il testo per i cantanti | **F4** (video), **F6** (gobbo); anche in rete via NDI |
 | leggere lo spartito e girare pagina col pedale | vista **Spartito** (Tab) |
@@ -409,7 +409,7 @@ lontano e i comandi sono grandi anche per il touch. La disposizione è quella di
 | 12 | Forma d'onda | tutto il brano diviso in sezioni: tocca un'etichetta per saltarci |
 | 13 | Console | *Loop* (una volta), *Loop ∞* (**L**), *Annulla* (**Esc**) |
 | 14 | Master, Metronomo, Pad | volume generale, del click e del pad, ognuno con il suo indicatore di livello; sotto il Pad il menu della sua tonalità |
-| 15 | Gruppi | un fader per gruppo di strumenti: **S** = solo, tocca il nome per toglierlo dal mix |
+| 15 | Gruppi | un fader per gruppo di strumenti: **S** = solo, tocca il nome per mutare tutte le sue tracce (metà rossa e *1/3* se solo alcune sono mutate) |
 
 Dall'alto in basso:
 
@@ -431,8 +431,10 @@ Dall'alto in basso:
 - **Mixer**, in basso. A sinistra la console con *Loop*, *Loop ∞* e *Annulla*, poi master e metronomo e un fader per
   ogni gruppo di strumenti del brano caricato, gli stessi dei pulsanti *Rehearsal* (batteria, basso, tastiere, click,
   guide…). Il volume del gruppo si somma a quello delle sue tracce e resta salvato su questo computer per tutti i brani.
-  Come in Playback, **tocca il nome** per togliere il gruppo dal mix (diventa rosso e barrato) o per spegnere il
-  metronomo; **S** mette in solo tutte le tracce del gruppo. Il metronomo ha il suo indicatore di livello (dalla prossima
+  Come in Playback, **tocca il nome** per mutare il gruppo (diventa rosso e barrato) o per spegnere il
+  metronomo. Il mute del gruppo è quello delle sue tracce, lo stesso di **M** nell'Arrangement e nel Mixer (dalla
+  prossima versione): se nell'Arrangement muti una sola delle tre tastiere, nel Palco il nome delle Tastiere diventa
+  rosso a metà e mostra **1/3**; toccandolo si mutano tutte, toccandolo di nuovo si riattivano tutte; **S** mette in solo tutte le tracce del gruppo. Il metronomo ha il suo indicatore di livello (dalla prossima
   versione): vedi subito se il click sta suonando e quanto è forte. Accanto al metronomo c'è la striscia del **Pad**,
   con il suo indicatore di livello: si vede subito quando il pad sta suonando (anche mentre entra o sfuma).
   I fader sono come quelli di un mixer: cappuccio rigato con la linea nel colore della striscia (bianco per il master)
@@ -675,7 +677,8 @@ l'uscita diretta restano solo su questo computer. Chi non può modificare il bra
 volta e si ritrova uguale: anche **M** delle tracce, nel Mixer e nell'intestazione delle tracce dell'Arrangement, va nel
 brano (*Non salvato* finché non premi **Salva**, **Ctrl+Z** annulla) e vale su ogni computer, tablet e nella prova sul web,
 insieme a volumi, pan e automazioni. Chi non può modificare il brano usa ancora un mute solo suo, su questo dispositivo.
-Il mixer dei gruppi del Palco e la barra *Rehearsal* invece restano personali (vedi *Rehearsal*).
+Il mute dei gruppi (Palco, barra *Rehearsal*, telecomando) è quello delle loro tracce, quindi si salva allo stesso modo;
+i volumi dei gruppi del Palco invece restano personali (vedi *Rehearsal*).
 
 **Precount**: battute di count-in prima della battuta 1, uguali per tutti i brani; si impostano in **Impostazioni › Trasporto** e si sentono con il count-in attivo.
 
@@ -715,10 +718,12 @@ un'altra scheda per tornare a suonare.
 
 ### 4.5 Rehearsal
 
-Nella barra *Rehearsal* del dettaglio un clic toglie dal mix un intero gruppo (Batteria, Basso, Click
-compreso il metronomo, Guide…). Vale per tutti i brani finché l'app resta aperta e non modifica i mute
-salvati. Anche i fader e i nomi dei gruppi nel mixer del Palco sono **personali**: ogni musicista si fa il suo ascolto
-sul suo dispositivo e non cambia il mix del brano salvato per la band.
+Nella barra *Rehearsal* del dettaglio (brano caricato) un clic muta tutte le tracce di un gruppo (Batteria, Basso,
+Click, Guide…), un altro le riattiva; se solo alcune sono mutate il pulsante lo mostra (*1/3*). Dalla prossima versione
+è lo stesso mute dell'Arrangement, del Mixer e del nome del gruppo nel Palco: le tre viste mostrano sempre lo stesso
+stato. Chi può modificare il brano lo salva con il brano (*Salva*, **Ctrl+Z** annulla); gli altri lo tengono su questo
+computer. Il metronomo si spegne dalla sua striscia nel Palco o con **C**. I fader dei gruppi nel mixer del Palco sono
+**personali**: ogni musicista si fa il suo ascolto sul suo dispositivo e non cambia il mix del brano salvato per la band.
 
 ### 4.6 Suonare con la band (Palco Sync)
 
@@ -784,8 +789,9 @@ computer e telefono sono sulla **stessa rete Wi-Fi**; internet non serve.
 Dal telecomando puoi: **Play / Stop**, brano precedente e successivo, tornare all'inizio; vedere la scaletta e
 **caricare** un brano (tocca il brano, poi *Carica* o *Carica e avvia*); cambiare scaletta (a brano fermo);
 saltare alle **sezioni**, **Loop 1×**, **Loop ∞**, *Annulla salto* e **Fade**; aprire e chiudere le finestre
-**Video** e **Gobbo**; accendere e spegnere **click**, ottavi, count-in, avanzamento automatico e **pad**; togliere
-e rimettere nel mix i gruppi di strumenti; scegliere la vista del computer (Palco, Arrangement, Gobbo, Spartito).
+**Video** e **Gobbo**; accendere e spegnere **click**, ottavi, count-in, avanzamento automatico e **pad**; il
+**mixer del Palco** (dalla prossima versione): fader di master, metronomo, pad e di ogni gruppo di strumenti, solo e
+mute dei gruppi (lo stesso mute delle tracce dell'Arrangement); scegliere la vista del computer (Palco, Arrangement, Gobbo, Spartito).
 Il telecomando mostra il brano caricato, il tempo che scorre, la battuta e le sezioni colorate.
 
 In **Rete locale** vedi i telecomandi collegati e il loro ritardo; quando uno si collega o si scollega compare un

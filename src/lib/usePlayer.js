@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { emit, listen } from '@tauri-apps/api/event';
 import { convertFileSrc } from '@tauri-apps/api/core';
-import { audioFades, clickMixOf, clickMuteSpans, clickVolumeOf, cueTrackOf, fadeStop, isVideoItem, padHoldOf, padLeadOf, playedAutomation, regionsOf, rehearsalGroup, stemsOf, VIDEO_AUDIO_ID, videoAudioStem, videoFades, videoOf } from '../shared/media.js';
+import { audioFades, clickMixOf, clickMuteSpans, clickVolumeOf, cueTrackOf, fadeStop, groupLabel, isVideoItem, padHoldOf, padLeadOf, playedAutomation, regionsOf, rehearsalGroup, stemsOf, VIDEO_AUDIO_ID, videoAudioStem, videoFades, videoOf } from '../shared/media.js';
 import { tempoSections } from '../shared/tempoMap.js';
 import { writeMix } from './songMix';
 import { isSeparator } from '../shared/setlists.js';
@@ -31,12 +31,12 @@ function routeOf(stem, settings) {
 // The others keep their own track mutes on this computer, as before.
 const editableSong = (item, canEdit) => !!item && !!canEdit && item.songEditable !== false;
 
-// Mix context of a song: { local } (local = the track mutes of this computer), out = groups left out.
+// Mix context of a song: { local } (local = the track mutes of this computer).
 const mixOf = (song, canEdit) => ({ local: !editableSong(song, canEdit) });
 
-// Rehearsal: groups (instrument, click, guide) left out of the mix in this session, and
-// their volumes (Palco mixer), stay personal: each musician shapes their own listening.
-const isMuted = (stem, out, local) => (stem.live || !local ? !!stem.muted : (getMix(stem.id).mute ?? !!stem.muted)) || !!out?.[rehearsalGroup(stem)];
+// The mute of a track: one state for the Arrangement, the Mixer and the Palco (where a group
+// mutes all its tracks). Saved with the song by who can edit it, else on this computer.
+const isMuted = (stem, local) => (stem.live || !local ? !!stem.muted : (getMix(stem.id).mute ?? !!stem.muted));
 
 // Volume of a rehearsal group (Palco mixer), on this computer: added to that of each of its tracks.
 export const groupMixKey = (group) => `group:${group}`;
@@ -45,7 +45,7 @@ const groupGain = (stem) => getMix(groupMixKey(rehearsalGroup(stem))).gainDb || 
 // the same on every computer and on the web. Mute, solo and the output stay local.
 const ownGain = (stem) => Number(stem.gain) || 0;
 
-// mix: { local, out } (see mixOf; out = groups left out in this session).
+// mix: { local } (see mixOf).
 function trackMix(stem, settings, solo, mix) {
   const route = routeOf(stem, settings);
   return {
@@ -54,7 +54,7 @@ function trackMix(stem, settings, solo, mix) {
     // Channel section (Mixer → click on the track name), saved with the song too.
     inputDb: inputOf(stem),
     eq: eqOf(stem),
-    mute: isMuted(stem, mix?.out, mix?.local),
+    mute: isMuted(stem, mix?.local),
     solo: !!solo,
     outStart: route.start,
     outMode: route.mode,
@@ -160,7 +160,6 @@ export function usePlayer({ user, setlist, items, settings, canDrive, canEdit, n
   const [busy, setBusy] = useState(null);
   const [downloading, setDownloading] = useState(null); // files of the song being loaded, not on disk yet
   const [solos, setSolos] = useState({});
-  const [leftOut, setLeftOut] = useState({}); // rehearsal group → true
   const token = useRef(0);
   // The next song prepared for a transition: { itemId, prepared, item } once the engine has it.
   const queued = useRef(null);
@@ -173,9 +172,9 @@ export function usePlayer({ user, setlist, items, settings, canDrive, canEdit, n
   const ctx = useRef({});
   const midiSent = useRef(null); // song whose patches went out last
   const songNow = items.find((i) => i.id === loaded?.itemId) || null;
-  ctx.current = { setlist, items, settings, canDrive, canEdit, user, loaded, solos, leftOut };
+  ctx.current = { setlist, items, settings, canDrive, canEdit, user, loaded, solos };
   // Mix context of a song (the loaded one or the next).
-  const mixFor = (item) => ({ ...mixOf(item, ctx.current.canEdit), out: ctx.current.leftOut });
+  const mixFor = (item) => mixOf(item, ctx.current.canEdit);
 
   // Everything a song needs before the engine: files on disk, grid, live cues,
   // stems in another key or tempo. `send(spec)` gives it to the engine (load or
@@ -576,7 +575,7 @@ export function usePlayer({ user, setlist, items, settings, canDrive, canEdit, n
     if (Object.keys(persist).length) setMix(stem.id, persist);
     if (solo !== undefined) setSolos((s) => ({ ...s, [stem.id]: solo }));
     const mix = {};
-    if (persist.mute !== undefined) mix.mute = persist.mute || !!ctx.current.leftOut[rehearsalGroup(stem)];
+    if (persist.mute !== undefined) mix.mute = persist.mute;
     if (solo !== undefined) mix.solo = solo;
     if ('route' in patch) {
       // null = back to the output of the stem's role.
@@ -595,8 +594,58 @@ export function usePlayer({ user, setlist, items, settings, canDrive, canEdit, n
     });
   }, [settings.outputs, loaded]);
 
-  // Rehearsal: a group in or out of the mix, for every song of the session (personal, never saved with the song).
-  const toggleGroup = useCallback((group) => setLeftOut((o) => ({ ...o, [group]: !o[group] })), []);
+  // The tracks of a group in the loaded song, as the song has them now (draft, undo). The live cue
+  // track keeps its own mute (cue lane: muted after the mixdown) unless it is all the group has.
+  const groupStems = (group) => {
+    const { loaded: l, items: its } = ctx.current;
+    const song = its.find((i) => i.id === l?.itemId);
+    const byId = new Map(stemsOf(song).map((s) => [s.id, s]));
+    const sheet = cueTrackOf(song);
+    const all = (l?.tracks || [])
+      .map(({ stem }) => (stem.live ? { ...stem, muted: !!sheet.muted } : stem.id === VIDEO_AUDIO_ID && song?.video ? { ...stem, muted: !!song.video.muted } : byId.get(stem.id) || stem))
+      .filter((stem) => rehearsalGroup(stem) === group);
+    return all.some((s) => !s.live) ? all.filter((s) => !s.live) : all;
+  };
+
+  /** Tracks of a group muted now (Arrangement, Mixer and Palco see the same): { muted, total, names } (names: the muted ones). */
+  const groupMute = (group) => {
+    const { loaded: l, items: its, canEdit: ce } = ctx.current;
+    const local = !editableSong(its.find((i) => i.id === l?.itemId), ce);
+    const stems = groupStems(group);
+    const muted = stems.filter((s) => isMuted(s, local));
+    return { muted: muted.length, total: stems.length, names: muted.map((s) => s.name) };
+  };
+
+  // Mute of a group (Palco mixer, Rehearsal bar, telecomando) = the mute of all its tracks, in one undo step.
+  const setGroupMute = useCallback((group, mute) => {
+    const { loaded: l, items: its, canEdit: ce } = ctx.current;
+    const song = its.find((i) => i.id === l?.itemId);
+    const stems = groupStems(group);
+    if (!stems.length) return;
+    const on = !!mute;
+    if (editableSong(song, ce)) {
+      const ids = new Set(stems.map((s) => s.id));
+      const media = {};
+      if (stemsOf(song).some((s) => ids.has(s.id))) media.stems = stemsOf(song).map((s) => (ids.has(s.id) ? { ...s, muted: on } : s));
+      if (ids.has(VIDEO_AUDIO_ID) && song.video) media.video = { ...song.video, muted: on };
+      if (stems.some((s) => s.live)) media.cueTrack = { ...(song.cueTrack || {}), muted: on };
+      // Into the draft: the mix effect above sends it to the engine.
+      writeMix(song, media, `${on ? 'Mutato' : 'Riattivato'} il gruppo “${groupLabel(group)}”`);
+      return;
+    }
+    stems.forEach((stem) => {
+      setMix(stem.id, { mute: on });
+      engine.setTrack(stem.id, { mute: on });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // A touch on a group: all its tracks muted, or all back in the mix when they all were.
+  const toggleGroup = useCallback((group) => {
+    const m = groupMute(group);
+    setGroupMute(group, m.muted < m.total);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Palco mixer: volume of a group (kept on this computer, for every song) or solo of all its tracks.
   const setGroup = useCallback((group, patch) => {
@@ -610,11 +659,6 @@ export function usePlayer({ user, setlist, items, settings, canDrive, canEdit, n
       tracks.forEach(({ stem }) => engine.setTrack(stem.id, { solo: patch.solo }));
     }
   }, []);
-  useEffect(() => {
-    const local = !editableSong(songNow, canEdit);
-    loaded?.tracks.forEach(({ stem }) => engine.setTrack(stem.id, { mute: isMuted(stem, leftOut, local) }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [leftOut, loaded]);
 
   // Click: metronome on its own output (left out with the click group in rehearsal).
   // Volume of this device plus that of the loaded song (Mixer, saved with it); muted by the song too.
@@ -622,13 +666,13 @@ export function usePlayer({ user, setlist, items, settings, canDrive, canEdit, n
   useEffect(() => {
     const r = settings.outputs.click;
     engine.setClick({
-      enabled: settings.click.enabled && r.mode !== 'off' && !leftOut.click && !songClick.muted,
+      enabled: settings.click.enabled && r.mode !== 'off' && !songClick.muted,
       gain: dbToGain(Math.min(12, settings.click.gainDb + songClick.gain)),
       outStart: r.start,
       mono: r.mode !== 'stereo',
       ...clickVoice(settings.click),
     });
-  }, [settings.click, settings.outputs.click, leftOut.click, songClick.gain, songClick.muted]);
+  }, [settings.click, settings.outputs.click, songClick.gain, songClick.muted]);
 
   useEffect(() => {
     engine.setMaster(settings.masterDb);
@@ -929,8 +973,9 @@ export function usePlayer({ user, setlist, items, settings, canDrive, canEdit, n
     busy,
     downloading,
     solos,
-    leftOut,
     toggleGroup,
+    setGroupMute,
+    groupMute,
     setGroup,
     // The track mutes are saved with the song (draft) rather than on this computer.
     mixSaved: editableSong(songNow, canEdit),

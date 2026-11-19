@@ -5,6 +5,17 @@ versioni [SemVer](https://semver.org/lang/it/). Procedura di rilascio: [docs/REL
 
 ## [Non rilasciato]
 
+### Mute coerente tra Arrangement e Palco
+- Il nome di un gruppo nel mixer del Palco (e la barra *Rehearsal*) ora muta **tutte le tracce del gruppo**: è lo stesso
+  mute di **M** nell'Arrangement e nel Mixer, salvato con il brano per chi può modificarlo, un solo passo di annulla
+  (`setGroupMute`, `groupMute` in `lib/usePlayer.js`). Se solo alcune tracce del gruppo sono mutate il nome è rosso a
+  metà e mostra quante (*1/3*); un tocco le muta tutte, il successivo le riattiva. Sparito il vecchio "fuori dal mix"
+  di sessione (`leftOut`): il metronomo si spegne dalla sua striscia.
+
+### Telecomando: i volumi
+- Il telecomando riceve e muove il mixer del Palco: master, metronomo, pad e i gruppi (volume, mute, solo); comandi
+  `master`, `clickGain`, `padGain`, `groupGain`, `groupMute` e parte di stato `mix` in `lib/remoteHost.js`.
+
 ### Più tracce selezionate e spostate insieme
 - **Arrangement**: Ctrl+clic (nome della traccia o segmento) aggiunge o toglie dalla selezione, Maiusc+clic seleziona
   le tracce dall'ultima cliccata (o i segmenti in mezzo sulla stessa traccia). Con *Sposta* trascinando un segmento

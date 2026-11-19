@@ -154,7 +154,7 @@ function Strip({ strip, state, dispatch, here, onOpen, open = false }) {
     );
   };
   return (
-    <div onContextMenu={menu} className={`st-strip mx-strip ${mute || strip.out ? 'is-muted' : ''} ${strip.index < 0 ? 'is-absent' : ''} ${open ? 'is-open' : ''}`} style={{ '--sec': strip.color }}>
+    <div onContextMenu={menu} className={`st-strip mx-strip ${mute ? 'is-muted' : ''} ${strip.index < 0 ? 'is-absent' : ''} ${open ? 'is-open' : ''}`} style={{ '--sec': strip.color }}>
       <RouteSelect strip={strip} state={state} dispatch={dispatch} here={here} />
       <InstrumentSelect strip={strip} state={state} dispatch={dispatch} />
       <span className="mx-pan" title={`Pan ${panText(strip.pan)} (doppio clic: centro)`}>

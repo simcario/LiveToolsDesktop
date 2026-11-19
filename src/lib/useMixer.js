@@ -11,7 +11,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { emit, listen } from '@tauri-apps/api/event';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
-import { automationOf, automationRead, clickMixOf, cueTrackOf, groupLabel, groupOptions, instrumentOf, muteAutomationOf, rehearsalGroup, STEM_ROLES, stemsOf, VIDEO_AUDIO_ID, videoAudioStem } from '../shared/media.js';
+import { automationOf, automationRead, clickMixOf, cueTrackOf, groupLabel, groupOptions, instrumentOf, muteAutomationOf, STEM_ROLES, stemsOf, VIDEO_AUDIO_ID, videoAudioStem } from '../shared/media.js';
 import { hasAutomation, isWriting, releaseTouch, toggleRead, toggleWrite, useAutoWrite, writeMute, writeVolume } from './autoWrite';
 import { channelActive, eqOf, flatEq, inputOf } from '../shared/eq.js';
 import { editDraft, isDirty, saveDraft, savedMessage, useDrafts } from './drafts';
@@ -78,7 +78,6 @@ export function useMixer({ player, lanes, canEdit: canEditSetlist, setlistId, no
       // The cue track has only the mute of the song (on after the mixdown).
       mute: stem.live || canEdit ? !!stem.muted : (m.mute ?? !!stem.muted),
       solo: !!player.solos[stem.id],
-      out: !!player.leftOut[rehearsalGroup(stem)],
       route: m.route ? routeValue(m.route) : null,
       // Automations (R/W, as Cubase): the strip moves its fader and M with them while it plays.
       auto: stem.live ? [] : automationOf(stem),

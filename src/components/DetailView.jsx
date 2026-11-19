@@ -1,8 +1,8 @@
 import { formatDuration, PLAYBACK_TYPES } from '../shared/setlists.js';
-import { formatBytes, groupLabel, rehearsalGroup, rehearsalGroups, STEM_ROLES, stemsOf, videoOf } from '../shared/media.js';
+import { compareGroups, formatBytes, groupLabel, rehearsalGroup, STEM_ROLES, stemsOf, videoOf } from '../shared/media.js';
 import { keyLabel } from '../shared/music.js';
 import { ensureItems, useMediaCache } from '../lib/mediaCache';
-import { useSettings } from '../lib/settings';
+import { getMix, useMix, useSettings } from '../lib/settings';
 import { laneColor, ROLE_COLORS } from '../lib/lanes';
 import Icon from './Icon';
 import SyncControl from './SyncControl';
@@ -37,6 +37,7 @@ export default function DetailView({ item, number, lanes, player, mixer, onVideo
   const cache = useMediaCache();
   const loaded = player.loaded;
   const [settings, update] = useSettings();
+  useMix(); // the track mutes of this computer
   const tab = TABS.some(([k]) => k === settings.detailTab) ? settings.detailTab : 'song';
   // The mixer takes the whole zone: shown as a tab even with the panels side by side.
   const tabbed = settings.sideTabs || tab === 'mixer';
@@ -55,9 +56,9 @@ export default function DetailView({ item, number, lanes, player, mixer, onVideo
   const video = videoOf(item);
   const isLoaded = loaded?.itemId === item.id;
   const sections = (item.sections || []).filter((s) => !s.gap && (s.label || s.bars));
-  // The click group exists even without a click stem: the engine's metronome.
-  const groups = rehearsalGroups(item);
-  if (stems.length && !groups.includes('click')) groups.splice(groups.length - (groups.includes('guide') ? 1 : 0), 0, 'click');
+  // Rehearsal: the groups of the loaded song; a touch mutes all their tracks (the same mute as the Arrangement and the Palco).
+  const groups = isLoaded ? [...new Set(stems.map(rehearsalGroup))].filter(Boolean).sort(compareGroups) : [];
+  const stemMuted = (s) => (player.mixSaved || !isLoaded ? !!s.muted : (getMix(s.id).mute ?? !!s.muted));
   const missing = [...stems, ...(video ? [video] : [])].some((m) => !cache[m.path]?.ready);
 
   return (
@@ -142,25 +143,30 @@ export default function DetailView({ item, number, lanes, player, mixer, onVideo
             </p>
           )}
           {groups.length > 0 && (
-            <div className="rehearsal-bar" title="Rehearsal: togli dal mix uno strumento (vale per tutti i brani, fino alla chiusura dell’app)">
+            <div className="rehearsal-bar" title="Rehearsal: muta o riattiva tutte le tracce di uno strumento (come nell’Arrangement e nel Palco)">
               <span className="small muted">Rehearsal</span>
-              {groups.map((g) => (
-                <button
-                  key={g}
-                  className={`toggle ${player.leftOut[g] ? 'is-out' : ''}`}
-                  aria-pressed={!player.leftOut[g]}
-                  onClick={() => player.toggleGroup(g)}
-                  title={player.leftOut[g] ? 'Rimetti nel mix' : 'Togli dal mix'}
-                >
-                  {groupLabel(g)}
-                </button>
-              ))}
+              {groups.map((g) => {
+                const m = player.groupMute(g);
+                const out = m.total > 0 && m.muted === m.total;
+                return (
+                  <button
+                    key={g}
+                    className={`toggle ${out ? 'is-out' : ''} ${m.muted && !out ? 'is-partial' : ''}`}
+                    aria-pressed={out ? false : m.muted ? 'mixed' : true}
+                    onClick={() => player.toggleGroup(g)}
+                    title={out ? 'Riattiva tutte le tracce' : m.muted ? `Mutate ${m.muted} di ${m.total}: ${m.names.join(', ')} · tocca per mutarle tutte` : 'Muta tutte le tracce'}
+                  >
+                    {groupLabel(g)}
+                    {m.muted > 0 && !out ? ` ${m.muted}/${m.total}` : ''}
+                  </button>
+                );
+              })}
             </div>
           )}
           {stems.map((s) => (
             <div
               key={s.id}
-              className={`d-media-row ${player.leftOut[rehearsalGroup(s)] ? 'is-out' : ''}`}
+              className={`d-media-row ${stemMuted(s) ? 'is-out' : ''}`}
               style={{ '--lane-color': laneColor(lanes, s) }}
             >
               <span className="swatch" />

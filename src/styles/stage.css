@@ -1212,6 +1212,15 @@ input.fader::-moz-range-thumb {
   font-size: 10px;
   color: var(--muted);
 }
+/* Some tracks of the group muted (Arrangement, Mixer): a half state, with how many. */
+.st-strip.is-partial .st-name {
+  border-color: var(--danger);
+  background: linear-gradient(90deg, var(--danger-soft) 50%, transparent 50%);
+}
+.st-strip-count.is-partial {
+  color: var(--danger);
+  font-weight: 700;
+}
 .st-strip.is-muted .st-name {
   background: var(--danger-soft);
   border-color: var(--danger);

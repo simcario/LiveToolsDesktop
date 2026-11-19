@@ -1115,6 +1115,10 @@ input[type='range'].slider:hover::-webkit-slider-thumb {
 .rehearsal-bar .toggle {
   padding: 0 8px;
 }
+.rehearsal-bar .toggle.is-partial {
+  border-color: var(--danger);
+  background: linear-gradient(90deg, var(--danger-soft) 50%, transparent 50%);
+}
 .rehearsal-bar .toggle.is-out {
   color: var(--faint);
   text-decoration: line-through;
