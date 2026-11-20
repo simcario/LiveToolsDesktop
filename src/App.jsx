@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { signOut } from 'firebase/auth';
 import { getRole, isSeparator } from './shared/setlists.js';
 import { auth } from './lib/firebase';
@@ -111,31 +112,40 @@ function StatusBar({ message, device, page, stage, onPage, onUpdates }) {
   );
 }
 
-// Edits of the song left in the Arrangement not saved yet: save, drop or keep
-// them for later (the song stays marked with a dot in the list).
-function UnsavedModal({ item, onSave, onDiscard, onLater }) {
+// Edits of the Arrangement not saved yet, asked only when the setlist is
+// closed (another one chosen) or the program is closed: never on a song switch,
+// the songs just stay marked with a dot in the list until saved.
+function UnsavedModal({ items, reason, onSave, onDiscard, onCancel }) {
   const [busy, setBusy] = useState(false);
+  const many = items.length > 1;
   return (
-    <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && !busy && onLater()}>
+    <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && !busy && onCancel()}>
       <div className="modal modal-sm" role="dialog" aria-modal="true" aria-label="Modifiche non salvate">
         <div className="modal-head">
           <h2>Modifiche non salvate</h2>
-          <button type="button" className="btn btn-ghost btn-icon" onClick={onLater} aria-label="Chiudi" disabled={busy}>
+          <button type="button" className="btn btn-ghost btn-icon" onClick={onCancel} aria-label="Annulla" disabled={busy}>
             <Icon name="x" size={18} />
           </button>
         </div>
         <div className="modal-body">
           <p className="small muted">
-            “<strong>{item.title}</strong>” ha modifiche dell’Arrangement non salvate (tracce, tempo, metro, cue, griglia). Finché non le salvi le
-            senti solo su questo computer.
+            {many ? 'Questi brani hanno' : 'Questo brano ha'} modifiche dell’Arrangement non salvate (tracce, tempo, metro, cue, griglia, mixer).{' '}
+            {reason === 'quit' ? 'Salvale prima di chiudere il programma.' : 'Salvale prima di cambiare scaletta.'}
           </p>
+          <ul className="small" style={{ margin: '8px 0 0', paddingLeft: 18 }}>
+            {items.map((it) => (
+              <li key={it.id}>
+                <strong>{it.title}</strong>
+              </li>
+            ))}
+          </ul>
         </div>
         <div className="modal-foot">
           <button type="button" className="btn btn-sm btn-ghost" onClick={onDiscard} disabled={busy}>
-            Non salvare
+            {reason === 'quit' ? 'Chiudi senza salvare' : 'Non salvare'}
           </button>
-          <button type="button" className="btn btn-sm" onClick={onLater} disabled={busy}>
-            Più tardi
+          <button type="button" className="btn btn-sm" onClick={onCancel} disabled={busy}>
+            Annulla
           </button>
           <button
             type="button"
@@ -147,7 +157,7 @@ function UnsavedModal({ item, onSave, onDiscard, onLater }) {
               onSave();
             }}
           >
-            {busy ? 'Salvataggio…' : 'Salva'}
+            {busy ? 'Salvataggio…' : many ? 'Salva tutto' : 'Salva'}
           </button>
         </div>
       </div>
@@ -196,10 +206,43 @@ function Workspace({ user }) {
   useBandLeaveNotice(band, settings.followStage || settings.driveStage, notify);
   // Computer di riserva: plays along with who leads, and takes over when it is gone.
   useBackup({ settings, update, net: stageNet, player, items, canDrive, notify });
+  // Unsaved Arrangement edits are asked for only when the setlist is closed
+  // (another one chosen, here or from the Telecomando) or the program is closed.
+  const [askSave, setAskSave] = useState(null); // { reason: 'setlist' | 'quit', then }
+  const dirtyItems = items.filter((i) => isDirty(i.id));
+  const guard = useRef(null);
+  guard.current = { dirtyItems, setlistId };
+  const chooseSetlist = useCallback(
+    (id) => {
+      const g = guard.current;
+      if (!id || id === g.setlistId) return;
+      if (g.dirtyItems.length) setAskSave({ reason: 'setlist', then: () => update({ setlistId: id }) });
+      else update({ setlistId: id });
+    },
+    [update],
+  );
+  // Closing the main window: Tauri closes it after this handler unless it is prevented.
+  useEffect(() => {
+    let off = null;
+    let gone = false;
+    const win = getCurrentWindow();
+    win
+      .onCloseRequested((e) => {
+        if (!guard.current.dirtyItems.length) return;
+        e.preventDefault();
+        setAskSave({ reason: 'quit', then: () => win.destroy().catch(() => {}) });
+      })
+      .then((f) => (gone ? f() : (off = f)))
+      .catch(() => {});
+    return () => {
+      gone = true;
+      off?.();
+    };
+  }, []);
+  const askItems = askSave ? dirtyItems : [];
   // Telecomando: a phone or tablet on the same Wi-Fi drives this computer (Impostazioni › Rete locale).
   const videoOpen = useOutputOpen('video');
   const prompterOpen = useOutputOpen('prompter');
-  useRemoteHost({ settings, update, setlist, setlists, items, player, prompter: prompterSource, outputs: { video: videoOpen, prompter: prompterOpen }, toggleOutput, notify, user });
   const songs = player.songs;
   const numbers = useMemo(() => Object.fromEntries(songs.map((s, i) => [s.id, i + 1])), [songs]);
   const lanes = useMemo(() => buildLanes(songs), [songs]);
@@ -214,20 +257,10 @@ function Workspace({ user }) {
     },
     [update],
   );
-  // Another song in the player while the one before has unsaved edits: ask to save them.
-  const [askSave, setAskSave] = useState(null); // itemId
-  const lastLoaded = useRef(null);
-  const loadedId = player.loaded?.itemId ?? null;
-  useEffect(() => {
-    const prev = lastLoaded.current;
-    lastLoaded.current = loadedId;
-    if (prev && prev !== loadedId && isDirty(prev)) setAskSave(prev);
-  }, [loadedId]);
-  const askItem = askSave && items.find((i) => i.id === askSave);
-
   // Mixer of the song in the player: Dettaglio → Mixer and its window (F3).
   const mixer = useMixer({ player, lanes, canEdit, setlistId, notify });
   useMixerBridge(mixer);
+  useRemoteHost({ settings, update, chooseSetlist, mixer, setlist, setlists, items, player, prompter: prompterSource, outputs: { video: videoOpen, prompter: prompterOpen }, toggleOutput, notify, user });
 
   useNdiOutputs(settings);
   useNdiPrompter(prompterSource, settings.ndi.prompter.enabled);
@@ -435,7 +468,7 @@ function Workspace({ user }) {
       <Browser
         setlists={setlists}
         setlistId={setlistId}
-        onSetlist={(id) => update({ setlistId: id })}
+        onSetlist={chooseSetlist}
         items={items}
         numbers={numbers}
         selectedId={selected?.id}
@@ -491,7 +524,7 @@ function Workspace({ user }) {
             onSelect={setSelectedId}
             setlists={setlists}
             setlistId={setlistId}
-            onSetlist={(id) => update({ setlistId: id })}
+            onSetlist={chooseSetlist}
             settings={settings}
             update={update}
             active={!settingsOpen && !prefsOpen && !helpOpen && !preflightOpen}
@@ -582,21 +615,32 @@ function Workspace({ user }) {
           onClose={() => setPreflightOpen(false)}
         />
       )}
-      {askItem && isDirty(askItem.id) && (
+      {askSave && (
         <UnsavedModal
-          item={askItem}
-          onSave={() =>
-            saveDraft(setlistId, askItem)
-              .then((res) => notify(savedMessage(askItem.title, res)))
-              .catch((e) => notify(`“${askItem.title}” non salvato: ${e.message || e}`, true))
-              .finally(() => setAskSave(null))
-          }
-          onDiscard={() => {
-            discardDraft(askItem.id);
-            clearHistory(askItem.id);
-            setAskSave(null);
+          items={askItems}
+          reason={askSave.reason}
+          onSave={() => {
+            const { then, reason } = askSave;
+            const list = askItems;
+            Promise.allSettled(list.map((it) => saveDraft(setlistId, it))).then((all) => {
+              const failed = all.filter((r) => r.status === 'rejected');
+              setAskSave(null);
+              if (failed.length) return notify(`Non salvato: ${failed.map((r) => r.reason?.message || r.reason).join(', ')}`, true);
+              notify(list.length === 1 ? savedMessage(list[0].title, all[0].value) : `Salvati ${list.length} brani`);
+              // Closing: a moment for the writes to reach the local cache on disk.
+              setTimeout(then, reason === 'quit' ? 600 : 0);
+            });
           }}
-          onLater={() => setAskSave(null)}
+          onDiscard={() => {
+            const { then } = askSave;
+            askItems.forEach((it) => {
+              discardDraft(it.id);
+              clearHistory(it.id);
+            });
+            setAskSave(null);
+            then();
+          }}
+          onCancel={() => setAskSave(null)}
         />
       )}
     </div>

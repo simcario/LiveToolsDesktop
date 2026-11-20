@@ -53,15 +53,19 @@ export function songSections(item, beats, duration) {
   return sections.filter((s) => s.end > s.start);
 }
 
+// The engine places the playhead on a whole frame, rounded down: a locate to a section lands a
+// few microseconds before its start, and must count as in it (not in the one before).
+export const ON_START = 1e-3;
+
 export function sectionIndexAt(sections, t) {
-  return sections.findIndex((s) => t >= s.start && t < s.end);
+  return sections.findIndex((s) => t + ON_START >= s.start && t + ON_START < s.end);
 }
 
 /** When a jump asked now happens: on the next beat, bar or end of the section. */
 export function jumpTime(quant, position, beats, sections) {
   const from = position + MIN_LEAD;
   if (quant === 'section') {
-    const end = sections.find((s) => s.end >= from && s.start <= position)?.end;
+    const end = sections.find((s) => s.end >= from && s.start <= position + ON_START)?.end;
     if (end != null) return end;
   }
   const hit = beats.find((b) => b.t >= from && (quant === 'beat' || b.inBar === 0));

@@ -5,6 +5,26 @@ versioni [SemVer](https://semver.org/lang/it/). Procedura di rilascio: [docs/REL
 
 ## [Non rilasciato]
 
+## [0.1.29] — 2026-11-20
+
+### Salvataggio chiesto solo a chiusura
+- Cambiare brano non mostra più *Modifiche non salvate*. LiveTools chiede di salvare solo quando si cambia scaletta
+  (Browser, Palco, telecomando: `chooseSetlist` in `App.jsx`) o si chiude la finestra principale (`onCloseRequested`,
+  permesso `core:window:allow-destroy`), con l'elenco dei brani in bozza: *Salva tutto*, *Non salvare* / *Chiudi senza
+  salvare*, *Annulla*.
+
+### Telecomando: mixer completo
+- Parte di stato `mixer` (lo stato di `lib/useMixer.js`, senza le curve di automazione) e comando `mixer {action}`, che
+  passa le azioni al Mixer come la finestra F3 (non `window`/`play`). Sul mobile la schermata *Mixer completo*.
+
+### Sezioni a brano fermo
+- Un salto a una sezione a brano fermo (dal Palco o dal telecomando) metteva la testina un campione prima dell'inizio
+  (arrotondamento al campione): computer e telecomando la contavano ancora nella sezione precedente, con battuta
+  sbagliata (130.4 invece di 131.1) e Loop sulla sezione sbagliata. Tolleranza di un campione in `tempo.rs`
+  (`ON_BEAT`, battuta e movimento) e in `sectionIndexAt` / `jumpTime` (`ON_START`); stesso calcolo nel telecomando.
+
+## [0.1.28] — 2026-11-19
+
 ### Mute del Palco senza "Salva"
 - Il mute dei gruppi dal Palco, dalla barra *Rehearsal* e dal telecomando resta su questo computer (`stageMute` nel mix
   locale, `lib/songMix.js` `trackMuted`/`setStageMute`/`clearStageMute`): non entra nella bozza del brano e non chiede

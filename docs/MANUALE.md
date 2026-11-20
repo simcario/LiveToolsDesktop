@@ -622,6 +622,8 @@ La tab **Sezioni** del Browser, visibile solo in questa vista, mostra l'elenco, 
 numero porta alla sezione, il nome si scrive direttamente nella riga, la × elimina, **Aggiungi** ne crea una alla battuta
 della testina. Le modifiche si salvano con **Salva**.
 
+**Quando chiede di salvare** (dalla prossima versione). Cambiare brano non chiede niente: i brani con modifiche restano segnati con un pallino nell'elenco, e le modifiche si sentono già su questo computer. LiveTools chiede di salvarle solo quando **cambi scaletta** (anche dal telecomando) o **chiudi il programma**: compare l'elenco dei brani non salvati con **Salva tutto**, **Non salvare** (le scarta; alla chiusura *Chiudi senza salvare*) e **Annulla** (resti dove sei).
+
 **Salvare senza connessione** (dalla prossima versione). **Salva** funziona anche quando il computer o il tablet non
 è collegato a internet: il brano resta salvato su questo dispositivo e nella barra compare *In attesa di rete*. Appena
 torna la connessione le modifiche arrivano da sole alla band, anche se nel frattempo hai chiuso e riaperto l'app. Se
@@ -792,8 +794,7 @@ Dal telecomando puoi: **Play / Stop**, brano precedente e successivo, tornare al
 **caricare** un brano (tocca il brano, poi *Carica* o *Carica e avvia*); cambiare scaletta (a brano fermo);
 saltare alle **sezioni**, **Loop 1×**, **Loop ∞**, *Annulla salto* e **Fade**; aprire e chiudere le finestre
 **Video** e **Gobbo**; accendere e spegnere **click**, ottavi, count-in, avanzamento automatico e **pad**; il
-**mixer del Palco** (dalla prossima versione): fader di master, metronomo, pad e di ogni gruppo di strumenti, solo e
-mute dei gruppi, sempre solo su quel computer: non cambiano il brano e non chiedono di salvare; scegliere la vista del computer (Palco, Arrangement, Gobbo, Spartito).
+**Mixer** del computer (dalla prossima versione), su una schermata a parte: tutte le tracce del brano come nel Mixer dell'Arrangement (volume, pan, destinazione, gruppo Rehearsal, M, S, R/W, gain ed EQ toccando il nome), modifiche nella bozza del brano come qui, con **Salva** nella colonna a sinistra; scegliere la vista del computer (Palco, Arrangement, Gobbo, Spartito).
 Il telecomando mostra il brano caricato, il tempo che scorre, la battuta e le sezioni colorate.
 
 In **Rete locale** vedi i telecomandi collegati e il loro ritardo; quando uno si collega o si scollega compare un

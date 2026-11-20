@@ -422,12 +422,17 @@ impl TempoMap {
         Self { segments, count_in, origin, pre_roll: (count_in - origin).max(0.0) }
     }
 
+    // The playhead is placed on a whole frame, rounded down (Engine::arm, seek): a locate to a
+    // section or a beat lands up to a frame before it. Bar and beat shown count it as there.
+    const ON_BEAT: f64 = 5e-5;
+
     fn segment_at(&self, t: f64) -> &Segment {
         self.segments.iter().rev().find(|s| s.start <= t).unwrap_or(&self.segments[0])
     }
 
     /// Bar (1-based, negative in the count-in), beat (1-based) and beats per bar at time t.
     pub fn position(&self, t: f64) -> (i64, u32, u32) {
+        let t = t + Self::ON_BEAT;
         let s = self.segment_at(t);
         // A hair of tolerance: a time computed on a beat must not fall just before it.
         let k = ((t - s.start) / s.beat + 1e-9).floor().max(0.0) as i64 + s.first_beat as i64;
@@ -438,6 +443,7 @@ impl TempoMap {
     /// Time of the first beat after t, with its bar, beat and beats per bar: the leds of
     /// the metronome change on it at display rate, between two status updates.
     pub fn next_beat(&self, t: f64) -> (f64, i64, u32, u32) {
+        let t = t + Self::ON_BEAT;
         let s = self.segment_at(t);
         let k = ((t - s.start) / s.beat + 1e-9).floor().max(-1.0);
         let mut at = s.start + (k + 1.0) * s.beat;

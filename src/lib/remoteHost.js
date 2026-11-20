@@ -34,7 +34,7 @@ const publish = (key, value) => invoke('remote_publish', { key, value }).catch((
  * player (usePrompterOutput), for the Leggio of the remote. `outputs`: { video, prompter } open now;
  * `toggleOutput(kind)` opens or closes the window.
  */
-export function useRemoteHost({ settings, update, setlist, setlists, items, player, prompter, outputs, toggleOutput, notify, user }) {
+export function useRemoteHost({ settings, update, chooseSetlist, mixer, setlist, setlists, items, player, prompter, outputs, toggleOutput, notify, user }) {
   const remote = useRemoteState();
   useMix(); // volumes of the groups and track mutes of this computer
   const opts = settings.remote;
@@ -126,6 +126,13 @@ export function useRemoteHost({ settings, update, setlist, setlists, items, play
     });
   }, [hosting, loaded?.itemId, loaded?.tempo, song, player.busy, sections, groupList]);
 
+  // The whole Mixer of the song (as the Arrangement's, lib/useMixer.js), for its screen on the remote.
+  // The automation curves stay here: the remote does not follow them while playing.
+  const mixerJson = JSON.stringify(mixer ? { ...mixer.state, strips: mixer.state.strips.map((x) => ({ ...x, auto: [], muteAuto: [] })) } : null);
+  useEffect(() => {
+    if (hosting) publish('mixer', JSON.parse(mixerJson));
+  }, [hosting, mixerJson]);
+
   // The fixed strips of the Palco mixer: master, metronome, pad (this computer).
   useEffect(() => {
     if (!hosting) return;
@@ -195,7 +202,7 @@ export function useRemoteHost({ settings, update, setlist, setlists, items, play
   // ---------- Commands ----------
 
   const ctx = useRef({});
-  ctx.current = { settings, update, player, songs, sections, beats, toggleOutput, notify };
+  ctx.current = { settings, update, chooseSetlist, mixer, player, songs, sections, beats, toggleOutput, notify };
   useEffect(
     () =>
       onRemoteMessage((m) => {
@@ -274,7 +281,7 @@ export function useRemoteHost({ settings, update, setlist, setlists, items, play
             if (['stage', 'arrangement', 'prompter', 'score'].includes(a.view)) c.update({ page: 'live', view: a.view });
             break;
           case 'setlist':
-            if (a.id && !st.playing) c.update({ setlistId: a.id });
+            if (a.id && !st.playing) (c.chooseSetlist || ((id) => c.update({ setlistId: id })))(a.id);
             break;
           case 'groupOut': // remotes before the mute of the tracks
             if (a.group) p.toggleGroup(a.group);
@@ -293,6 +300,10 @@ export function useRemoteHost({ settings, update, setlist, setlists, items, play
             break;
           case 'padGain':
             if (Number.isFinite(a.db)) c.update({ pad: { ...s.pad, gainDb: clampDb(a.db) } });
+            break;
+          case 'mixer':
+            // An action of the Mixer screen of the remote, as from the Mixer window (F3).
+            if (a.action?.type && !['window', 'play'].includes(a.action.type)) c.mixer?.dispatch(a.action);
             break;
           case 'groupSolo':
             if (a.group) p.setGroup(a.group, { solo: !!a.on });
