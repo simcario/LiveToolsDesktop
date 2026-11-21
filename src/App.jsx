@@ -13,7 +13,7 @@ import { toggleZone, useSettings } from './lib/settings';
 import { hideSplash } from './lib/splash';
 import { usePlayer } from './lib/usePlayer';
 import { usePrompterBroadcast, usePrompterOutput } from './lib/prompter';
-import { useNdiOutputs, useNdiPrompter } from './lib/ndi';
+import { ndiLatency, useNdiOutputs, useNdiPrompter } from './lib/ndi';
 import { checkForUpdates, useUpdater } from './lib/updater';
 import ArrangementView from './components/ArrangementView';
 import Browser from './components/Browser';
@@ -263,7 +263,7 @@ function Workspace({ user }) {
   useRemoteHost({ settings, update, chooseSetlist, mixer, setlist, setlists, items, player, prompter: prompterSource, outputs: { video: videoOpen, prompter: prompterOpen }, toggleOutput, notify, user });
 
   useNdiOutputs(settings);
-  useNdiPrompter(prompterSource, settings.ndi.prompter.enabled);
+  useNdiPrompter(prompterSource, settings.ndi.prompter.enabled, ndiLatency(settings, 'prompter'));
   usePrompterBroadcast({ setlist, loadedItem: player.loadedItem, settings, enabled: settings.driveStage && canDrive, user, notify });
 
   // Audio interface (re)opened when the choice changes.

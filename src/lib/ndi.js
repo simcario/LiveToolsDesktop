@@ -13,10 +13,13 @@ export const NDI_KINDS = { video: 'Video', prompter: 'Gobbo' };
 // NDI shows the computer name before the source ("PC (LiveTools - Video)"): it is not repeated here.
 export const defaultNdiName = (kind) => `LiveTools - ${NDI_KINDS[kind]}`;
 export const ndiName = (settings, kind) => settings.ndi[kind].name.trim() || defaultNdiName(kind);
+// Milliseconds the network and the receiver (vMix, OBS…) keep the picture: it is sent that much ahead.
+export const NDI_MAX_LATENCY = 500;
+export const ndiLatency = (settings, kind) => Math.max(0, Math.min(NDI_MAX_LATENCY, Number(settings.ndi[kind].latency) || 0));
 
 // ---------- Status (outputs on, errors) ----------
 
-let status = { error: null, video: false, prompter: false };
+let status = { error: null, video_error: null, prompter_error: null, video: false, prompter: false };
 const listeners = new Set();
 const setStatus = (s) => {
   status = s;
@@ -38,12 +41,24 @@ export function useNdiStatus() {
 
 /** Turns the outputs on and off (and renames them) as the settings say. */
 export function useNdiOutputs(settings) {
-  const out = (kind) => ({ enabled: !!settings.ndi[kind].enabled, name: ndiName(settings, kind) });
+  const out = (kind) => ({ enabled: !!settings.ndi[kind].enabled, name: ndiName(settings, kind), latency: ndiLatency(settings, kind) });
   const config = JSON.stringify({ video: out('video'), prompter: out('prompter') });
   useEffect(() => {
-    invoke('ndi_configure', { config: JSON.parse(config) })
-      .then(setStatus)
-      .catch(() => {});
+    let timer = 0;
+    let alive = true;
+    // An output that did not start (name taken by another copy of LiveTools) is tried again every 3 s.
+    const configure = () =>
+      invoke('ndi_configure', { config: JSON.parse(config) })
+        .then((s) => {
+          setStatus(s);
+          if (alive && (s.video_error || s.prompter_error)) timer = setTimeout(configure, 3000);
+        })
+        .catch(() => {});
+    configure();
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
   }, [config]);
 }
 
@@ -166,8 +181,11 @@ function drawSlides(ctx, current, next) {
   drawText(ctx, next.text, { x: 0, y: H - nextH + nextTags, w: W, h: nextH - nextTags }, { t: 0, b: 3 * VH, l: 6 * VW, r: 6 * VW }, 48, '#6b7280');
 }
 
-/** Sends the Gobbo picture of `source` (see usePrompterOutput) while the NDI output is on. */
-export function useNdiPrompter(source, enabled) {
+/**
+ * Sends the Gobbo picture of `source` (see usePrompterOutput) while the NDI output is on,
+ * `latency` ms ahead of the audio so the slide changes on time on the receiver.
+ */
+export function useNdiPrompter(source, enabled, latency = 0) {
   useEffect(() => {
     if (!enabled) return undefined;
     const canvas = new OffscreenCanvas(W, H);
@@ -178,7 +196,8 @@ export function useNdiPrompter(source, enabled) {
 
     const update = () => {
       if (!alive || sending) return;
-      const { current, next } = outputSlides(source, outputCueIndex(source, engineStatus()));
+      const s = engineStatus();
+      const { current, next } = outputSlides(source, outputCueIndex(source, latency ? { ...s, position: s.position + latency / 1000 } : s));
       const key = JSON.stringify([current?.text || '', slideTags(current), next?.text ?? null, next ? slideTags(next) : null]);
       if (key === shown) return;
       shown = key;
@@ -198,5 +217,5 @@ export function useNdiPrompter(source, enabled) {
       alive = false;
       unsubscribe();
     };
-  }, [source, enabled]);
+  }, [source, enabled, latency]);
 }

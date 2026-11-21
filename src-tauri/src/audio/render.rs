@@ -56,6 +56,8 @@ pub struct Shared {
     /// Where the playhead last started or jumped: the heard position, latency behind,
     /// does not show the frames before it.
     heard_floor: AtomicI64,
+    /// When the last calibration beep (RtCmd::CalibBeep) comes out of the speakers (`clock_ns`), 0 = none yet.
+    pub calib_heard: AtomicU64,
 }
 
 /// Nanoseconds of a monotonic clock shared by the audio callback and the status ticker.
@@ -88,6 +90,7 @@ impl Shared {
             clock_at: AtomicU64::new(0),
             lead: AtomicU32::new(0),
             heard_floor: AtomicI64::new(i64::MIN),
+            calib_heard: AtomicU64::new(0),
         }
     }
 
@@ -390,6 +393,8 @@ pub enum RtCmd {
     Click(ClickParams),
     /// One click with the current sound, heard only while stopped (settings).
     PreviewClick(ClickKind),
+    /// A short beep on every output, for the calibration of the NDI latency.
+    CalibBeep,
     Duration(i64),
     /// At frame `at` the playhead moves to `to`, the readers already ahead:
     /// no wait and no gap. Replaces the jump armed before.
@@ -793,6 +798,8 @@ pub struct Renderer {
     /// Level of the click being played from its volume automation (set at each trigger).
     click_auto: f32,
     preview: Option<ClickKind>,
+    /// Frames played of the calibration beep.
+    calib_beep: Option<usize>,
     duration: i64,
     waited: usize,
     count_in: bool,
@@ -836,6 +843,7 @@ impl Renderer {
             voice: ClickVoice::idle(),
             click_auto: 1.0,
             preview: None,
+            calib_beep: None,
             duration: 0,
             waited: 0,
             count_in: false,
@@ -958,6 +966,7 @@ impl Renderer {
                 }
                 RtCmd::Click(c) => self.click = c,
                 RtCmd::PreviewClick(k) => self.preview = Some(k),
+                RtCmd::CalibBeep => self.calib_beep = Some(0),
                 RtCmd::Duration(d) => self.duration = d,
                 RtCmd::Jump { id, at, to, streams } => {
                     if let Some(old) = self.jump.replace(ArmedJump { id, at, to, streams }) {
@@ -1070,6 +1079,7 @@ impl Renderer {
         self.process_transport(out, frames, ch, sr);
         // The pad plays with the transport stopped too.
         self.mix_pad(out, frames, ch, sr);
+        self.mix_calib_beep(out, frames, ch, sr);
         for c in 0..ch.min(MAX_OUTPUTS) {
             let mut peak = 0f32;
             for f in 0..frames {
@@ -1198,6 +1208,33 @@ impl Renderer {
     }
 
     /// Adds the pad (both keys while they cross) to its output.
+    /// The calibration beep: 3 kHz, 80 ms, from the first frame of the callback, on every
+    /// output (the phone must hear it from the speakers of the room). Its first frame is
+    /// heard `lead` frames after the callback started.
+    fn mix_calib_beep(&mut self, out: &mut [f32], frames: usize, ch: usize, sr: usize) {
+        const FREQ: f32 = 3000.0;
+        const LEVEL: f32 = 0.3;
+        let Some(done) = self.calib_beep else { return };
+        let sr_f = sr.max(1) as f32;
+        let len = sr * 80 / 1000;
+        let ramp = (sr / 1000).max(1);
+        if done == 0 {
+            let at = self.shared.clock_at.load(Ordering::Relaxed);
+            let lead_ns = self.shared.lead.load(Ordering::Relaxed) as u64 * 1_000_000_000 / sr.max(1) as u64;
+            self.shared.calib_heard.store(at + lead_ns, Ordering::Relaxed);
+        }
+        let n = (len - done).min(frames);
+        for f in 0..n {
+            let i = done + f;
+            let env = (i.min(len - i) as f32 / ramp as f32).min(1.0);
+            let v = (std::f32::consts::TAU * FREQ * i as f32 / sr_f).sin() * LEVEL * env;
+            for c in 0..ch {
+                out[f * ch + c] += v;
+            }
+        }
+        self.calib_beep = if done + n >= len { None } else { Some(done + n) };
+    }
+
     fn mix_pad(&mut self, out: &mut [f32], frames: usize, ch: usize, sr: usize) {
         if !self.pads.iter().any(PadVoice::sounding) {
             return;

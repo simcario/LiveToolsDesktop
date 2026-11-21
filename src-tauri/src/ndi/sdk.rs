@@ -161,7 +161,11 @@ impl Sender {
         let create = SendCreate { name: name.as_ptr(), groups: std::ptr::null(), clock_video: true, clock_audio: false };
         let instance = unsafe { (rt.send_create)(&create) };
         if instance.is_null() {
-            return Err(format!("NDI: impossibile creare l’uscita “{}”", name.to_string_lossy()));
+            // NDI refuses a second source with the same name on this computer.
+            return Err(format!(
+                "NDI: impossibile creare l’uscita “{}”: su questo computer c’è già una sorgente con questo nome (un’altra copia di LiveTools aperta?). Chiudila o cambia il nome.",
+                name.to_string_lossy()
+            ));
         }
         Ok(Sender { rt, instance, _name: name })
     }

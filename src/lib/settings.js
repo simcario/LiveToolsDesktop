@@ -56,8 +56,9 @@ export const DEFAULT_SETTINGS = {
   toolbarLabels: false, // names of the categories over the groups
   prompterLead: 0,
   prompterNext: true,
-  // NDI outputs of the video and of the Gobbo (lib/ndi.js); empty name = "LiveTools - Video/Gobbo".
-  ndi: { video: { enabled: false, name: '' }, prompter: { enabled: false, name: '' } },
+  // NDI outputs of the video and of the Gobbo (lib/ndi.js); empty name = "LiveTools - Video/Gobbo";
+  // latency: ms the picture is sent ahead of the audio (network + receiver).
+  ndi: { video: { enabled: false, name: '', latency: 0 }, prompter: { enabled: false, name: '', latency: 0 } },
   updateCheck: true, // look for a new release at startup (never installs on its own)
   pedal: DEFAULT_PEDAL, // page turner of the PDF score: keys for next / previous page, layout
   // MIDI out (lib/midi.js): output port, patches sent when a song becomes the one in the player,

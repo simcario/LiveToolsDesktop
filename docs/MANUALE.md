@@ -1268,13 +1268,27 @@ schermo NDI, senza tenere aperte le finestre di uscita. Si attivano in **Imposta
 
 ![Impostazioni, sezione Uscite NDI: Uscita video e Uscita gobbo, ciascuna con Attiva e il nome della sorgente](img/impostazioni-ndi.png)
 
-*Impostazioni › Uscite NDI: per ognuna la casella “Attiva” e il nome con cui compare in rete.*
+*Impostazioni › Uscite NDI: per ognuna la casella “Attiva”, il nome con cui compare in rete e la compensazione del ritardo.*
 
 I nomi delle sorgenti si possono cambiare; di default sono **LiveTools - Video** e **LiveTools - Gobbo**
 (i programmi NDI mostrano davanti il nome del computer: *NOMEPC (LiveTools - Video)*). Serve il runtime NDI: l'installer di LiveTools installa **NDI 6 Runtime** se manca (anche **NDI Tools**,
 da [ndi.video](https://ndi.video), lo contiene); se non c'è, le Impostazioni lo segnalano.
 Un'uscita accesa lavora solo quando qualcuno la riceve: se nessun programma è collegato non occupa il
 processore, e appena un programma si collega riceve subito l'immagine.
+
+**Compensa ritardo**: la rete e il programma che riceve (vMix, OBS, un mixer video) tengono l'immagine per un
+attimo, così il video o il cambio di slide arrivano dopo la musica. Sposta il cursore di ciascuna uscita (da 0 a
+500 ms, a passi di 10) finché l'immagine non è a tempo con l'audio: LiveTools la manda in anticipo di quel tempo.
+Un modo semplice per regolarlo: guarda un punto del video dove si vede bene un colpo (una cassa, un battito di mani)
+sul monitor della regia e alza il valore finché immagine e suono non coincidono. Doppio clic sul cursore: 0.
+
+**Calibra col telefono** fa la misura da solo. Collega il telefono o il tablet come telecomando (*Rete locale ›
+Telecomando*), ferma il brano e premi *Calibra col telefono* sotto l'uscita: sul telefono si apre la fotocamera.
+Inquadra lo schermo che riceve l'uscita NDI (basta una parte), stando dove senti bene le casse, e premi *Inizia*.
+L'uscita fa 8 lampi bianchi e ogni lampo ha un bip nelle casse (a volume moderato, su tutte le uscite audio): il
+telefono misura di quanto il lampo arriva dopo il bip e LiveTools imposta la compensazione. Durante la prova l'uscita
+mostra nero al posto del video o del gobbo, quindi falla prima del concerto. Se le misure variano molto, ripetila
+tenendo il telefono fermo; il cursore resta sempre regolabile a mano.
 Il video viene decodificato con i codec di Windows (MP4/H.264 e gli altri formati che Windows legge).
 
 <small>NDI® is a registered trademark of Vizrt NDI AB.</small>
@@ -1292,6 +1306,7 @@ Il video viene decodificato con i codec di Windows (MP4/H.264 e gli altri format
 | File AIFF non suonano sul web | normale: Chrome non legge l'AIFF, usa il desktop |
 | L'aggiornamento non compare | Impostazioni › Aggiornamenti › *Cerca aggiornamenti* (serve la rete) |
 | La sorgente NDI non compare | Impostazioni › Uscite NDI: controlla che non segnali il runtime mancante; il computer che riceve dev'essere sulla stessa rete (e il firewall non deve bloccare LiveTools) |
+| *Impossibile creare l'uscita NDI* | sullo stesso computer c'è già una sorgente con quel nome, di solito un'altra copia di LiveTools aperta (anche nell'area di notifica): chiudila o cambia il nome. L'uscita riprova da sola ogni 3 secondi |
 | Le tastiere non cambiano suono | Ctrl+, › MIDI: scegli l'uscita (o *Aggiorna* dopo averla collegata), lascia attivo il cambio automatico e prova con *Invia ora*; controlla il canale nella scheda MIDI del brano. Se un altro programma usa l'interfaccia, chiudilo |
 | Senza internet la band non segue il brano | Tutti sulla stessa rete Wi-Fi e sulla stessa scaletta; Ctrl+, › Rete locale deve dire *Guidi la band* su chi guida. Se chi segue resta su *Cerco chi guida…*, scrivi a mano l'indirizzo mostrato da chi guida e controlla che Windows consenta LiveTools sulle reti private |
 | Il controller MIDI non comanda niente | Ctrl+, › MIDI › Ingressi: l'ingresso deve risultare *In ascolto* (se un altro programma lo usa, chiudilo e premi *Aggiorna*); in MIDI learn controlla che il controllo abbia il suo messaggio |

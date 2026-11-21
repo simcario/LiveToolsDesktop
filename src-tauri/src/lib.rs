@@ -94,6 +94,12 @@ fn engine_preview_click(engine: State<'_, Engine>, kind: audio::tempo::ClickKind
     engine.0.lock().preview_click(kind);
 }
 
+/// Calibration of the latency of an NDI output (see ndi::Ndi::calibrate).
+#[tauri::command(async)]
+fn ndi_calibrate(ndi: State<'_, ndi::Ndi>, engine: State<'_, Engine>, kind: String, count: u32, interval_ms: u64) -> Result<(), String> {
+    ndi.calibrate(&kind, count, interval_ms, || engine.0.lock().calib_beep())
+}
+
 #[tauri::command]
 fn engine_set_master(engine: State<'_, Engine>, gain_db: f32) {
     engine.0.lock().set_master(gain_db);
@@ -294,6 +300,7 @@ pub fn run() {
             oauth::google_sign_in,
             bluetooth::bluetooth_devices,
             ndi::ndi_status,
+            ndi_calibrate,
             ndi::ndi_configure,
             ndi::ndi_video_source,
             ndi::ndi_prompter_frame,

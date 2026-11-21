@@ -5,6 +5,23 @@ versioni [SemVer](https://semver.org/lang/it/). Procedura di rilascio: [docs/REL
 
 ## [Non rilasciato]
 
+## [0.1.30] — 2026-11-21
+
+### NDI: calibrazione col telefono
+- Impostazioni › Uscite NDI › *Calibra col telefono* (`lib/ndiCalib.js`, parte di stato del telecomando `calib`, comando
+  `calib {action: ready|result|fail|cancel, run}`). `ndi_calibrate(kind, count, intervalMs)`: l'uscita mostra nero e 8 lampi
+  bianchi da 300 ms a 1,5 s; ognuno parte quando si sente un bip a 3 kHz su tutte le uscite audio (`RtCmd::CalibBeep`,
+  `Shared::calib_heard` = inizio della callback + `lead`). Il telefono misura il ritardo lampo − bip e la compensazione
+  viene impostata (arrotondata a 10 ms, 0–500). Solo a brano fermo, con l'uscita accesa e un telefono collegato.
+
+### NDI: compensazione del ritardo
+- Impostazioni › Uscite NDI: cursore *Compensa ritardo* (0–500 ms) per ciascuna uscita (`settings.ndi.{video,prompter}.latency`).
+  Il video NDI è decodificato a `posizione udita + ritardo` (`video_lead` in `ndi/mod.rs`), il gobbo NDI cambia slide in
+  anticipo dello stesso tempo (`useNdiPrompter`). Le finestre di uscita non cambiano.
+- Errori per uscita (`video_error`/`prompter_error` in `NdiStatus`): l'errore del gobbo non compare più sotto il video. Se il
+  nome è già usato da un'altra sorgente sullo stesso PC (NDI rifiuta i doppioni) il messaggio lo dice, e `useNdiOutputs`
+  riprova ogni 3 s finché il nome non si libera.
+
 ## [0.1.29] — 2026-11-20
 
 ### Salvataggio chiesto solo a chiusura

@@ -969,6 +969,11 @@ impl Controller {
         self.send(RtCmd::PreviewClick(kind));
     }
 
+    /// The beep of the NDI calibration on every output; see Shared::calib_heard.
+    pub fn calib_beep(&mut self) {
+        self.send(RtCmd::CalibBeep);
+    }
+
     pub fn set_master(&mut self, gain_db: f32) {
         self.shared().master.store(db_to_gain(gain_db));
     }

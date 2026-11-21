@@ -8,7 +8,8 @@ import { engine, engineStatus, useEngineStatus } from '../lib/engine';
 import { CLICK_KINDS, CLICK_SOUNDS, DEFAULT_KIND, DEFAULT_SETTINGS, clickKind } from '../lib/settings';
 import { checkForUpdates, installUpdate, useUpdater } from '../lib/updater';
 import { pedalDevice, useBluetoothDevices } from '../lib/pedal';
-import { defaultNdiName, useNdiStatus } from '../lib/ndi';
+import { NDI_MAX_LATENCY, defaultNdiName, ndiLatency, useNdiStatus } from '../lib/ndi';
+import { CALIB_COUNT, cancelNdiCalibration, startNdiCalibration, useNdiCalibration } from '../lib/ndiCalib';
 import { midiOutputs, midiTargeted } from '../lib/midi';
 import { instrumentsOf, ROUTE_OFF } from '../shared/midi-patch.js';
 import { describeKey, midiInputs, setLearning, unassign } from '../lib/midiLearn';
@@ -971,9 +972,10 @@ function NdiOutput({ kind, settings, update, onBusy, ...item }) {
   // The source is renamed when the field is left, not at every key.
   const commit = () => draft.trim() !== out.name && set({ name: draft.trim() });
   const on = ndi[kind];
+  const latency = ndiLatency(settings, kind);
 
   return (
-    <PrefItem {...item} modified={out.enabled || !!out.name} onReset={() => set({ ...D.ndi[kind] })}>
+    <PrefItem {...item} modified={out.enabled || !!out.name || latency > 0} onReset={() => set({ ...D.ndi[kind] })}>
       <label className="check">
         <input type="checkbox" checked={out.enabled} onChange={(e) => set({ enabled: e.target.checked })} />
         Attiva
@@ -990,8 +992,70 @@ function NdiOutput({ kind, settings, update, onBusy, ...item }) {
           onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
         />
       </div>
-      {out.enabled && (on ? <span className="hint">In rete come “{out.name || fallback}”</span> : ndi.error && <p className="pref-error">{ndi.error}</p>)}
+      <div className="pref-row" title="Quanto arriva in ritardo l’immagine su chi la riceve: viene mandata in anticipo di questo tempo. Doppio clic: 0">
+        <span className="hint">Compensa ritardo</span>
+        <input
+          className="slider pref-slider"
+          type="range"
+          min={0}
+          max={NDI_MAX_LATENCY}
+          step={10}
+          value={latency}
+          aria-label="Compensazione del ritardo NDI in millisecondi"
+          onChange={(e) => set({ latency: Number(e.target.value) })}
+          onDoubleClick={() => set({ latency: 0 })}
+        />
+        <span className="pref-value mono">{latency ? `${latency} ms` : 'No'}</span>
+      </div>
+      {out.enabled && on && <NdiCalibrate kind={kind} name={out.name || fallback} update={update} />}
+      {out.enabled && (on ? <span className="hint">In rete come “{out.name || fallback}”</span> : (ndi[`${kind}_error`] || ndi.error) && <p className="pref-error">{ndi[`${kind}_error`] || ndi.error}</p>)}
     </PrefItem>
+  );
+}
+
+// The compensation measured by the phone connected as Telecomando (lib/ndiCalib.js).
+function NdiCalibrate({ kind, name, update }) {
+  const calib = useNdiCalibration();
+  const remote = useRemoteState();
+  const playing = useEngineStatus((s) => s.playing);
+  const phones = remote.hosting ? remote.peers.length : 0;
+  const mine = calib.kind === kind && calib.phase !== 'idle';
+  const busy = ['waiting', 'running', 'measuring'].includes(calib.phase);
+  const apply = (k, ms) => update((s) => ({ ndi: { ...s.ndi, [k]: { ...s.ndi[k], latency: ms } } }));
+  const why = !phones ? 'Collega il telefono come telecomando (Rete locale › Telecomando)' : playing ? 'Ferma il brano' : null;
+
+  let status = null;
+  if (mine) {
+    if (calib.phase === 'waiting') status = <span className="hint">Sul telefono: inquadra lo schermo che riceve “{name}” e premi Inizia. Tieni le casse accese.</span>;
+    else if (calib.phase === 'running') status = <span className="hint">{CALIB_COUNT} lampi con un bip nelle casse…</span>;
+    else if (calib.phase === 'measuring') status = <span className="hint">Il telefono sta calcolando…</span>;
+    else if (calib.phase === 'done') {
+      const r = calib.result;
+      status = (
+        <span className="hint">
+          {r.measured < 0 ? `L’immagine arriva ${-r.measured} ms prima dell’audio: nessuna compensazione.` : `Misurato ${r.measured} ms (${r.n} lampi su ${CALIB_COUNT}): compensazione impostata a ${r.ms} ms.`}
+          {r.spread > 40 && ' Le misure variano parecchio: ripeti la prova tenendo il telefono fermo.'}
+        </span>
+      );
+    } else if (calib.phase === 'error') status = <p className="pref-error">{calib.error}</p>;
+  }
+
+  return (
+    <>
+      <div className="pref-row">
+        {mine && busy ? (
+          <button className="btn btn-sm" onClick={cancelNdiCalibration}>
+            Annulla
+          </button>
+        ) : (
+          <button className="btn btn-sm" disabled={!!why || busy} title={why || 'Misura il ritardo col telefono: fotocamera sullo schermo, microfono sulle casse'} onClick={() => startNdiCalibration(kind, name, apply)}>
+            <Icon name="radio" size={12} /> Calibra col telefono
+          </button>
+        )}
+        {why && !mine && <span className="hint">{why}</span>}
+      </div>
+      {status}
+    </>
   );
 }
 
