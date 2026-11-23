@@ -266,6 +266,34 @@ function ClickStrip({ state, dispatch, here }) {
   );
 }
 
+// Scene del mix (lib/scenes.js): which one plays; they are made in the Arrangement (Scena › Gestisci).
+export function SceneSelect({ state, dispatch }) {
+  const sc = state.scenes;
+  if (!sc?.list?.length) return null;
+  const now = sc.list.find((s) => s.id === sc.active);
+  return (
+    <span className={`scene-ctl ${now ? 'is-scene' : ''}`}>
+      <select
+        className="scene-select"
+        value={sc.active || ''}
+        onChange={(e) => {
+          dispatch({ type: 'scene', id: e.target.value || null });
+          e.target.blur();
+        }}
+        title={now ? `Scena “${now.name}”: mute, volumi e automazioni cambiati qui vanno in questa scena` : 'Scena del mix: Base (il mix salvato del brano)'}
+        aria-label="Scena del mix"
+      >
+        <option value="">Scena: Base</option>
+        {sc.list.map((s) => (
+          <option key={s.id} value={s.id}>
+            Scena: {s.name}
+          </option>
+        ))}
+      </select>
+    </span>
+  );
+}
+
 // here: the device for what stays local; windowButton: false where there is no F3 window.
 // compact (tablet tab): no head bar; Ripristina and Salva in a thin column before the strips.
 export default function MixerPanel({ state, dispatch, inWindow = false, here = 'questo computer', windowButton = true, compact = false }) {
@@ -285,6 +313,7 @@ export default function MixerPanel({ state, dispatch, inWindow = false, here = '
         <div className="mx-head">
           <Icon name="sliders" size={13} />
           <strong className="ellipsis">Mixer{state.song ? ` · ${state.song.title}` : ''}</strong>
+          <SceneSelect state={state} dispatch={dispatch} />
           <span className="small faint ellipsis mx-hint">
             {state.canEdit ? `Clic sul nome di una traccia: gain ed EQ · volumi, pan, ruolo, strumento ed EQ si salvano con il brano · mute, solo e uscite dirette restano su ${here}` : 'Solo chi può modificare il brano cambia volumi, ruoli e strumenti'}
           </span>

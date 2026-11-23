@@ -20,6 +20,7 @@ import { laneColor } from './lanes';
 import { getMix, outputOptions, parseRoute, routeValue, setMix, useMix, useSettings } from './settings';
 import { engine, useEngineStatus } from './engine';
 import { clearStageMute, trackMuted } from './songMix';
+import { setActiveScene, useScenes } from './scenes';
 
 export const MIXER_WINDOW = 'mixer';
 
@@ -41,6 +42,7 @@ export function useMixer({ player, lanes, canEdit: canEditSetlist, setlistId, no
   useMix(); // mute and outputs of this computer
   useDrafts();
   useAutoWrite(); // W of the channels
+  const scenes = useScenes(); // Scene del mix (lib/scenes.js): the one active, picked also from the window
   const [settings, update] = useSettings(); // the system click: its volume, on/off and output are of this computer
   const playing = useEngineStatus((s) => s.playing);
   const channels = useEngineStatus((s) => s.device?.channels ?? 2);
@@ -101,6 +103,8 @@ export function useMixer({ player, lanes, canEdit: canEditSetlist, setlistId, no
     changed,
     dirty: !!song && isDirty(song.id),
     saving,
+    // Scene del mix: picked here, made in the Arrangement (SceneControl).
+    scenes: { list: scenes.list.map((s) => ({ id: s.id, name: s.name })), active: scenes.active },
     // The system click (metronome of the engine), the same for every song.
     // gain and muted are the song's (saved with it, as a track's), on top of this device's volume and on/off.
     click: { enabled: settings.click.enabled, deviceDb: settings.click.gainDb, route: routeValue(settings.outputs.click), gain: songClick.gain, muted: songClick.muted },
@@ -241,6 +245,9 @@ export function useMixer({ player, lanes, canEdit: canEditSetlist, setlistId, no
       }
       case 'play':
         player.toggle(song);
+        break;
+      case 'scene':
+        setActiveScene(a.id || null);
         break;
       case 'window':
         toggleMixerWindow();

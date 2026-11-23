@@ -13,6 +13,7 @@ import { groupMixKey } from './usePlayer';
 import { prompterShare } from './cues';
 import { jumpToSection, sectionIndexAt, songBeats, songSections } from './sections';
 import { newRemoteCode, onRemoteMessage, useRemoteState } from './remote';
+import { setActiveScene, useScenes } from './scenes';
 
 const clampDb = (db) => Math.min(6, Math.max(-60, Math.round(db * 2) / 2));
 const same = (a, b) => a != null && b != null && Math.abs(a - b) < 1e-3;
@@ -36,6 +37,7 @@ const publish = (key, value) => invoke('remote_publish', { key, value }).catch((
  */
 export function useRemoteHost({ settings, update, chooseSetlist, mixer, setlist, setlists, items, player, prompter, outputs, toggleOutput, notify, user }) {
   const remote = useRemoteState();
+  const scenes = useScenes();
   useMix(); // volumes of the groups and track mutes of this computer
   const opts = settings.remote;
   const on = !!opts.enabled;
@@ -132,6 +134,32 @@ export function useRemoteHost({ settings, update, chooseSetlist, mixer, setlist,
   useEffect(() => {
     if (hosting) publish('mixer', JSON.parse(mixerJson));
   }, [hosting, mixerJson]);
+
+  // Scene del mix (lib/scenes.js): the remote picks one.
+  const sceneJson = JSON.stringify({ list: scenes.list.map((x) => ({ id: x.id, name: x.name })), active: scenes.active });
+  useEffect(() => {
+    if (hosting) publish('scenes', JSON.parse(sceneJson));
+  }, [hosting, sceneJson]);
+
+  // Meters of the tracks for the Mixer screen of the remote: only while it asks for them
+  // (command "meters" every 2 s while open), 12 times a second, levels to 2 decimals.
+  const metersUntil = useRef(0);
+  useEffect(() => {
+    if (!hosting) return undefined;
+    let at = 0;
+    let silent = false;
+    return subscribeStatus((s) => {
+      const now = performance.now();
+      if (now > metersUntil.current || now - at < 80) return;
+      const r = (v) => Math.round(Math.min(2, v || 0) * 100) / 100;
+      const m = (s.meters || []).map((x) => [r(x?.[0]), r(x?.[1])]);
+      const quiet = !r(s.click) && m.every((x) => !x[0] && !x[1]);
+      if (quiet && silent) return;
+      silent = quiet;
+      at = now;
+      publish('meters', { m, c: r(s.click) });
+    });
+  }, [hosting]);
 
   // The fixed strips of the Palco mixer: master, metronome, pad (this computer).
   useEffect(() => {
@@ -304,6 +332,12 @@ export function useRemoteHost({ settings, update, chooseSetlist, mixer, setlist,
           case 'mixer':
             // An action of the Mixer screen of the remote, as from the Mixer window (F3).
             if (a.action?.type && !['window', 'play'].includes(a.action.type)) c.mixer?.dispatch(a.action);
+            break;
+          case 'scene':
+            setActiveScene(a.id || null);
+            break;
+          case 'meters':
+            metersUntil.current = a.on === false ? 0 : performance.now() + 4000;
             break;
           case 'groupSolo':
             if (a.group) p.setGroup(a.group, { solo: !!a.on });

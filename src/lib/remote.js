@@ -29,7 +29,9 @@ function listenOnce() {
         if (p.denied) patch.denied = p.denied;
       }
       set(patch);
-    } else if (p.t === 'state') set({ state: { ...net.state, [p.key]: p.value }, stateAt: { ...net.stateAt, [p.key]: performance.now() } });
+    } else if (p.t === 'state' && p.key === 'meters') meterListeners.forEach((f) => f(p.value));
+    // Meters come 12 times a second: to the Meters only, not to the whole state (no re-render).
+    else if (p.t === 'state') set({ state: { ...net.state, [p.key]: p.value }, stateAt: { ...net.stateAt, [p.key]: performance.now() } });
     else if (p.t === 'rtt') set({ rtt: p.rtt });
     else if (p.t === 'peers') set({ peers: p.peers || [] });
     else if (p.t === 'beacons') set({ beacons: p.beacons || [] });
@@ -37,6 +39,18 @@ function listenOnce() {
   }).catch(() => {
     listening = null;
   });
+}
+
+const meterListeners = new Set();
+/**
+ * Meters of the computer's tracks (Mixer of the remote): f(status-like { meters, click, outputs, pad }).
+ * Same shape as engine subscribeStatus, for components/Meter.jsx (MeterSource).
+ */
+export function subscribeRemoteMeters(f) {
+  listenOnce();
+  const g = (v) => f({ meters: v?.m || [], click: v?.c || 0, outputs: [], pad: null });
+  meterListeners.add(g);
+  return () => meterListeners.delete(g);
 }
 
 /** The state of the remote, on both sides (see EMPTY). */

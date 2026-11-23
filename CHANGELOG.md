@@ -5,6 +5,18 @@ versioni [SemVer](https://semver.org/lang/it/). Procedura di rilascio: [docs/REL
 
 ## [Non rilasciato]
 
+## [0.1.31] — 2026-11-23
+
+### Scene del mix
+- Menu **Scena** (Arrangement, intestazione del Mixer e finestra F3, barra in alto del Palco, telecomando) e finestra *Scene del mix* (`components/SceneControl.jsx`, `lib/scenes.js`). Elenco delle scene sull'account (`users/{uid}.mixScenes` + copia locale), scena attiva per dispositivo. Regole per tutti i brani: gruppi Rehearsal mutati (`muteGroups`), *Parti senza mute* (`clearMutes`). Sopra le regole, per brano: campo media `scenes[id]` con mute, volume, automazioni e R delle tracce, click (`clickMix`/`clickAuto`) e traccia cue.
+- Aggancio unico: `useDraftItems` applica la scena attiva agli elementi, `editDraft` sposta nella scena (`splitForScene`) i campi del mix scritti con una scena attiva; `saveDraft` scrive i campi del brano senza la scena. `withSongMedia` (web `songs.js`) porta `scenes` dal brano di libreria.
+
+### Telecomando
+- Parte di stato `scenes` e comando `scene {id}`. Meter delle tracce per il Mixer del telecomando: comando `meters {on}` (ripetuto ogni 2 s), parte `meters` {m, c} a 12 Hz solo mentre è chiesta; `subscribeRemoteMeters` (`lib/remote.js`) e context `MeterSource` in `Meter.jsx`.
+
+### Arrangement
+- Gruppo *Griglia*: *Aggancia alla griglia* e *Griglia a mano* sono due icone affiancate.
+
 ## [0.1.30] — 2026-11-21
 
 ### NDI: calibrazione col telefono

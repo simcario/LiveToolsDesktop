@@ -5,6 +5,7 @@ import { collection, doc, onSnapshot, orderBy, query, serverTimestamp, setDoc, u
 import { syncCustomGroups } from '../shared/media.js';
 import { canEditSong, useLinkedSongs, withSongMedia } from '../shared/songs.js';
 import { auth, db } from './firebase';
+import { syncScenes } from './scenes';
 
 export function useAuthUser() {
   const [user, setUser] = useState(undefined); // undefined = loading
@@ -140,6 +141,7 @@ export function useAccount(user) {
   useEffect(() => {
     if (!user) {
       syncCustomGroups(null, null);
+      syncScenes(null, null);
       return undefined;
     }
     const subs = [
@@ -149,6 +151,8 @@ export function useAccount(user) {
           setProfile(s.data() || {});
           // Gruppi Rehearsal added by this account, the same on every computer and tablet (shared/media.js).
           if (s.exists()) syncCustomGroups(db, user.uid, s.data().rehearsalGroups);
+          // Scene del mix of the account (lib/scenes.js).
+          syncScenes(db, user.uid, s.exists() ? s.data().mixScenes : undefined);
         },
         () => setProfile({}),
       ),

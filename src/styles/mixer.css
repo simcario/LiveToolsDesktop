@@ -326,3 +326,176 @@
   opacity: 0.75;
   background-image: repeating-linear-gradient(135deg, rgba(0, 0, 0, 0.18) 0 3px, transparent 3px 6px);
 }
+
+/* ---------- Scene del mix (components/SceneControl.jsx): menu and window ---------- */
+.scene-ctl {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.scene-select {
+  height: 26px;
+  max-width: 190px;
+  padding: 0 6px;
+  border-radius: 6px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 600;
+}
+.scene-ctl.is-scene .scene-select {
+  border-color: var(--accent);
+  color: var(--text);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.scene-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.55);
+}
+.scene-modal {
+  width: min(640px, 100%);
+  max-height: calc(100vh - 32px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 10px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elev);
+  color: var(--text);
+}
+.scene-modal .modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.scene-modal .modal-head h2 {
+  margin: 0;
+  font-size: 15px;
+}
+.scene-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px 14px;
+  overflow: auto;
+}
+.scene-body p {
+  margin: 0;
+}
+.scene-layout {
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr);
+  gap: 12px;
+  min-height: 0;
+}
+.scene-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.scene-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 8px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.scene-item.is-sel {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.scene-on {
+  margin-left: auto;
+  flex: none;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--yes);
+}
+.scene-new {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+}
+.scene-new .input {
+  flex: 1;
+  min-width: 0;
+}
+.scene-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.scene-detail h3 {
+  margin: 0;
+  font-size: 14px;
+}
+.scene-detail .field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.scene-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.scene-check > span {
+  display: flex;
+  flex-direction: column;
+}
+.scene-groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.scene-chip {
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.scene-chip.is-on {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+.scene-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+@media (max-width: 560px) {
+  .scene-layout {
+    grid-template-columns: 1fr;
+  }
+}

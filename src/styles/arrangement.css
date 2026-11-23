@@ -460,3 +460,9 @@
   opacity: 0.75;
   background-image: repeating-linear-gradient(135deg, rgba(0, 0, 0, 0.18) 0 3px, transparent 3px 6px);
 }
+
+/* Griglia: snap and "a mano" as two icons side by side. */
+.arr-grid-btns {
+  display: inline-flex;
+  gap: 2px;
+}

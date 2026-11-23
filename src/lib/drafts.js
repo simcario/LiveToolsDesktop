@@ -12,6 +12,7 @@ import { doc, serverTimestamp, updateDoc, waitForPendingWrites } from 'firebase/
 import { mediaTarget, saveMediaFields } from '../shared/media.js';
 import { SONG_FIELDS, updateSong } from '../shared/songs.js';
 import { db } from './firebase';
+import { applyScene, baseOf, registerBase, splitForScene, useScenes } from './scenes';
 
 const KEY = 'livetools-desktop:drafts';
 
@@ -45,9 +46,11 @@ export const draftOf = (itemId) => drafts[itemId] || null;
 export const isDirty = (itemId) => !!drafts[itemId];
 
 /** Changes fields of the song's draft: { media, item } (undefined = missing → null, as in Firestore). */
-export function editDraft(itemId, { media = {}, item = {} }) {
+export function editDraft(itemId, fields) {
   const nul = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, v === undefined ? null : v]));
   const cur = drafts[itemId] || { media: {}, item: {} };
+  // A scene of the mix active (lib/scenes.js): its fields go into the song's scene, not into its own mix.
+  const { media, item } = splitForScene(itemId, fields, cur);
   commit({ ...drafts, [itemId]: { media: { ...cur.media, ...nul(media) }, item: { ...cur.item, ...nul(item) } } });
 }
 
@@ -60,10 +63,17 @@ export function discardDraft(itemId) {
 /** The item with its draft on top. */
 export const withDraft = (item, d = drafts[item?.id]) => (item && d ? { ...item, ...d.media, ...d.item } : item);
 
-/** Items of the setlist with their drafts (same objects when nothing changed). */
+/** Items of the setlist with their drafts and the active scene of the mix on top (lib/scenes.js). */
 export function useDraftItems(items) {
   const all = useDrafts();
-  return useMemo(() => items.map((it) => withDraft(it, all[it.id])), [items, all]);
+  const { active, list } = useScenes();
+  return useMemo(() => {
+    const scene = list.find((s) => s.id === active) || null;
+    return items.map((it) => {
+      registerBase(it);
+      return applyScene(withDraft(it, all[it.id]), scene);
+    });
+  }, [items, all, active, list]);
 }
 
 // ---------- Saves waiting for the network ----------
@@ -145,7 +155,7 @@ export async function saveDraft(setlistId, item) {
   if (Object.keys(d.item).length) {
     writes.push(updateDoc(doc(db, 'setlists', setlistId, 'items', item.id), { ...d.item, updatedAt: serverTimestamp() }));
     // updateSong writes every song field: the item as shown carries them all.
-    if (item.songId && item.songEditable && Object.keys(d.item).some((k) => SONG_FIELDS.includes(k))) writes.push(updateSong(item.songId, item).catch(() => {}));
+    if (item.songId && item.songEditable && Object.keys(d.item).some((k) => SONG_FIELDS.includes(k))) writes.push(updateSong(item.songId, withDraft(baseOf(item.id) || item, d)).catch(() => {}));
   }
   const acked = Promise.all(writes);
   let timer;

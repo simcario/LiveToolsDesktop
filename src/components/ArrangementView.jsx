@@ -27,6 +27,7 @@ import { TIME_SIGNATURES } from '../shared/setlists.js';
 import { cleanTempoChanges, MAX_BPM, MAX_RAMP, MIN_BPM, tempoChangesOf } from '../shared/tempoMap.js';
 import { writeMix } from '../lib/songMix';
 import Toolbar, { ToolGroup } from './Toolbar';
+import SceneControl from './SceneControl';
 import { longPressed, openContextMenu } from './ContextMenu';
 import { normalizePrompter, slideColor, slideName } from '../lib/prompter';
 import { plainSlideText } from '../shared/prompter.js';
@@ -2369,22 +2370,31 @@ export default function ArrangementView({ player, item, lanes, settings, update,
           </span>
         </ToolGroup>
         <ToolGroup id="grid" label="Griglia">
+          <span className="arr-grid-btns" role="group" aria-label="Griglia">
+            <button
+              className={`btn btn-sm btn-icon ${snap ? 'is-on' : ''}`}
+              onClick={() => update({ snapGrid: !snap })}
+              aria-pressed={snap}
+              aria-label="Aggancia alla griglia"
+              title={snap ? 'Aggancia alla griglia: attivo, le tracce trascinate si agganciano ai movimenti (Shift = libero)' : 'Aggancia alla griglia: spento, le tracce si spostano liberamente (Shift = aggancia)'}
+            >
+              <Icon name="grid" size={14} />
+            </button>
+            <button
+              className={`btn btn-sm btn-icon ${warpOn ? 'is-on' : ''}`}
+              onClick={() => setEditing((v) => !v)}
+              disabled={!canEdit}
+              aria-pressed={warpOn}
+              aria-label="Griglia a mano"
+              title={canEdit ? 'Griglia a mano: allinea griglia e click all’audio con ancoraggi, tempo, intervallo di analisi (W)' : 'Griglia a mano: solo chi può modificare la scaletta'}
+            >
+              <Icon name="hand" size={14} />
+            </button>
+          </span>
           <SyncControl player={player} />
-          <button
-            className={`btn btn-sm ${snap ? 'is-on' : ''}`}
-            onClick={() => update({ snapGrid: !snap })}
-            title={snap ? 'Griglia attiva: le tracce trascinate si agganciano ai movimenti (Shift = libero)' : 'Griglia spenta: le tracce si spostano liberamente (Shift = aggancia)'}
-          >
-            <Icon name="grid" size={13} /> Griglia
-          </button>
-          <button
-            className={`btn btn-sm ${warpOn ? 'is-on' : ''}`}
-            onClick={() => setEditing((v) => !v)}
-            disabled={!canEdit}
-            title={canEdit ? 'Allinea a mano griglia e click all’audio: ancoraggi, tempo, intervallo di analisi (W)' : 'Solo chi può modificare la scaletta'}
-          >
-            <Icon name="edit" size={13} /> Griglia a mano
-          </button>
+        </ToolGroup>
+        <ToolGroup id="scene" label="Scena">
+          <SceneControl song={player.loadedItem} canEdit={canEditSong} notify={notify} compact={compact} />
         </ToolGroup>
         {sections.length > 0 && (
           <ToolGroup id="sections" label="Sezioni" pin>

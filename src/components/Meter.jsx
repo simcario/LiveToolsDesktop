@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { createContext, useContext, useEffect, useRef } from 'react';
 import { subscribeStatus } from '../lib/engine';
 
 // -60 dBFS .. 0 dBFS → 0..1
@@ -7,6 +7,9 @@ function level(v) {
   return Math.max(0, Math.min(1, (20 * Math.log10(v) + 60) / 60));
 }
 
+// Where the levels come from: the engine of this device, or (telecomando) those the computer sends.
+export const MeterSource = createContext(subscribeStatus);
+
 /**
  * Peak meter fed directly by the engine status (no React re-render).
  * source: { track: index } (or a list of them: the loudest), { output: index }, { pad: true } or { click: true } (system click, one bar).
@@ -14,12 +17,13 @@ function level(v) {
 export default function Meter({ track, output, pad = false, click = false, horizontal = false }) {
   const l = useRef(null);
   const r = useRef(null);
+  const subscribe = useContext(MeterSource);
   const tracks = Array.isArray(track) ? track : track !== undefined && track >= 0 ? [track] : [];
   const tracksKey = tracks.join(',');
   useEffect(() => {
     const shown = [0, 0];
     const written = ['', ''];
-    return subscribeStatus((s) => {
+    return subscribe((s) => {
       let v = [0, 0];
       tracks.forEach((t) => {
         const m = s.meters[t] || [0, 0];
@@ -40,7 +44,7 @@ export default function Meter({ track, output, pad = false, click = false, horiz
       });
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tracksKey, output, pad, click, horizontal]);
+  }, [tracksKey, output, pad, click, horizontal, subscribe]);
   return (
     <span className={`meter ${horizontal ? 'h' : ''}`} aria-hidden="true">
       <i>

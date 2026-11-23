@@ -16,6 +16,7 @@ import { useOutputOpen } from '../lib/outputs';
 import Fader from './Fader';
 import Meter from './Meter';
 import Toolbar, { ToolGroup } from './Toolbar';
+import { setActiveScene, useScenes } from '../lib/scenes';
 import { longPressed, openContextMenu } from './ContextMenu';
 
 const same = (a, b) => a != null && b != null && Math.abs(a - b) < 1e-3;
@@ -74,6 +75,33 @@ function Clock({ duration }) {
 
 // The top bar, as the transport of Playback: tempo, time, back to start, play,
 // the song loaded and on the right the commands of the view.
+// Scene del mix (lib/scenes.js): which one plays, beside the setlist; made in the Arrangement.
+function StageScene() {
+  const { list, active } = useScenes();
+  if (!list.length) return null;
+  const now = list.find((s) => s.id === active);
+  return (
+    <label className={`st-tool st-setlist st-scene ${now ? 'is-on' : ''}`} title={now ? `Scena del mix: ${now.name}` : 'Scena del mix: Base (il mix salvato dei brani)'}>
+      <Icon name="layers" size={18} />
+      <select
+        value={active || ''}
+        aria-label="Scena del mix"
+        onChange={(e) => {
+          setActiveScene(e.target.value || null);
+          e.target.blur();
+        }}
+      >
+        <option value="">Base</option>
+        {list.map((s) => (
+          <option key={s.id} value={s.id}>
+            {s.name}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 function TopBar({ item, player, editable, editing, setEditing, setlists, setlistId, onSetlist, onVideoOutput, tools }) {
   const videoOpen = useOutputOpen('video');
   const fadeTarget = useEngineStatus((s) => s.fadeTarget ?? 1);
@@ -159,6 +187,7 @@ function TopBar({ item, player, editable, editing, setEditing, setlists, setlist
               <span>{editing ? 'Fine' : 'Modifica'}</span>
             </button>
           )}
+          <StageScene />
           <label className="st-tool st-setlist" title="Scaletta">
             <Icon name="list-music" size={18} />
             <select

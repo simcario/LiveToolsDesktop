@@ -605,7 +605,7 @@ cue, testina che segue. Header delle tracce con M/S e meter (dalla prossima vers
 ![La vista Arrangement a tutta altezza: righello, corsia delle sezioni, tracce colorate, traccia cue, traccia Gobbo e traccia Click](img/arrangement.png)
 
 *L'Arrangement con il Dettaglio chiuso (Ctrl+Alt+E). In alto: menu della griglia (traccia di riferimento, BPM,
-posizione del "1"), **Griglia**, **Griglia a mano**, **Segui**, zoom, **Adatta**, **Mixer**, **Uscita video**, e a
+posizione del "1"), le icone **Aggancia alla griglia** e **Griglia a mano** (gruppo *Griglia*; dalla prossima versione solo icone), il menu **Scena**, **Segui**, zoom, **Adatta**, **Mixer**, **Uscita video**, e a
 destra **Aggiungi**, annulla/ripeti e gli strumenti (freccia, mano, forbici, muta, gomma). Sotto le tracce audio: la
 traccia **cue**, la traccia **Gobbo** e il **Click**.*
 
@@ -685,6 +685,27 @@ Il mute e i volumi dei gruppi dati dal Palco, dalla barra *Rehearsal* o dal tele
 questo computer, e non chiedono di salvare (vedi *Rehearsal*).
 
 **Precount**: battute di count-in prima della battuta 1, uguali per tutti i brani; si impostano in **Impostazioni › Trasporto** e si sentono con il count-in attivo.
+
+### Scene del mix (dalla prossima versione)
+
+Una **scena** è una versione del mix che vale per **tutti i brani**: per esempio *Base* (il mix salvato di ogni brano),
+*Live con la band* (mutati i canali degli strumenti che i musicisti suonano dal vivo) o *Tutto aperto* (nessun mute).
+La scena attiva si sceglie dal menu **Scena** nella barra dell'Arrangement, nell'intestazione del **Mixer** (anche nella
+finestra F3), nella barra in alto del **Palco** (accanto alla scaletta) e dal **telecomando**. Cambiarla è immediato,
+anche a brano in corso.
+
+Il pulsante a fianco del menu (o *Gestisci le scene…*) apre la finestra delle scene:
+
+- **Nuova scena**: scrivi il nome e premi **+**; la scena nuova diventa quella attiva;
+- **Muta in tutti i brani**: tocca i gruppi Rehearsal (Batteria, Basso, Chitarre…) da mutare in ogni brano della scena;
+- **Parti senza mute**: nella scena suonano anche le tracce che nei brani sono mutate (le automazioni del mute restano);
+- **Togli le modifiche di “brano”**: il brano caricato torna alle sole regole della scena;
+- **Elimina** la scena (chiede conferma).
+
+Con una scena attiva, quello che cambi nel mix di un brano (**M**, volume, automazioni di volume e mute, **R**) vale **solo
+per quella scena**: si salva nel brano con **Salva**, come le altre modifiche, e il mix *Base* non cambia. Le scene sono
+del tuo account: le ritrovi su ogni computer e tablet con cui accedi. La scena attiva è di ogni dispositivo. Il web
+suona sempre il mix *Base*.
 
 ### 4.4 Audio e uscite
 

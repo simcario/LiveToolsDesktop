@@ -176,7 +176,8 @@ export function withSongMedia(items, songs, canEdit) {
     // ids. Once written on the song they win, a removal (null) included.
     const cueTrack = song.cueTrack !== undefined ? song.cueTrack : it.cueTrack;
     const regions = song.regions !== undefined ? song.regions : it.regions;
-    return { ...it, stems: song.stems || [], video: song.video || null, score: song.score || null, cueTrack: cueTrack || null, regions: regions || null, songEditable: canEdit(song) };
+    // scenes: the mix of the song in each scene of the desktop (desktop lib/scenes.js).
+    return { ...it, stems: song.stems || [], video: song.video || null, score: song.score || null, cueTrack: cueTrack || null, regions: regions || null, scenes: song.scenes || null, songEditable: canEdit(song) };
   });
 }
 
